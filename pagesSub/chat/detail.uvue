@@ -417,10 +417,10 @@
 		}
 		if (dueAt == 0) return
 		const delay = Math.max(350, dueAt - Date.now())
-		aiHandoffTimer = setTimeout(() => {
+		aiHandoffTimer = setTimeout(async () => {
 			aiHandoffTimer = null
 			if (!isAiAvatarMode.value || aiAvatarProfile.value == null) return
-			const resolved = resolveAiAvatarHandoffs(userId.value, aiAvatarProfile.value)
+			const resolved = await resolveAiAvatarHandoffs(userId.value, aiAvatarProfile.value)
 			if (resolved.success && resolved.data != null) {
 				messages.value = mapAiAvatarMessages(resolved.data as any[])
 				scrollToBottom()
@@ -446,7 +446,7 @@
 			uni.setNavigationBarTitle({ title: 'AI 分身 · ' + name })
 			const quickRes = getAiAvatarQuickQuestions()
 			if (quickRes.success && quickRes.data != null && Array.isArray(quickRes.data)) aiQuickQuestions.value = quickRes.data as any[]
-			const historyRes = getAiAvatarConversation(userId.value, aiAvatarProfile.value)
+			const historyRes = await getAiAvatarConversation(userId.value, aiAvatarProfile.value)
 			if (!historyRes.success || historyRes.data == null) {
 				aiAvatarError.value = responseMessage(historyRes, 'AI 分身聊天记录暂时无法读取')
 				chatError.value = aiAvatarError.value
@@ -463,9 +463,14 @@
 		}
 	}
 
-	const refreshAiAvatarHistory = () => {
+	const retryAiAvatar = () => {
+		if (loading.value || userId.value <= 0) return
+		loadAiAvatarMode()
+	}
+
+	const refreshAiAvatarHistory = async () => {
 		if (!isAiAvatarMode.value || aiAvatarProfile.value == null) return
-		const resolved = resolveAiAvatarHandoffs(userId.value, aiAvatarProfile.value)
+		const resolved = await resolveAiAvatarHandoffs(userId.value, aiAvatarProfile.value)
 		if (resolved.success && resolved.data != null) {
 			messages.value = mapAiAvatarMessages(resolved.data as any[])
 			scheduleAiHandoff(resolved.data as any[])
@@ -479,18 +484,18 @@
 			title: '清空 AI 分身记录',
 			content: '清空后将无法在当前设备查看这段对话，确定继续吗？',
 			confirmText: '清空',
-			success: (result: any) => {
+		success: async (result: any) => {
 				if (result.confirm !== true) return
 				if (aiHandoffTimer != null) {
 					clearTimeout(aiHandoffTimer)
 					aiHandoffTimer = null
 				}
-				const cleared = clearAiAvatarConversation(userId.value)
+				const cleared = await clearAiAvatarConversation(userId.value)
 				if (!cleared.success) {
 					uni.showToast({ title: responseMessage(cleared, '清空失败'), icon: 'none' })
 					return
 				}
-				const history = getAiAvatarConversation(userId.value, aiAvatarProfile.value)
+				const history = await getAiAvatarConversation(userId.value, aiAvatarProfile.value)
 				if (history.success && history.data != null) {
 					messages.value = mapAiAvatarMessages(history.data as any[])
 					scrollToBottom()
@@ -513,7 +518,7 @@
 		aiAvatarSending.value = true
 		inputText.value = ''
 		try {
-			const res = sendAiAvatarMessage(userId.value, question, aiAvatarProfile.value)
+			const res = await sendAiAvatarMessage(userId.value, question, aiAvatarProfile.value)
 			if (!res.success || res.data == null) {
 				uni.showToast({ title: responseMessage(res, '发送失败，请重试'), icon: 'none' })
 				return

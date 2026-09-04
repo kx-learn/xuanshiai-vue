@@ -62,7 +62,7 @@
 
 			<!-- Tab 2：待回答 -->
 			<view v-if="activeTab == 1">
-				<text class="aia-tip">这些问题来自本设备上的 AI 分身演示。你提交回答后，会用于本设备后续相同问题的回复，不会通知真人用户。</text>
+			<text class="aia-tip">这些问题来自访客与 AI 分身的对话。你提交回答后，会用于后续 AI 分身回复；访客不会看到你的私人资料或联系方式。</text>
 				<view v-if="pendingQuestions.length > 0">
 					<view class="aia-qa-item" v-for="item in pendingQuestions" :key="item.id" @tap="openPending(item)">
 						<view class="aia-qa-head">
@@ -88,7 +88,7 @@
 
 			<!-- Tab 3：我的回答 -->
 			<view v-if="activeTab == 2">
-				<text class="aia-tip">这些是你为 AI 分身补充的演示答案，可编辑或删除。正式接入后端前，不会同步到其他设备。</text>
+			<text class="aia-tip">这些是你为 AI 分身补充的回答，可编辑或删除。保存后会同步到服务端，访客下次提问时可能看到对应回答。</text>
 				<view v-if="myAnswers.length > 0">
 					<view class="aia-ans-item" v-for="item in myAnswers" :key="item.id" @tap="openEdit(item)">
 						<view class="aia-ans-top">
@@ -204,7 +204,7 @@ const loadDashboard = async () => {
 	errorMessage.value = ''
 	ownerId.value = getAiAvatarOwnerId()
 	try {
-		const res = getAiAvatarOwnerDashboard(ownerId.value)
+		const res = await getAiAvatarOwnerDashboard(ownerId.value)
 		if (!res.success || res.data == null) {
 			errorMessage.value = res.message != null ? String(res.message) : '请先登录后管理 AI 分身'
 			return
@@ -254,7 +254,7 @@ const onQuestionInput = (e: any) => { answerQuestion.value = e.detail.value }
 
 const onAnswerInput = (e: any) => { answerText.value = e.detail.value }
 
-const submitAnswer = () => {
+const submitAnswer = async () => {
 	const value = answerText.value != null ? String(answerText.value).trim() : ''
 	const question = answerQuestion.value != null ? String(answerQuestion.value).trim() : ''
 	if (answerMode.value == 'new' && question == '') {
@@ -266,7 +266,7 @@ const submitAnswer = () => {
 		return
 	}
 	if (answerMode.value == 'new') {
-		const res = addAiAvatarOwnerAnswer(ownerId.value, question, value)
+		const res = await addAiAvatarOwnerAnswer(ownerId.value, question, value)
 		if (!res.success) {
 			uni.showToast({ title: res.message != null ? String(res.message) : '添加失败', icon: 'none' })
 			return
@@ -274,15 +274,15 @@ const submitAnswer = () => {
 		if (res.data != null) applyDashboard(res.data)
 		uni.showToast({ title: '已添加，将同步给你的分身', icon: 'none' })
 	} else if (answerMode.value == 'pending') {
-		const res = submitAiAvatarOwnerAnswer(ownerId.value, editingId.value, value)
+		const res = await submitAiAvatarOwnerAnswer(ownerId.value, editingId.value, value)
 		if (!res.success) {
 			uni.showToast({ title: res.message != null ? String(res.message) : '提交失败', icon: 'none' })
 			return
 		}
 		if (res.data != null) applyDashboard(res.data)
-		uni.showToast({ title: '已保存到本设备的 AI 演示数据', icon: 'none' })
+		uni.showToast({ title: '已保存到 AI 分身', icon: 'none' })
 	} else {
-		const res = submitAiAvatarOwnerAnswer(ownerId.value, editingId.value, value)
+		const res = await submitAiAvatarOwnerAnswer(ownerId.value, editingId.value, value)
 		if (!res.success) {
 			uni.showToast({ title: res.message != null ? String(res.message) : '保存失败', icon: 'none' })
 			return
@@ -299,9 +299,9 @@ const deletePending = (id: any) => {
 		title: '删除待回答问题',
 		content: '删除后不会再显示这个问题，确定继续吗？',
 		confirmText: '删除',
-		success: (result: any) => {
+		success: async (result: any) => {
 			if (result.confirm !== true) return
-			const res = deleteAiAvatarOwnerQuestion(ownerId.value, String(id))
+			const res = await deleteAiAvatarOwnerQuestion(ownerId.value, String(id))
 			if (res.success && res.data != null) applyDashboard(res.data)
 			uni.showToast({ title: res.success ? '已删除' : '删除失败', icon: 'none' })
 		}
@@ -313,9 +313,9 @@ const deleteAnswer = (id: any) => {
 		title: '删除本人回答',
 		content: '删除后 AI 分身将不再使用这条演示答案，确定继续吗？',
 		confirmText: '删除',
-		success: (result: any) => {
+		success: async (result: any) => {
 			if (result.confirm !== true) return
-			const res = deleteAiAvatarOwnerAnswer(ownerId.value, String(id))
+			const res = await deleteAiAvatarOwnerAnswer(ownerId.value, String(id))
 			if (res.success && res.data != null) applyDashboard(res.data)
 			uni.showToast({ title: res.success ? '已删除' : '删除失败', icon: 'none' })
 		}

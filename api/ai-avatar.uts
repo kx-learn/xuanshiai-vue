@@ -1,11 +1,12 @@
 /**
  * AI 分身前端服务。
- * 当前实现完全本地化，后续接入真实 AI 或转交能力时只替换本文件的服务实现。
+ * USE_MOCK=true 时保留本地演示；生产联调默认使用后端持久化会话。
  */
 
 import { getUserDetail } from './user.uts'
 import { getMembershipStatus } from './membership.uts'
-import { getAccessToken } from './config.uts'
+import { USE_MOCK, getAccessToken, resolveMediaUrl } from './config.uts'
+import { request } from './request.uts'
 import {
   AI_AVATAR_QUICK_QUESTIONS,
   buildMockAiAvatarReply,
@@ -14,6 +15,7 @@ import {
 
 export const AI_AVATAR_STORAGE_PREFIX = 'xsa-ai-avatar-conversations-v1-'
 export const AI_AVATAR_OWNER_STORAGE_PREFIX = 'xsa-ai-avatar-owner-v1-'
+export const AI_AVATAR_SESSION_STORAGE_PREFIX = 'xsa-ai-avatar-session-v1-'
 export const AI_AVATAR_HANDOFF_DELAY = 6000
 const AI_AVATAR_PROFILE_PREFIX = 'xsa-ai-avatar-profile-v1-'
 const SELF_AVATAR = '/static/portraits/profile-man-light.webp'
@@ -162,6 +164,141 @@ function profileStorageKey(userId: number): string {
 
 function ownerStorageKey(userId: number): string {
   return AI_AVATAR_OWNER_STORAGE_PREFIX + String(userId)
+}
+
+function sessionStorageKey(ownerId: number): string {
+  return AI_AVATAR_SESSION_STORAGE_PREFIX + String(ownerId) + '-' + tokenScope()
+}
+
+function readServerSessionId(ownerId: number): number {
+  if (ownerId <= 0) return 0
+  try {
+    const value = uni.getStorageSync(sessionStorageKey(ownerId))
+    const id = Number(value)
+    return id > 0 ? id : 0
+  } catch (e) {
+    return 0
+  }
+}
+
+function writeServerSessionId(ownerId: number, sessionId: number): void {
+  if (ownerId <= 0 || sessionId <= 0) return
+  try { uni.setStorageSync(sessionStorageKey(ownerId), sessionId) } catch (e) {}
+}
+
+function clearServerSessionId(ownerId: number): void {
+  try { uni.removeStorageSync(sessionStorageKey(ownerId)) } catch (e) {}
+}
+
+function normalizeServerProfile(raw: any, ownerId: number): any {
+  const profile = normalizeAiAvatarProfile(raw, false)
+  profile.id = ownerId
+  profile.avatar = resolveMediaUrl(profile.avatar)
+  profile.privacyNotice = raw != null && raw.privacy_notice != null
+    ? String(raw.privacy_notice)
+    : '这是 AI 分身，只参考公开资料，不是真人聊天。'
+  profile.restricted = false
+  return profile
+}
+
+function serverMessageRows(raw: any): any[] {
+  if (raw == null || typeof raw != 'object' || !Array.isArray(raw.messages)) return []
+  return raw.messages as any[]
+}
+
+function mapServerMessages(raw: any, profile: any): any[] {
+  const rows = serverMessageRows(raw)
+  return rows.map((item: any, index: number) => ({
+    id: item.id,
+    type: 'text',
+    content: textValue(item.content, ''),
+    time: item.created_at != null ? String(item.created_at) : '',
+    showTime: index == 0,
+    isMine: item.role == 'visitor',
+    avatar: item.role == 'visitor' ? SELF_AVATAR : profile.avatar,
+    source: item.source != null ? String(item.source) : 'system',
+    handoffStatus: item.handoff_status != null ? String(item.handoff_status) : 'none'
+  }))
+}
+
+function normalizeServerDashboard(raw: any): any {
+  const value = raw != null && typeof raw == 'object' ? raw : {}
+  const pendingSource = Array.isArray(value.pending_questions) ? value.pending_questions : []
+  const answersSource = Array.isArray(value.answers) ? value.answers : []
+  const mapQuestion = (item: any): any => ({
+    id: item.id,
+    question: item.question != null ? String(item.question) : '',
+    answer: item.answer != null ? String(item.answer) : '',
+    status: item.status != null ? String(item.status) : 'pending',
+    time: item.answered_at != null ? String(item.answered_at) : (item.created_at != null ? String(item.created_at) : '刚刚')
+  })
+  return {
+    chatRecords: [],
+    pendingQuestions: pendingSource.map(mapQuestion),
+    myAnswers: answersSource.map(mapQuestion),
+    enabled: value.enabled == true,
+    retentionDays: value.retention_days != null ? Number(value.retention_days) : 30
+  }
+}
+
+async function ensureServerSession(ownerId: number): Promise<any> {
+  const savedId = readServerSessionId(ownerId)
+  if (savedId > 0) return success(savedId)
+  const res = await request({
+    url: '/users/' + ownerId + '/ai-avatar/sessions',
+    method: 'POST',
+    data: { consent_version: 'ai-avatar-v1' }
+  })
+  if (!res.success || res.data == null) return res
+  const sessionId = Number(res.data.id)
+  if (sessionId <= 0) return failure('AI 分身会话创建失败', 'SESSION_INVALID')
+  writeServerSessionId(ownerId, sessionId)
+  return success(sessionId)
+}
+
+async function loadServerConversation(ownerId: number, profile: any): Promise<any> {
+  let sessionRes = await ensureServerSession(ownerId)
+  if (!sessionRes.success) return sessionRes
+  let res = await request({
+    url: '/users/' + ownerId + '/ai-avatar/sessions/' + Number(sessionRes.data) + '/messages',
+    method: 'GET'
+  })
+  if (!res.success && (res.code == 404 || res.code == 410)) {
+    clearServerSessionId(ownerId)
+    sessionRes = await ensureServerSession(ownerId)
+    if (!sessionRes.success) return sessionRes
+    res = await request({
+      url: '/users/' + ownerId + '/ai-avatar/sessions/' + Number(sessionRes.data) + '/messages',
+      method: 'GET'
+    })
+  }
+  if (!res.success || res.data == null) return res
+  const rows = mapServerMessages(res.data, profile)
+  if (rows.length == 0) rows.unshift(initialMessage(profile))
+  return success(rows, res.message)
+}
+
+async function sendServerMessage(ownerId: number, content: string, idempotencyKey: string): Promise<any> {
+  let sessionRes = await ensureServerSession(ownerId)
+  if (!sessionRes.success) return sessionRes
+  let res = await request({
+    url: '/users/' + ownerId + '/ai-avatar/sessions/' + Number(sessionRes.data) + '/messages',
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey },
+    data: { content: content }
+  })
+  if (!res.success && (res.code == 404 || res.code == 410)) {
+    clearServerSessionId(ownerId)
+    sessionRes = await ensureServerSession(ownerId)
+    if (!sessionRes.success) return sessionRes
+    res = await request({
+      url: '/users/' + ownerId + '/ai-avatar/sessions/' + Number(sessionRes.data) + '/messages',
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      data: { content: content }
+    })
+  }
+  return res
 }
 
 function readProfileSnapshot(userId: number): any {
@@ -337,6 +474,12 @@ export async function getAiAvatarProfile(userId: number, restricted: boolean = f
   if (getAccessToken() == '') return failure('请先登录后使用 AI 分身', 'AUTH_REQUIRED')
   if (userId <= 0) return failure('用户资料不存在', 'USER_NOT_FOUND')
 
+  if (!USE_MOCK) {
+    const res = await request({ url: '/users/' + userId + '/ai-avatar/profile', method: 'GET' })
+    if (!res.success || res.data == null) return res
+    return success(normalizeServerProfile(res.data, userId), res.message)
+  }
+
   // Revalidate the visible profile before using a local snapshot. The route's
   // locked flag is only a hint and must not override current privacy state.
   let currentRes: any = null
@@ -389,9 +532,13 @@ export function getAiAvatarQuickQuestions(): any {
   return success(AI_AVATAR_QUICK_QUESTIONS)
 }
 
-export function getAiAvatarConversation(userId: number, profile: any): any {
+export async function getAiAvatarConversation(userId: number, profile: any): Promise<any> {
   if (userId <= 0) return failure('用户资料不存在', 'USER_NOT_FOUND')
   if (profile == null || typeof profile != 'object') return failure('AI 分身资料暂时无法读取', 'PROFILE_REQUIRED')
+
+  if (!USE_MOCK) {
+    return loadServerConversation(Number(profile.id), profile)
+  }
   profile = enrichProfileWithOwnerAnswers(profile, profile.restricted === true)
   let messages = readMessages(userId)
   if (messages.length == 0) {
@@ -403,11 +550,20 @@ export function getAiAvatarConversation(userId: number, profile: any): any {
   return success(resolved)
 }
 
-export function sendAiAvatarMessage(userId: number, content: string, profile: any): any {
+export async function sendAiAvatarMessage(userId: number, content: string, profile: any): Promise<any> {
   const question = content != null ? String(content).trim() : ''
   if (question.length == 0) return failure('请输入问题', 'EMPTY_MESSAGE')
   if (question.length > 300) return failure('问题不能超过 300 个字', 'MESSAGE_TOO_LONG')
   if (userId <= 0 || profile == null || typeof profile != 'object') return failure('AI 分身资料暂时无法读取', 'PROFILE_REQUIRED')
+
+  if (!USE_MOCK) {
+    const key = 'ai-avatar-' + userId + '-' + Date.now() + '-' + Math.floor(Math.random() * 100000)
+    const sendRes = await sendServerMessage(userId, question, key)
+    if (!sendRes.success || sendRes.data == null) return sendRes
+    const historyRes = await loadServerConversation(userId, profile)
+    if (!historyRes.success || historyRes.data == null) return historyRes
+    return success({ messages: historyRes.data, result: sendRes.data }, sendRes.message)
+  }
   profile = enrichProfileWithOwnerAnswers(profile, profile.restricted === true)
   let messages = readMessages(userId)
   if (messages.length == 0) {
@@ -434,8 +590,9 @@ export function sendAiAvatarMessage(userId: number, content: string, profile: an
   return success({ messages: messages, result: result })
 }
 
-export function resolveAiAvatarHandoffs(userId: number, profile: any): any {
+export async function resolveAiAvatarHandoffs(userId: number, profile: any): Promise<any> {
   if (userId <= 0 || profile == null || typeof profile != 'object') return failure('AI 分身资料暂时无法读取', 'PROFILE_REQUIRED')
+  if (!USE_MOCK) return getAiAvatarConversation(userId, profile)
   profile = enrichProfileWithOwnerAnswers(profile, profile.restricted === true)
   const messages = readMessages(userId)
   const resolved = resolvePendingMessages(messages, profile)
@@ -443,8 +600,19 @@ export function resolveAiAvatarHandoffs(userId: number, profile: any): any {
   return success(resolved)
 }
 
-export function clearAiAvatarConversation(userId: number): any {
+export async function clearAiAvatarConversation(userId: number): Promise<any> {
   if (userId <= 0) return failure('用户资料不存在', 'USER_NOT_FOUND')
+  if (!USE_MOCK) {
+    const sessionId = readServerSessionId(userId)
+    if (sessionId <= 0) return success([], 'AI 分身聊天记录已清空')
+    const res = await request({
+      url: '/users/' + userId + '/ai-avatar/sessions/' + sessionId,
+      method: 'DELETE'
+    })
+    if (!res.success) return res
+    clearServerSessionId(userId)
+    return success([], 'AI 分身聊天记录已清空')
+  }
   try { uni.removeStorageSync(storageKey(userId)) } catch (e) { return failure('清空记录失败') }
   return success([], 'AI 分身聊天记录已清空')
 }
@@ -453,12 +621,17 @@ export function getAiAvatarOwnerId(): number {
   return currentUserId()
 }
 
-export function getAiAvatarOwnerDashboard(ownerId: number = 0): any {
+export async function getAiAvatarOwnerDashboard(ownerId: number = 0): Promise<any> {
   if (getAccessToken() == '') return failure('请先登录后管理 AI 分身', 'AUTH_REQUIRED')
   const currentId = currentUserId()
   const id = ownerId > 0 ? ownerId : currentId
   if (currentId <= 0 || id <= 0) return failure('当前账号资料暂时无法读取', 'USER_REQUIRED')
   if (id != currentId) return failure('无权管理其他账号的 AI 分身', 'FORBIDDEN')
+  if (!USE_MOCK) {
+    const res = await request({ url: '/users/me/ai-avatar/dashboard', method: 'GET' })
+    if (!res.success || res.data == null) return res
+    return success(normalizeServerDashboard(res.data), res.message)
+  }
   const state = readOwnerState(id)
   return success({
     chatRecords: state.chatRecords,
@@ -486,7 +659,7 @@ function updateVisitorHandoff(conversationKey: string, messageId: string, answer
   } catch (e) {}
 }
 
-export function submitAiAvatarOwnerAnswer(ownerId: number, questionId: string, answer: string): any {
+export async function submitAiAvatarOwnerAnswer(ownerId: number, questionId: string, answer: string): Promise<any> {
   if (getAccessToken() == '') return failure('请先登录后管理 AI 分身', 'AUTH_REQUIRED')
   const currentId = currentUserId()
   const id = ownerId > 0 ? ownerId : currentId
@@ -495,6 +668,15 @@ export function submitAiAvatarOwnerAnswer(ownerId: number, questionId: string, a
   if (id != currentId) return failure('无权管理其他账号的 AI 分身', 'FORBIDDEN')
   if (value == '') return failure('回答不能为空', 'EMPTY_ANSWER')
   if (value.length > 500) return failure('回答不能超过 500 个字', 'ANSWER_TOO_LONG')
+  if (!USE_MOCK) {
+    const res = await request({
+      url: '/users/me/ai-avatar/questions/' + Number(questionId) + '/answer',
+      method: 'POST',
+      data: { answer: value }
+    })
+    if (!res.success || res.data == null) return res
+    return success(normalizeServerDashboard(res.data), res.message)
+  }
   const state = readOwnerState(id)
   let question = null
   for (let i = 0; i < state.pendingQuestions.length; i++) {
@@ -525,7 +707,7 @@ export function submitAiAvatarOwnerAnswer(ownerId: number, questionId: string, a
   return getAiAvatarOwnerDashboard(id)
 }
 
-export function addAiAvatarOwnerAnswer(ownerId: number, question: string, answer: string): any {
+export async function addAiAvatarOwnerAnswer(ownerId: number, question: string, answer: string): Promise<any> {
   if (getAccessToken() == '') return failure('请先登录后管理 AI 分身', 'AUTH_REQUIRED')
   const currentId = currentUserId()
   const id = ownerId > 0 ? ownerId : currentId
@@ -537,6 +719,15 @@ export function addAiAvatarOwnerAnswer(ownerId: number, question: string, answer
   if (q.length > 50) return failure('问题不能超过 50 个字', 'QUESTION_TOO_LONG')
   if (value == '') return failure('回答不能为空', 'EMPTY_ANSWER')
   if (value.length > 500) return failure('回答不能超过 500 个字', 'ANSWER_TOO_LONG')
+  if (!USE_MOCK) {
+    const res = await request({
+      url: '/users/me/ai-avatar/questions',
+      method: 'POST',
+      data: { question: q, answer: value }
+    })
+    if (!res.success || res.data == null) return res
+    return success(normalizeServerDashboard(res.data), res.message)
+  }
   const state = readOwnerState(id)
   for (let i = 0; i < state.myAnswers.length; i++) {
     if (normalizeQuestion(state.myAnswers[i].question) == normalizeQuestion(q)) {
@@ -551,22 +742,32 @@ export function addAiAvatarOwnerAnswer(ownerId: number, question: string, answer
   return getAiAvatarOwnerDashboard(id)
 }
 
-export function deleteAiAvatarOwnerQuestion(ownerId: number, questionId: string): any {
+export async function deleteAiAvatarOwnerQuestion(ownerId: number, questionId: string): Promise<any> {
   if (getAccessToken() == '') return failure('请先登录后管理 AI 分身', 'AUTH_REQUIRED')
   const currentId = currentUserId()
   const id = ownerId > 0 ? ownerId : currentId
   if (currentId <= 0 || id != currentId) return failure('无权管理其他账号的 AI 分身', 'FORBIDDEN')
+  if (!USE_MOCK) {
+    const res = await request({ url: '/users/me/ai-avatar/questions/' + Number(questionId), method: 'DELETE' })
+    if (!res.success) return res
+    return getAiAvatarOwnerDashboard(id)
+  }
   const state = readOwnerState(id)
   state.pendingQuestions = state.pendingQuestions.filter((item: any) => String(item.id) != String(questionId))
   writeOwnerState(id, state)
   return getAiAvatarOwnerDashboard(id)
 }
 
-export function deleteAiAvatarOwnerAnswer(ownerId: number, answerId: string): any {
+export async function deleteAiAvatarOwnerAnswer(ownerId: number, answerId: string): Promise<any> {
   if (getAccessToken() == '') return failure('请先登录后管理 AI 分身', 'AUTH_REQUIRED')
   const currentId = currentUserId()
   const id = ownerId > 0 ? ownerId : currentId
   if (currentId <= 0 || id != currentId) return failure('无权管理其他账号的 AI 分身', 'FORBIDDEN')
+  if (!USE_MOCK) {
+    const res = await request({ url: '/users/me/ai-avatar/questions/' + Number(answerId), method: 'DELETE' })
+    if (!res.success) return res
+    return getAiAvatarOwnerDashboard(id)
+  }
   const state = readOwnerState(id)
   state.myAnswers = state.myAnswers.filter((item: any) => String(item.id) != String(answerId))
   writeOwnerState(id, state)
