@@ -301,6 +301,12 @@ const formatIncome = (raw: any): string => {
 	const text = '' + raw
 	const amount = Number(text)
 	if (!isNaN(amount) && text.trim() != '') {
+		// 初始登录问卷把收入文本换算成数字存储，这里反向映射回登录时的枚举文案，保证口径一致
+		if (amount == 50000) return '小于10w'
+		if (amount == 150000) return '10-20w'
+		if (amount == 400000) return '30-50w'
+		if (amount == 750000) return '50-100w'
+		if (amount >= 1000000) return '100w以上'
 		const wan = Math.round(amount / 1000) / 10
 		return (wan % 1 == 0 ? '' + Math.round(wan) : '' + wan) + 'w'
 	}

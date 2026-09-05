@@ -75,6 +75,7 @@
 				<view class="preview-list">
 					<view class="preview-row"><text class="preview-label">性别</text><text class="preview-value">{{ completionText('gender', genderText == '未选择' ? '' : genderText, '未填写', 7) }}</text></view>
 					<view class="preview-row"><text class="preview-label">年龄</text><text class="preview-value">{{ completionText('birthday', agePreview == '未填写' ? '' : agePreview, '未填写', 7) }}</text></view>
+				<view class="preview-row"><text class="preview-label">星座</text><text class="preview-value">{{ constellationText != '' ? constellationText : '未填写' }}</text></view>
 					<view class="preview-row"><text class="preview-label">身高</text><text class="preview-value">{{ completionText('height', formData.height != '' ? formData.height + ' cm' : '', '未填写', 4) }}</text></view>
 					<view class="preview-row"><text class="preview-label">体重</text><text class="preview-value">{{ completionText('weight', formData.weight != '' ? formData.weight + ' kg' : '', '未填写', 4) }}</text></view>
 					<view class="preview-row"><text class="preview-label">学历</text><text class="preview-value">{{ completionText('education', educationText == '未选择' ? '' : educationText, '未填写', 4) }}</text></view>
@@ -138,17 +139,13 @@
 			<view class="section-card qa-card">
 				<text class="section-title">关于我</text>
 				<text class="section-caption">你的回答将展示在个人主页，帮助对方更深入了解你</text>
-				<view class="qa-item">
-					<text class="qa-question">你理想中的另一半是什么样的</text>
-					<view class="qa-answer-row"><text class="qa-hint">点击填写你的回答...</text><text class="qa-edit-icon">✎</text></view>
-				</view>
-				<view class="qa-item">
-					<text class="qa-question">喜欢什么运动</text>
-					<view class="qa-answer-row"><text class="qa-hint">点击填写你的回答...</text><text class="qa-edit-icon">✎</text></view>
-				</view>
-				<view class="qa-item">
-					<text class="qa-question">你期待的爱情是什么样子的</text>
-					<view class="qa-answer-row"><text class="qa-hint">点击填写你的回答...</text><text class="qa-edit-icon">✎</text></view>
+				<view class="qa-item" v-for="(qa, index) in qaItems" :key="qa.id" @tap="openQaEditor(index)">
+					<text class="qa-question">{{ qa.question }}</text>
+					<view class="qa-answer-row">
+						<text class="qa-hint" v-if="textValue(qa.answer) == ''">点击填写你的回答...</text>
+						<text class="qa-answer-text" v-else>{{ qa.answer }}</text>
+						<text class="qa-edit-icon">✎</text>
+					</view>
 				</view>
 			</view>
 
@@ -252,6 +249,25 @@
 				<view class="sheet-footer">
 					<view class="cancel-button" @tap="cancelDetailEdit"><text>取消</text></view>
 					<view class="save-button" :class="{ disabled: saving || uploadingMedia }" @tap="handleSave"><text>{{ saving ? '保存中...' : '保存' }}</text></view>
+				</view>
+			</view>
+		</view>
+
+		<view class="sheet-overlay" v-if="qaSheetVisible" @tap="closeQaEditor">
+			<view class="sheet-panel" @tap.stop>
+				<view class="sheet-handle"></view>
+				<view class="sheet-nav">
+					<text class="sheet-title">编辑回答</text>
+					<text class="sheet-close" @tap="closeQaEditor">✕</text>
+				</view>
+				<view class="qa-sheet-body">
+					<text class="qa-sheet-question">{{ qaEditingQuestion }}</text>
+					<textarea class="qa-sheet-textarea" :value="qaDraft" maxlength="300" placeholder="真诚的表达最能打动人..." @input="onQaDraftInput"></textarea>
+					<text class="qa-sheet-count">{{ qaDraft.length }}/300</text>
+				</view>
+				<view class="sheet-footer">
+					<view class="cancel-button" @tap="closeQaEditor"><text>取消</text></view>
+					<view class="save-button" :class="{ disabled: qaSaving }" @tap="saveQaAnswer"><text>{{ qaSaving ? '保存中...' : '保存' }}</text></view>
 				</view>
 			</view>
 		</view>
@@ -388,6 +404,12 @@
 	const incomeDisplay = (value: any): string => {
 		const numeric = Number(value)
 		if (isNaN(numeric) || numeric <= 0) return ''
+		// 初始登录问卷把收入文本换算成数字存储，这里反向映射回登录时的枚举文案，保证口径一致
+		if (numeric == 50000) return '小于10w'
+		if (numeric == 150000) return '10-20w'
+		if (numeric == 400000) return '30-50w'
+		if (numeric == 750000) return '50-100w'
+		if (numeric >= 1000000) return '100w以上'
 		const wan = numeric / 10000
 		return (wan % 1 == 0 ? '' + wan : wan.toFixed(1)) + 'w'
 	}
@@ -447,6 +469,7 @@
 		formData.value.isMarried = data.is_married
 		formData.value.mbti = textValue(data.mbti)
 		formData.value.introduction = textValue(data.self_intro)
+		applyQaAnswers(data.qa_answers)
 		formData.value.wechat = textValue(data.wechat)
 		formData.value.interestTags = data.interest_tags != null ? data.interest_tags : []
 		formData.value.personalityTags = data.personality_tags != null ? data.personality_tags : []
@@ -615,6 +638,18 @@
 	const occupationPreview = computed(() => {
 		const parts = [formData.value.occupation, formData.value.industry].filter((v: any) => v != null && ('' + v).trim() != '')
 		return parts.length > 0 ? parts.join(' · ') : '未填写'
+	})
+	// 星座由生日自动推算，不独立手选，保证与生日永远一致
+	const constellationText = computed(() => {
+		const birthday = textValue(formData.value.birthday)
+		if (birthday.length < 10) return ''
+		const month = Number(birthday.substring(5, 7))
+		const day = Number(birthday.substring(8, 10))
+		if (isNaN(month) || isNaN(day) || month < 1 || month > 12 || day < 1 || day > 31) return ''
+		const signs: string[] = ['摩羯', '水瓶', '双鱼', '白羊', '金牛', '双子', '巨蟹', '狮子', '处女', '天秤', '天蝎', '射手']
+		const boundaries: number[] = [20, 19, 21, 20, 21, 22, 23, 23, 23, 24, 23, 22]
+		const idx = day >= boundaries[month - 1] ? month % 12 : month - 1
+		return signs[idx] + '座'
 	})
 	const incomePreview = computed(() => formData.value.income != null && ('' + formData.value.income).trim() != '' ? ('' + formData.value.income) : '未填写')
 	const incomePreviewText = computed(() => formData.value.income != null && ('' + formData.value.income).trim() != '' ? ('' + formData.value.income) : '请选择')
@@ -938,6 +973,83 @@
 			saving.value = false
 		}
 	}
+	/* ==================== 关于我·问答编辑 ==================== */
+	// 云端字段：qa_answers=[{question_id, question, answer}]，随 PATCH /users/me/profile 提交；
+	// 本地兜底：同步写 storage，云端尚未支持该字段或请求失败时，回答也不会丢。
+	const QA_STORAGE_KEY = 'xsa_own_qa_answers_v1'
+	const qaItems = ref([
+		{ id: 1, question: '你理想中的另一半是什么样的', answer: '' },
+		{ id: 2, question: '喜欢什么运动', answer: '' },
+		{ id: 3, question: '你期待的爱情是什么样子的', answer: '' }
+	])
+	const qaSheetVisible = ref(false)
+	const qaEditingIndex = ref(-1)
+	const qaEditingQuestion = ref('')
+	const qaDraft = ref('')
+	const qaSaving = ref(false)
+	const buildQaPayload = (editIndex: number, nextAnswer: string): any[] => {
+		const payload: any[] = []
+		for (let i = 0; i < qaItems.value.length; i++) {
+			const qa = qaItems.value[i]
+			payload.push({ question_id: qa.id, question: qa.question, answer: i == editIndex ? nextAnswer : textValue(qa.answer) })
+		}
+		return payload
+	}
+	const fillQaFromList = (list: any[]) => {
+		for (let i = 0; i < qaItems.value.length; i++) {
+			const item = qaItems.value[i]
+			for (let j = 0; j < list.length; j++) {
+				const row = list[j]
+				if (row == null) continue
+				const qid = row.question_id != null ? Number(row.question_id) : (row.id != null ? Number(row.id) : 0)
+				if (qid == item.id && row.answer != null && textValue(row.answer) != '') item.answer = textValue(row.answer)
+			}
+		}
+	}
+	const applyQaAnswers = (raw: any) => {
+		if (raw != null && Array.isArray(raw)) {
+			fillQaFromList(raw as any[])
+			return
+		}
+		try {
+			const cached = uni.getStorageSync(QA_STORAGE_KEY) as any
+			if (cached != null && Array.isArray(cached)) fillQaFromList(cached as any[])
+		} catch (e: any) { }
+	}
+	const openQaEditor = (index: number) => {
+		const item = qaItems.value[index]
+		if (item == null) return
+		qaEditingIndex.value = index
+		qaEditingQuestion.value = item.question
+		qaDraft.value = textValue(item.answer)
+		qaSheetVisible.value = true
+	}
+	const closeQaEditor = () => { qaSheetVisible.value = false }
+	const onQaDraftInput = (event: any) => { qaDraft.value = event != null && event.detail != null ? '' + event.detail.value : '' }
+	const saveQaAnswer = async () => {
+		if (qaSaving.value) return
+		const index = qaEditingIndex.value
+		if (index < 0 || index >= qaItems.value.length) return
+		qaSaving.value = true
+		const nextAnswer = textValue(qaDraft.value).trim()
+		const payload = buildQaPayload(index, nextAnswer)
+		try {
+			const res = await updateOwnProfile({ qa_answers: payload })
+			if (!res.success) throw new Error(res.message != null ? '' + res.message : 'save failed')
+			uni.setStorageSync(QA_STORAGE_KEY, payload)
+			qaItems.value[index].answer = nextAnswer
+			qaSheetVisible.value = false
+			uni.showToast({ title: '回答已保存', icon: 'success' })
+		} catch (e: any) {
+			// 云端失败时兜底存本地，返回资料页仍可回显
+			uni.setStorageSync(QA_STORAGE_KEY, payload)
+			qaItems.value[index].answer = nextAnswer
+			qaSheetVisible.value = false
+			uni.showToast({ title: '已本地保存，云端同步失败', icon: 'none' })
+		} finally {
+			qaSaving.value = false
+		}
+	}
 	const goTagsEdit = (type: string = 'all') => uni.navigateTo({
 		url: '/pagesSub/userExtra/mytags/edit?type=' + type,
 		events: {
@@ -981,6 +1093,7 @@
 			hometown_city_code: textValue(formData.value.hometownCityCode) || null,
 			hometown_district_code: textValue(formData.value.hometownDistrictCode) || null,
 			self_intro: textValue(formData.value.introduction) || null,
+			qa_answers: buildQaPayload(-1, ''),
 			interest_tags: formData.value.interestTags.length >= 3 ? formData.value.interestTags.slice(0, 5) : null,
 			personality_tags: formData.value.personalityTags.length >= 3 ? formData.value.personalityTags.slice(0, 5) : null,
 			mbti: textValue(formData.value.mbti).toUpperCase() || null
@@ -1185,7 +1298,12 @@
 .qa-question { font-size: 13px; font-weight: 600; color: var(--ink); }
 .qa-answer-row { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
 .qa-hint { font-size: 12px; color: var(--muted); }
-.qa-edit-icon { font-size: 14px; color: var(--sage); }
+.qa-answer-text { flex: 1; font-size: 13px; color: var(--ink2); line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.qa-edit-icon { font-size: 14px; color: var(--sage); margin-left: 8px; flex-shrink: 0; }
+.qa-sheet-body { padding: 4px 20px 0 20px; display: flex; flex-direction: column; gap: 10px; }
+.qa-sheet-question { font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.5; }
+.qa-sheet-textarea { width: 100%; height: 140px; padding: 12px; border-radius: 12px; background: var(--warm); font-size: 14px; color: var(--ink); line-height: 1.6; box-sizing: border-box; }
+.qa-sheet-count { font-size: 12px; color: var(--muted); text-align: right; }
 
 /* Bottom bar */
 .cancel-button { flex: 1; height: 48px; border-radius: 24px; display: flex; align-items: center; justify-content: center; background: var(--warm); color: var(--ink2); font-size: 15px; font-weight: 600; }

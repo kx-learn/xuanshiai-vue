@@ -39,6 +39,10 @@
 						<text class="progress-percent">{{ user.vipProgress }}%</text>
 					</view>
 				</view>
+				<view class="edit-profile-btn" @tap="onEditProfile">
+					<text class="edit-profile-text">编辑资料</text>
+					<text class="edit-profile-arrow">›</text>
+				</view>
 			</view>
 
 			<!-- 统计数据行 -->
@@ -139,6 +143,15 @@
 		</scroll-view>
 	</view>
 
+	<!-- AI画像悬浮球：墨印印章式，点击按状态分流（有画像成稿→结果页，无→墨相师引导） -->
+	<view class="ai-portrait-fab" @tap="onAiPortrait">
+		<view class="ai-portrait-fab-ball">
+			<view class="ai-portrait-fab-dot"></view>
+			<text class="ai-portrait-fab-seal">像</text>
+		</view>
+		<text class="ai-portrait-fab-label">AI画像</text>
+	</view>
+
 	<!-- 邀请分享弹窗：复用“我的任务.pen”的邀请分享弹窗-遮罩 -->
 	<view v-if="inviteShareVisible" class="invite-share-mask" @tap="closeInviteShare">
 		<view class="invite-share-sheet" @tap.stop>
@@ -165,7 +178,7 @@
 
 <script setup lang="uts">
 import XsaTabBar from '@/components/XsaTabBar.uvue'
-import { getProfileOverview, getProfileCompletion, getMembershipStatus } from '@/api'
+import { getProfileOverview, getProfileCompletion, getMembershipStatus, getPortraitNarrative } from '@/api'
 import { resolveMediaUrl } from '@/api/config.uts'
 
 const systemInfo = uni.getSystemInfoSync()
@@ -250,6 +263,28 @@ const onSwitchToParent = () => {
 
 const onViewMyProfile = () => {
 	uni.navigateTo({ url: '/pagesSub/userExtra/user/edit' })
+}
+
+const onEditProfile = () => {
+	uni.navigateTo({
+		url: '/pagesSub/userExtra/user/edit',
+		fail: () => { uni.showToast({ title: '编辑资料打开失败，请重试', icon: 'none' }) }
+	})
+}
+
+const onAiPortrait = () => {
+	getPortraitNarrative('personal').then((res: any) => {
+		const hasPortrait = res != null && res.success == true && res.data != null
+		uni.navigateTo({
+			url: hasPortrait ? '/pagesSub/profileExtra/my-portrait-result?subject=personal' : '/pagesSub/profileExtra/my-portrait-master?subject=personal',
+			fail: () => { uni.showToast({ title: 'AI画像打开失败，请重试', icon: 'none' }) }
+		})
+	}).catch(() => {
+		uni.navigateTo({
+			url: '/pagesSub/profileExtra/my-portrait-master?subject=personal',
+			fail: () => { uni.showToast({ title: 'AI画像打开失败，请重试', icon: 'none' }) }
+		})
+	})
 }
 
 const onOpenVIP = () => {
@@ -390,8 +425,8 @@ const mainMenuItems = [
 	{ iconClass: 'ic ic-social ic-huodong', iconBg: '#FEF3E4', label: '我的报名', action: onMyRegistration },
 	{ iconClass: 'ic ic-sys ic-shiming', iconBg: '#FEF3E4', label: '诚信认证', action: onCertification },
 	{ iconClass: 'ic ic-sys ic-fenxiang', iconBg: '#FEF3E4', label: '推荐给好友', action: onInviteFriend },
-	{ iconClass: 'ic ic-me ic-shezhi', iconBg: '#FEF3E4', label: '设置', action: onMenuSettings },
 	{ iconClass: 'ic ic-home ic-star', iconBg: '#E4EDE8', label: '情感实验室', action: onEmotionLab },
+	{ iconClass: 'ic ic-me ic-shezhi', iconBg: '#FEF3E4', label: '设置', action: onMenuSettings },
 ]
 
 const bottomMenuItems = [
@@ -496,6 +531,81 @@ page {
 	gap: 14px;
 	width: 100%;
 	padding-top: 8px;
+}
+
+/* ==================== 编辑资料入口（描边胶囊） ==================== */
+.edit-profile-btn {
+	flex-shrink: 0;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 3px;
+	padding: 6px 12px;
+	border: 1px solid var(--profile-accent);
+	border-radius: 999px;
+	background-color: var(--profile-card);
+}
+
+.edit-profile-text {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--profile-accent);
+	line-height: 1.4;
+}
+
+.edit-profile-arrow {
+	font-size: 13px;
+	color: var(--profile-accent);
+	line-height: 1.4;
+}
+
+/* ==================== AI画像悬浮球（墨印印章式） ==================== */
+.ai-portrait-fab {
+	position: fixed;
+	right: 28rpx;
+	bottom: 220rpx;
+	z-index: 30;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6rpx;
+}
+
+.ai-portrait-fab-ball {
+	position: relative;
+	width: 104rpx;
+	height: 104rpx;
+	border-radius: 52rpx;
+	background-color: #FFFFFF;
+	border: 2rpx solid #E3D3CC;
+	box-shadow: var(--shadow-md);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.ai-portrait-fab-seal {
+	font-family: var(--serif);
+	font-size: 40rpx;
+	font-weight: 600;
+	color: var(--profile-dark);
+	line-height: 1;
+}
+
+.ai-portrait-fab-dot {
+	position: absolute;
+	top: 10rpx;
+	right: 10rpx;
+	width: 16rpx;
+	height: 16rpx;
+	border-radius: 8rpx;
+	background-color: var(--profile-rose);
+}
+
+.ai-portrait-fab-label {
+	font-size: 22rpx;
+	color: var(--profile-text-secondary);
+	line-height: 1.4;
 }
 
 .avatar-wrap {

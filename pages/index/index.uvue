@@ -645,25 +645,18 @@
 		</view>
 
 		<!-- ====== Sheets & Modals ====== -->
-		<XsaSheet :visible="aiVisible" title="AI 合拍度解读" @close="aiVisible = false">
-			<view class="ai-sheet">
-				<view class="ai-profile-note">
-					<text>完成情感实验室测试后，平台会结合双方已确认的资料生成更贴合的解读。</text>
-				</view>
-				<view class="ai-mbti-row">
-					<view class="ai-mbti-card"><text class="ai-mbti-label">你的 MBTI</text><text class="ai-mbti-type">INFP</text></view>
-					<text class="ai-mbti-x">×</text>
-					<view class="ai-mbti-card you"><text class="ai-mbti-label">TA 的 MBTI</text><text class="ai-mbti-type">{{ currentRecommendUser.mbti }}</text></view>
-				</view>
-				<view class="ai-score-big"><text>{{ currentRecommendUser.matchScore }}%</text></view>
-				<view class="ai-bars"><view v-for="b in aiBars" :key="b.label" class="ai-bar"><view class="ai-bar-head"><text>{{ b.label }}</text><text>{{ b.value }}%</text></view><view class="ai-bar-trk"><view class="ai-bar-fill" :style="{ width: b.value + '%' }"></view></view></view></view>
-				<view class="ai-interpret">
-					<view class="ai-interpret-head"><text class="ai-interpret-mark">✦</text><text class="ai-interpret-title">AI 解读</text></view>
-					<text class="ai-interpret-text">{{ aiInterpretation }}</text>
-				</view>
-				<view class="ai-tip"><text>基于公开资料与兴趣交集生成，不代表平台承诺结果。建议从共同兴趣或城市周末安排开始聊。</text></view>
-			</view>
-		</XsaSheet>
+		<!-- AI 匹配度解读：MBTI 配对解析小窗（顶部横线可拖拽调整高度，内容区可滚动） -->
+		<XsaAiMatchSheet
+			:visible="aiVisible"
+			my-name="你"
+			:my-avatar="myAvatar"
+			:my-mbti="myMbti"
+			:other-name="aiOtherName"
+			:other-avatar="aiOtherAvatar"
+			:other-mbti="aiOtherMbti"
+			:score="aiScore"
+			@close="aiVisible = false"
+		/>
 
 		<!-- 申请认识：统一 XsaApplySheet（与社区同源） -->
 		<XsaApplySheet
@@ -726,6 +719,8 @@
 	import XsaToast from '@/components/XsaToast.uvue'
 	import XsaApplySheet from '@/components/XsaApplySheet.uvue'
 	import XsaTabBar from '@/components/XsaTabBar.uvue'
+	import XsaAiMatchSheet from '@/components/XsaAiMatchSheet.uvue'
+	import { getEmotionLabSummary } from '@/api/emotionLab.uts'
 	import { guardRealName } from '@/utils/realNameGate.uts'
 	import { likeUser, blockUser, unblockUser, saveAiAvatarProfileSnapshot } from '@/api'
 	import { getDiscoveryRecommendations, getDiscoveryPlaza, getDynamicList, getDynamicDetail, getUserDetail, getOwnProfile, getProfileCompletion } from '@/api'
@@ -1091,30 +1086,56 @@
 			uni.navigateTo({ url: '/pagesSub/community/post-detail?id=' + postId })
 		}
 
-	// ========== AI 合拍度 ==========
+	// ========== AI 匹配度（MBTI 配对解析小窗） ==========
 	const aiVisible = ref(false)
-	const aiBars = computed(() => {
-		const score = Number(currentRecommendUser.value.matchScore || 0)
-		return [{ label: '关系目标', value: score }, { label: '生活节奏', value: score }, { label: '兴趣交集', value: score }]
+	const myMbti = ref('INFP')
+	const myAvatar = ref('')
+	const aiProfileLoaded = ref(false)
+
+	// 自己的 MBTI 优先取情感实验室已确认的类型，头像取自己的资料
+	const loadMyAiProfile = async () => {
+		if (aiProfileLoaded.value) return
+		try {
+			const summaryRes = await getEmotionLabSummary()
+			if (summaryRes.success && summaryRes.data != null) {
+				const source = (summaryRes.data as any).profileSource
+				const mbtiType = source != null && source.mbtiType != null ? '' + source.mbtiType : ''
+				if (mbtiType.length == 4) myMbti.value = mbtiType.toUpperCase()
+			}
+		} catch (error) { }
+		try {
+			const profileRes = await getOwnProfile()
+			if (profileRes.success && profileRes.data != null) {
+				const data = profileRes.data as any
+				const rawAvatar = data.avatar != null && data.avatar != '' ? '' + data.avatar : (data.profile != null && data.profile.avatar != null ? '' + data.profile.avatar : '')
+				if (rawAvatar != '') myAvatar.value = resolveMediaUrl(rawAvatar)
+			}
+		} catch (error) { }
+		aiProfileLoaded.value = true
+	}
+
+	const showAiScore = () => {
+		aiVisible.value = true
+		loadMyAiProfile()
+	}
+
+	const aiOtherName = computed((): string => {
+		const user = currentRecommendUser.value as any
+		return user.name != null ? '' + user.name : 'Ta'
 	})
-
-	const showAiScore = () => { aiVisible.value = true }
-
-	const aiInterpretation = computed((): string => {
+	const aiOtherAvatar = computed((): string => {
+		const user = currentRecommendUser.value as any
+		return user.avatar != null ? '' + user.avatar : ''
+	})
+	const aiOtherMbti = computed((): string => {
+		const user = currentRecommendUser.value as any
+		const mbti = user.mbti != null ? '' + user.mbti : ''
+		return mbti.length == 4 ? mbti.toUpperCase() : 'ENTP'
+	})
+	const aiScore = computed((): number => {
 		const user = currentRecommendUser.value as any
 		const score = Number(user.matchScore || 0)
-		const mbti = user.mbti != null && user.mbti != '' ? '' + user.mbti : ''
-		const tagList = user.interestTags != null ? user.interestTags as any[] : []
-		const interests = tagList.length > 0 ? tagList.join('、') : ''
-		const parts: string[] = []
-		if (mbti != '') {
-			if (score >= 80) parts.push('你们的MBTI组合沟通节奏容易同频，初次聊天不会尴尬')
-			else parts.push('你们的MBTI组合需要一点时间磨合节奏，别急着下结论')
-		}
-		if (interests != '') parts.push('在' + interests + '上你们交集明显，很适合作为第一次聊天的切入点')
-		if (score >= 80) parts.push('整体契合度较高，建议先从共同话题开始慢慢了解')
-		else parts.push('契合度还有上升空间，多聊聊彼此的生活节奏会更清楚')
-		return parts.join('。') + '。'
+		return isNaN(score) ? 0 : score
 	})
 
 	const openAiAvatarForCurrentUser = () => {
@@ -1590,18 +1611,8 @@
 .vip-cta-hint { font-size: 22rpx; color: #888888; text-align: center; }
 
 /* ============================================================
-   AI Sheet
+   AI Sheet（已迁移至 components/XsaAiMatchSheet.uvue）
    ============================================================ */
-.ai-sheet { display: flex; flex-direction: column; gap: 16px; }
-.ai-profile-note { padding: 14px; border-radius: 12px; background: var(--accent-bg); color: var(--ink2); font-size: 12px; line-height: 1.6; }
-.ai-score-big text { font-size: 48px; font-weight: 900; color: var(--accent2); font-family: var(--serif); }
-.ai-score-big { text-align: center; }
-.ai-bars { display: flex; flex-direction: column; gap: 10px; }
-.ai-bar { display: flex; flex-direction: column; gap: 4px; }
-.ai-bar-head { display: flex; justify-content: space-between; font-size: 11px; }
-.ai-bar-trk { height: 6px; border-radius: 3px; background: var(--warm); overflow: hidden; }
-.ai-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.4s; }
-.ai-tip { padding: 12px; background: var(--accent-bg); border-radius: 8px; font-size: 11px; line-height: 1.6; color: var(--ink2); }
 
 /* ============================================================
    Modal

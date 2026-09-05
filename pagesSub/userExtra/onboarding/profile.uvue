@@ -326,6 +326,8 @@
 	const buildProfilePayload = (): any => {
 		const hometown = locationCodesByQuestion.value[0]
 		const residence = locationCodesByQuestion.value[1]
+		// 注册页的性别只是本地选择并未上报，这里是新用户性别首次落库的唯一入口，必须携带；
+		// 老账号服务端已存性别时会拒绝该字段，由 nextStep 的重试逻辑剔除后再提交。
 		const gender = selections.value[0] == '男' ? 1 : selections.value[0] == '女' ? 2 : null
 		const birthday = selections.value[1]
 		const heightText = selections.value[4].replace('cm', '')
@@ -333,7 +335,7 @@
 		const educationMap: any = { '大专': 4, '本科': 3, '硕士': 2, '博士': 1, '高中': 5, '技校': 6, '初中': 7, '小学': 8 }
 		const marriageMap: any = { '未婚': 1, '离异': 2, '丧偶': 3 }
 		const incomeMap: any = { '小于10w': 50000, '10-20w': 150000, '30-50w': 400000, '50-100w': 750000, '100w以上': 1000000 }
-		const payload: any = {
+		const rawPayload: any = {
 			gender,
 			birthday,
 			height: Number(heightText),
@@ -348,6 +350,12 @@
 			residence_province_code: residence.province,
 			residence_city_code: residence.city,
 			residence_district_code: residence.district
+		}
+		// 「保密」等空值字段不随 PATCH 提交，避免服务端对 null 校验报错。
+		const payload: any = {}
+		const rawKeys = Object.keys(rawPayload)
+		for (let i = 0; i < rawKeys.length; i++) {
+			if (rawPayload[rawKeys[i]] != null) payload[rawKeys[i]] = rawPayload[rawKeys[i]]
 		}
 		return payload
 	}
@@ -366,7 +374,19 @@
 		}
 		const payload = buildProfilePayload()
 		console.log('[Onboarding] profile payload', payload)
-		const res = await updateOwnProfile(payload)
+		let res = await updateOwnProfile(payload)
+		if (!res.success) {
+			// 防御：服务端对性别等已提交字段返回修改禁令时，剔除该字段重试一次。
+			const firstMessage = res.message != null ? '' + res.message : ''
+			if (firstMessage.indexOf('性别') >= 0 && payload.gender != null) {
+				const retryPayload: any = {}
+				const payloadKeys = Object.keys(payload)
+				for (let i = 0; i < payloadKeys.length; i++) {
+					if (payloadKeys[i] != 'gender') retryPayload[payloadKeys[i]] = payload[payloadKeys[i]]
+				}
+				res = await updateOwnProfile(retryPayload)
+			}
+		}
 		if (!res.success) {
 			uni.showToast({ title: res.message != null ? '' + res.message : '资料保存失败，请重试', icon: 'none' })
 			return

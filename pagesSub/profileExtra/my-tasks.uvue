@@ -144,7 +144,8 @@ const purchasePackages: PurchasePackage[] = [
 ]
 const exchangeItems: ExchangeItem[] = [
 	{ key: 'apply', name: '申请认识次数', cost: 50 },
-	{ key: 'plane', name: '纸飞机', cost: 30 }
+	{ key: 'plane_catch', name: '捡纸飞机次数', cost: 50 },
+	{ key: 'plane_throw', name: '扔纸飞机次数', cost: 50 }
 ]
 const drawBlessings: DrawBlessing[] = [
 	{ number: '01', title: '静候花开签', message: '愿你今天从容表达，也被认真倾听。' },

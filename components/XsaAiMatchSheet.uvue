@@ -1,0 +1,570 @@
+<template>
+	<view class="ai-match-overlay" :class="{ open: visible }" @click="handleClose">
+		<view class="ai-match-sheet" :class="{ dragging: isDragging }" :style="{ height: sheetHeight + '%' }" @click.stop>
+			<!-- 顶部拖拽区：按住横线上下调整小窗显示区域 -->
+			<view
+				class="drag-zone"
+				@touchstart="onDragStart"
+				@touchmove.stop.prevent="onDragMove"
+				@touchend="onDragEnd"
+				@touchcancel="onDragEnd"
+			>
+				<view class="drag-bar"></view>
+				<view class="sheet-head">
+					<text class="sheet-title">AI 匹配度解读</text>
+					<view class="close-btn" @click="handleClose">
+						<text>✕</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 内容区：scroll-view 保证小程序内可滚动 -->
+			<scroll-view class="sheet-scroll" scroll-y enhanced :show-scrollbar="false">
+				<view class="sheet-content">
+					<!-- 头部：双方头像 + MBTI + 匹配度 -->
+					<view class="pair-header">
+						<view class="pair-side">
+							<view class="pair-avatar">
+								<image v-if="myAvatar != ''" class="pair-avatar-img" :src="myAvatar" mode="aspectFill"></image>
+								<text v-else class="pair-avatar-fallback">我</text>
+							</view>
+							<view class="pair-type-chip"><text class="pair-type-text">{{ myMbti }}</text></view>
+						</view>
+						<view class="pair-center">
+							<text class="pair-score-label">匹配度</text>
+							<text class="pair-score">{{ scoreText }}</text>
+						</view>
+						<view class="pair-side">
+							<view class="pair-avatar">
+								<image v-if="otherAvatar != ''" class="pair-avatar-img" :src="otherAvatar" mode="aspectFill"></image>
+								<text v-else class="pair-avatar-fallback">Ta</text>
+							</view>
+							<view class="pair-type-chip"><text class="pair-type-text">{{ otherMbti }}</text></view>
+						</view>
+					</view>
+					<text class="pair-headline">{{ analysis.headline }}</text>
+
+					<!-- 合适的点 -->
+					<view class="section">
+						<view class="section-head">
+							<view class="section-mark"></view>
+							<text class="section-title">合适的点</text>
+						</view>
+						<view class="harmony-grid">
+							<view class="harmony-item" v-for="(item, index) in analysis.harmony" :key="'h' + index">
+								<text class="harmony-title">{{ item.title }}</text>
+								<text class="harmony-text">{{ item.text }}</text>
+							</view>
+						</view>
+					</view>
+
+					<view class="section-divider"></view>
+
+					<!-- 可能的摩擦 -->
+					<view class="section">
+						<view class="section-head">
+							<view class="section-mark"></view>
+							<text class="section-title">可能的摩擦</text>
+						</view>
+						<view class="friction-list">
+							<view class="friction-item" v-for="(item, index) in analysis.friction" :key="'f' + index">
+								<view class="friction-title-row">
+									<view class="friction-dot"></view>
+									<text class="friction-title">{{ item.title }}</text>
+								</view>
+								<text class="friction-line"><text class="friction-who">{{ myMbti }}</text>{{ item.mine }}</text>
+								<text class="friction-line"><text class="friction-who">{{ otherMbti }}</text>{{ item.theirs }}</text>
+							</view>
+						</view>
+					</view>
+
+					<view class="section-divider"></view>
+
+					<!-- 社交建议 -->
+					<view class="section">
+						<view class="section-head">
+							<view class="section-mark"></view>
+							<text class="section-title">社交建议</text>
+						</view>
+						<view class="advice-list">
+							<view class="advice-item" v-for="(group, index) in analysis.advice" :key="'a' + index">
+								<text class="advice-title">{{ group.title }}</text>
+								<view class="advice-points">
+									<view class="advice-point" v-for="(point, pi) in group.points" :key="'p' + index + '-' + pi">
+										<view class="point-dot"></view>
+										<text class="point-text">{{ point }}</text>
+									</view>
+								</view>
+							</view>
+						</view>
+					</view>
+
+					<view class="sheet-tip">
+						<text>基于双方 MBTI 与公开资料生成，仅供参考，不代表平台承诺任何关系结果。</text>
+					</view>
+				</view>
+			</scroll-view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+/**
+ * XsaAiMatchSheet - AI 匹配度解读小窗（MBTI 配对解析）
+ *
+ * - 非全屏小窗，默认 72% 高度；
+ * - 按住顶部横线（含标题区）上下拖拽，可调整小窗显示区域：
+ *   松手吸附 48% / 72% / 94% 三档，下拉幅度过大直接关闭；
+ * - 内容区使用 scroll-view scroll-y，修复微信小程序内普通 view
+ *   overflow 滚动失效的问题；
+ * - 视觉遵循 DESIGN.md 瓷白青瓷体系（衬线标题 + 细线分区）。
+ */
+import { getMbtiPairAnalysis } from '@/mock/aiMatch.uts'
+
+interface Props {
+	visible: boolean;
+	myName: string;
+	myAvatar: string;
+	myMbti: string;
+	otherName: string;
+	otherAvatar: string;
+	otherMbti: string;
+	score: number;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+	visible: false,
+	myName: '你',
+	myAvatar: '',
+	myMbti: 'INFP',
+	otherName: 'Ta',
+	otherAvatar: '',
+	otherMbti: '',
+	score: 0
+});
+
+const emit = defineEmits<{
+	close: []
+}>();
+
+const windowHeight = uni.getSystemInfoSync().windowHeight != null ? uni.getSystemInfoSync().windowHeight : 667
+
+/* 小窗高度（百分比），拖拽在 28% ~ 97% 之间连续变化，松手吸附档位 */
+const HEIGHT_STOPS: number[] = [48, 72, 94]
+const sheetHeight = ref(72)
+const isDragging = ref(false)
+let dragStartY = 0
+let dragStartHeight = 72
+
+const scoreText = computed(() : string => {
+	const score = Number(props.score || 0)
+	if (isNaN(score) || score <= 0) return '--'
+	return '' + Math.round(score) + '%'
+})
+
+const otherType = computed(() : string => {
+	const mbti = props.otherMbti
+	return mbti != null && mbti.length == 4 ? mbti : 'ENTP'
+})
+
+const analysis = computed(() : any => {
+	return getMbtiPairAnalysis(props.myMbti, otherType.value, props.myName, props.otherName)
+})
+
+const handleClose = () => {
+	emit('close')
+}
+
+const onDragStart = (event: any) => {
+	if (props.visible != true) return
+	const touch = event.touches != null && event.touches.length > 0 ? event.touches[0] : null
+	if (touch == null) return
+	dragStartY = Number(touch.clientY)
+	dragStartHeight = sheetHeight.value
+	isDragging.value = true
+}
+
+const onDragMove = (event: any) => {
+	if (isDragging.value != true) return
+	const touch = event.touches != null && event.touches.length > 0 ? event.touches[0] : null
+	if (touch == null) return
+	const deltaY = dragStartY - Number(touch.clientY)
+	const heightPercent = dragStartHeight + (deltaY / windowHeight) * 100
+	sheetHeight.value = Math.max(28, Math.min(97, heightPercent))
+}
+
+const onDragEnd = () => {
+	if (isDragging.value != true) return
+	isDragging.value = false
+	const current = sheetHeight.value
+	if (current < 40) {
+		sheetHeight.value = HEIGHT_STOPS[0]
+		emit('close')
+		return
+	}
+	let nearest = HEIGHT_STOPS[0]
+	for (let i = 1; i < HEIGHT_STOPS.length; i++) {
+		if (Math.abs(HEIGHT_STOPS[i] - current) < Math.abs(nearest - current)) nearest = HEIGHT_STOPS[i]
+	}
+	sheetHeight.value = nearest
+}
+
+watch(() => props.visible, (newValue: boolean) => {
+	if (newValue == true) {
+		sheetHeight.value = 72
+		isDragging.value = false
+	}
+})
+</script>
+
+<style scoped>
+/* 遮罩层：与 XsaSheet 同源 */
+.ai-match-overlay {
+	position: fixed;
+	z-index: 60;
+	inset: 0;
+	background: rgba(12, 19, 19, 0.36);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.22s;
+}
+
+.ai-match-overlay.open {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+/* 小窗面板：默认 72% 高度，拖拽中关闭高度过渡 */
+.ai-match-sheet {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 72%;
+	background: var(--paper);
+	border-radius: 24px 24px 0 0;
+	transform: translateY(104%);
+	transition: transform 0.28s cubic-bezier(0.2, 0.75, 0.25, 1), height 0.26s cubic-bezier(0.2, 0.75, 0.25, 1);
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+}
+
+.ai-match-overlay.open .ai-match-sheet {
+	transform: translateY(0);
+}
+
+.ai-match-sheet.dragging {
+	transition: transform 0.28s cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+/* 顶部拖拽区 */
+.drag-zone {
+	padding-top: 9px;
+	flex-shrink: 0;
+}
+
+.drag-bar {
+	width: 38px;
+	height: 4px;
+	background: var(--line);
+	border-radius: 2px;
+	margin: 0 auto 2px;
+}
+
+.sheet-head {
+	height: 44px;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+	padding: 0 18px;
+}
+
+.sheet-title {
+	max-width: calc(100% - 104px);
+	font-size: 20px;
+	font-family: var(--serif);
+	font-weight: 700;
+	color: var(--ink);
+	text-align: center;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.close-btn {
+	position: absolute;
+	top: 0;
+	right: 14px;
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.close-btn text {
+	font-size: 20px;
+	color: var(--muted);
+}
+
+/* 内容滚动区 */
+.sheet-scroll {
+	flex: 1;
+	min-height: 0;
+}
+
+.sheet-content {
+	padding: 4px 18px calc(24px + env(safe-area-inset-bottom));
+}
+
+/* 头部：头像 × 匹配度 × 头像 */
+.pair-header {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 4px 12px 0;
+}
+
+.pair-side {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+}
+
+.pair-avatar {
+	width: 62px;
+	height: 62px;
+	border-radius: 50%;
+	background: var(--warm);
+	border: 2px solid var(--surface);
+	overflow: hidden;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.pair-avatar-img {
+	width: 62px;
+	height: 62px;
+}
+
+.pair-avatar-fallback {
+	font-size: 18px;
+	color: var(--muted);
+	font-family: var(--serif);
+}
+
+.pair-type-chip {
+	padding: 2px 10px;
+	border-radius: 999px;
+	background: var(--accent-bg);
+}
+
+.pair-type-text {
+	font-size: 14px;
+	font-weight: 700;
+	color: var(--accent2);
+	letter-spacing: 1px;
+}
+
+.pair-center {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 2px;
+}
+
+.pair-score-label {
+	font-size: 13px;
+	color: var(--muted);
+	letter-spacing: 2px;
+}
+
+.pair-score {
+	font-size: 46px;
+	font-weight: 900;
+	color: var(--accent2);
+	font-family: var(--serif);
+	line-height: 1.1;
+}
+
+.pair-headline {
+	display: block;
+	margin-top: 12px;
+	font-size: 15px;
+	line-height: 1.7;
+	color: var(--ink2);
+	text-align: center;
+}
+
+/* 分区 */
+.section {
+	margin-top: 18px;
+}
+
+.section-divider {
+	margin-top: 18px;
+	border-top: 1px solid var(--line);
+}
+
+.section-head {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 12px;
+}
+
+.section-mark {
+	width: 3px;
+	height: 16px;
+	border-radius: 2px;
+	background: var(--accent);
+}
+
+.section-title {
+	font-size: 19px;
+	font-family: var(--serif);
+	font-weight: 700;
+	color: var(--ink);
+}
+
+/* 合适的点：两栏文字块 */
+.harmony-grid {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	justify-content: space-between;
+}
+
+.harmony-item {
+	width: 48%;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-bottom: 12px;
+}
+
+.harmony-title {
+	font-size: 16px;
+	font-weight: 700;
+	color: var(--accent2);
+}
+
+.harmony-text {
+	font-size: 15px;
+	line-height: 1.7;
+	color: var(--ink2);
+}
+
+/* 可能的摩擦 */
+.friction-list {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.friction-item {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+
+.friction-title-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 7px;
+}
+
+.friction-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 3px;
+	background: var(--heart-red);
+}
+
+.friction-title {
+	font-size: 16px;
+	font-weight: 700;
+	color: var(--ink);
+}
+
+.friction-line {
+	font-size: 15px;
+	line-height: 1.7;
+	color: var(--ink2);
+}
+
+.friction-who {
+	font-weight: 700;
+	color: var(--accent2);
+	margin-right: 4px;
+}
+
+/* 社交建议 */
+.advice-list {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.advice-item {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.advice-title {
+	font-size: 16px;
+	font-weight: 700;
+	color: var(--ink);
+	font-family: var(--serif);
+}
+
+.advice-points {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+
+.advice-point {
+	display: flex;
+	flex-direction: row;
+	align-items: flex-start;
+	gap: 7px;
+}
+
+.point-dot {
+	width: 5px;
+	height: 5px;
+	border-radius: 2.5px;
+	background: var(--soft);
+	margin-top: 11px;
+	flex-shrink: 0;
+}
+
+.point-text {
+	flex: 1;
+	font-size: 15px;
+	line-height: 1.7;
+	color: var(--ink2);
+}
+
+/* 底部提示 */
+.sheet-tip {
+	margin-top: 18px;
+	padding: 10px 12px;
+	border-radius: 8px;
+	background: var(--warm);
+	font-size: 13px;
+	line-height: 1.6;
+	color: var(--muted);
+}
+</style>

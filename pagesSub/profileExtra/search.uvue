@@ -54,8 +54,8 @@
 					<view class="condition-control location-row"><picker class="condition-picker" mode="selector" :range="residenceOptions" :value="residenceIndex" @change="onResidenceChange"><view class="picker-value"><text>{{ residenceOptions[residenceIndex] }}</text><text>⌄</text></view></picker><picker class="condition-add-picker" mode="selector" :range="residenceOptions" :value="residenceIndex" @change="onResidenceChange"><view class="condition-add"><text>＋ 添加</text></view></picker></view>
 				</view>
 				<view class="condition-group">
-					<text class="condition-label">年龄偏好 {{ ageOptions[ageIndex] }}</text>
-					<picker class="condition-range-picker" mode="selector" :range="ageOptions" :value="ageIndex" @change="onAgeChange"><view class="range-control"><view class="range-track"></view><view class="range-active age-range"></view><view class="range-handle range-start"></view><view class="range-handle range-end"></view></view></picker>
+					<text class="condition-label">年龄偏好 {{ ageReadout }}</text>
+					<view id="age-track" class="range-control" @touchstart="onAgeTrackTouchStart" @touchmove="onAgeTrackTouchMove" @touchend="onTrackTouchEnd"><view class="range-track"></view><view class="range-active" :style="{ left: ageLoPct + '%', width: ageZoneWidth + '%' }"></view><view class="range-handle" :style="{ left: ageLoPct + '%' }"></view><view class="range-handle" :style="{ left: ageHiPct + '%' }"></view></view>
 				</view>
 				<view class="condition-group condition-toggle-group">
 					<view class="condition-toggle-copy"><text class="condition-label">仅认证用户</text><text class="condition-help">优先展示已认证资料</text></view>
@@ -65,12 +65,15 @@
 				<view class="advanced-heading"><text class="condition-label">更多筛选</text></view>
 				<view class="filter-hint"><text>可按需要补充筛选条件</text></view>
 				<view class="condition-group advanced-condition-group">
-					<text class="condition-label">身高偏好 {{ heightOptions[heightIndex] }}</text>
-					<picker class="condition-range-picker" mode="selector" :range="heightOptions" :value="heightIndex" @change="onHeightChange"><view class="range-control"><view class="range-track"></view><view class="range-active full-range"></view><view class="range-handle full-start"></view><view class="range-handle full-end"></view></view></picker>
+					<text class="condition-label">身高偏好 {{ heightReadout }}</text>
+					<view id="height-track" class="range-control" @touchstart="onHeightTrackTouchStart" @touchmove="onHeightTrackTouchMove" @touchend="onTrackTouchEnd"><view class="range-track"></view><view class="range-active" :style="{ left: heightLoPct + '%', width: heightZoneWidth + '%' }"></view><view class="range-handle" :style="{ left: heightLoPct + '%' }"></view><view class="range-handle" :style="{ left: heightHiPct + '%' }"></view></view>
 				</view>
 				<view class="condition-group advanced-condition-group">
-					<text class="condition-label">收入偏好（年）</text>
-					<view class="condition-choice-grid income-grid"><view v-for="item in incomeOptions" :key="item" class="choice-chip" :class="{ selected: income === item }" @tap="income = item"><text>{{ item }}</text></view></view>
+					<text class="condition-label">收入偏好（年）{{ incomeReadout }}</text>
+					<view class="income-slider">
+						<view id="income-track" class="range-control" @touchstart="onIncomeTrackTouchStart" @touchmove="onIncomeTrackTouchMove" @touchend="onTrackTouchEnd"><view class="range-track"></view><view class="range-active" :style="{ left: incomeLoPct + '%', width: incomeZoneWidth + '%' }"></view><view class="range-handle" :style="{ left: incomeLoPct + '%' }"></view><view class="range-handle" :style="{ left: incomeHiPct + '%' }"></view></view>
+						<view class="range-scale"><text>5w</text><text>15w</text><text>30w</text><text>50w</text><text>100w</text><text>500w</text></view>
+					</view>
 				</view>
 				<view class="condition-group advanced-condition-group">
 					<text class="condition-label">家乡偏好</text>
@@ -157,7 +160,7 @@
 		<XsaSheet :visible="historyVisible" title="搜索历史" @close="historyVisible = false"><view class="history-list"><view v-if="historyItems.length === 0" class="history-empty"><text>暂无搜索历史</text></view><view v-for="item in historyItems" :key="item.id" class="history-item" @tap="applyHistory(item)"><text>{{ item.label }}</text></view></view></XsaSheet>
 
 		<XsaSheet :visible="mbtiSheetVisible" :title="mbtiSheetMode === 'self' ? '我的 MBTI' : '寻找的人格类型'" @close="closeMbtiSheet">
-			<view v-if="mbtiSheetMode === 'self'" class="self-sheet-content"><text class="sheet-copy">可以先完成测评，也可以直接输入已知类型。</text><button class="sheet-secondary-button" @tap="showTestPending"><text>去测评</text></button><view class="manual-mbti-row"><input class="mbti-input" :value="ownMbtiDraft" maxlength="4" placeholder="输入 16 型，如 ENTP" @input="onOwnMbtiInput" /><button class="sheet-save-button" :disabled="savingOwnMbti" @tap="saveOwnMbti"><text>{{ savingOwnMbti ? '保存中' : '确定' }}</text></button></view></view>
+			<view v-if="mbtiSheetMode === 'self'" class="self-sheet-content"><text class="sheet-copy">可以先完成测评，也可以直接输入已知类型。</text><button class="sheet-secondary-button" @tap="goAssessment"><text>去测评</text></button><view class="manual-mbti-row"><input class="mbti-input" :value="ownMbtiDraft" maxlength="4" placeholder="输入 16 型，如 ENTP" @input="onOwnMbtiInput" /><button class="sheet-save-button" :disabled="savingOwnMbti" @tap="saveOwnMbti"><text>{{ savingOwnMbti ? '保存中' : '确定' }}</text></button></view></view>
 			<view v-else class="target-sheet-content"><view class="sheet-selection-head"><text>{{ activeTrait || '轻触人格类型，查看相处标签' }}</text><text class="sheet-limit">最多 5 个</text></view><view class="mbti-grid"><button v-for="item in mbtiTypes" :key="item.code" class="mbti-type-button" :class="{ selected: targetMbtis.indexOf(item.code) >= 0 }" @tap="toggleTargetMbti(item.code, item.trait)"><text>{{ item.code }}</text></button></view><view class="sheet-selected-tags"><XsaTag v-for="item in targetMbtis" :key="item" variant="accent" size="small">{{ item }}</XsaTag><text v-if="targetMbtis.length === 0" class="sheet-empty-text">尚未选择</text></view><button class="sheet-primary-button" @tap="closeMbtiSheet"><text>完成选择</text></button></view>
 		</XsaSheet>
 	</view>
@@ -166,7 +169,7 @@
 <script setup lang="uts">
 	import XsaSheet from '@/components/XsaSheet.uvue'
 	import XsaTag from '@/components/XsaTag.uvue'
-	import { getOwnProfile, updateOwnProfile, getRecommendUsers, generateIdealPartner } from '@/api'
+	import { getOwnProfile, getEmotionLabSummary, setMyMbtiType, getRecommendUsers, generateIdealPartner } from '@/api'
 
 	const systemInfo = uni.getSystemInfoSync()
 	const statusBarHeight = systemInfo.statusBarHeight != null ? systemInfo.statusBarHeight : 20
@@ -217,16 +220,21 @@
 
 	const hometownOptions = ['不限', '江苏', '浙江', '上海', '安徽']
 	const residenceOptions = ['不限', '南京', '杭州', '上海', '深圳']
-	const ageOptions = ['不限年龄', '18-25 岁', '26-30 岁', '31-35 岁', '36-40 岁', '41 岁以上']
-	const heightOptions = ['不限身高', '150-160cm', '161-170cm', '171-180cm', '181cm 以上']
-	const incomeOptions = ['5w-15w', '15w-30w', '30w-50w', '50w-100w', '100w-500w', '500w以上']
-	const educationOptions = ['大专', '本科', '硕士研究生', '博士研究生']
+	const AGE_MIN = 18
+	const AGE_MAX = 60
+	const HEIGHT_MIN = 140
+	const HEIGHT_MAX = 220
+	const INCOME_STOPS = [5, 15, 30, 50, 100, 500]
+	const educationOptions = ['小学', '初中', '技校', '高中', '大专', '本科', '硕士', '博士']
 	const marriageOptions = ['未婚', '离异']
 	const hometownIndex = ref(0)
 	const residenceIndex = ref(0)
-	const ageIndex = ref(0)
-	const heightIndex = ref(0)
-	const income = ref('')
+	const ageMin = ref(null as any)
+	const ageMax = ref(null as any)
+	const heightMin = ref(null as any)
+	const heightMax = ref(null as any)
+	const incomeMin = ref(null as any)
+	const incomeMax = ref(null as any)
 	const education = ref('')
 	const marriage = ref('')
 	const certificationOnly = ref(true)
@@ -271,17 +279,29 @@
 	}
 	const profilePayload = (raw: any): any => raw != null && raw.profile != null ? raw.profile : (raw != null && raw.data != null && raw.data.profile != null ? raw.data.profile : (raw != null ? raw : {}))
 	const loadOwnMbti = async () => {
+		let fallbackMbti = ''
 		try {
 			const res = await getOwnProfile()
 			if (res.success && res.data != null) {
 				const data = profilePayload(res.data)
 				ownGender.value = data.gender
 				const value = toText(data.mbti).toUpperCase()
-				if (mbtiNames[value] != null) ownMbti.value = value
+				if (mbtiNames[value] != null) fallbackMbti = value
+			}
+		} catch (error) {
+			console.error('[Search] own profile load failed', error)
+		}
+		let confirmedMbti = ''
+		try {
+			const labRes = await getEmotionLabSummary()
+			if (labRes != null && labRes.success == true && labRes.data != null && labRes.data.profileSource != null) {
+				const value = toText(labRes.data.profileSource.mbtiType).toUpperCase()
+				if (mbtiNames[value] != null) confirmedMbti = value
 			}
 		} catch (error) {
 			console.error('[Search] own MBTI load failed', error)
 		}
+		ownMbti.value = confirmedMbti != '' ? confirmedMbti : fallbackMbti
 	}
 
 	const goBack = () => uni.navigateBack({ delta: 1 })
@@ -326,9 +346,199 @@
 	}
 	const onHometownChange = (event: any) => { hometownIndex.value = Number(event.detail.value) }
 	const onResidenceChange = (event: any) => { residenceIndex.value = Number(event.detail.value) }
-	const onAgeChange = (event: any) => { ageIndex.value = Number(event.detail.value) }
-	const onHeightChange = (event: any) => { heightIndex.value = Number(event.detail.value) }
-	const resetCondition = () => { hometownIndex.value = 0; residenceIndex.value = 0; ageIndex.value = 0; heightIndex.value = 0; income.value = ''; education.value = ''; marriage.value = ''; certificationOnly.value = false }
+	const clampInt = (value: any, min: number, max: number, fallback: number): number => {
+		if (value == null) return fallback
+		const num = Number(value)
+		if (isNaN(num)) return fallback
+		return Math.min(max, Math.max(min, Math.round(num)))
+	}
+	const pctOf = (value: number, min: number, max: number): number => (value - min) / (max - min) * 100
+	const ageLo = computed((): number => ageMin.value == null ? AGE_MIN : Number(ageMin.value))
+	const ageHi = computed((): number => ageMax.value == null ? AGE_MAX : Number(ageMax.value))
+	const heightLo = computed((): number => heightMin.value == null ? HEIGHT_MIN : Number(heightMin.value))
+	const heightHi = computed((): number => heightMax.value == null ? HEIGHT_MAX : Number(heightMax.value))
+	const ageLoPct = computed((): number => pctOf(ageLo.value, AGE_MIN, AGE_MAX))
+	const ageHiPct = computed((): number => pctOf(ageHi.value, AGE_MIN, AGE_MAX))
+	const ageZoneWidth = computed((): number => ageHiPct.value - ageLoPct.value)
+	const heightLoPct = computed((): number => pctOf(heightLo.value, HEIGHT_MIN, HEIGHT_MAX))
+	const heightHiPct = computed((): number => pctOf(heightHi.value, HEIGHT_MIN, HEIGHT_MAX))
+	const heightZoneWidth = computed((): number => heightHiPct.value - heightLoPct.value)
+	const ageReadout = computed((): string => {
+		if (ageMin.value == null && ageMax.value == null) return '不限'
+		if (ageMin.value == null) return '' + ageHi.value + ' 岁以内'
+		if (ageMax.value == null) return '' + ageLo.value + ' 岁以上'
+		return '' + ageLo.value + ' ~ ' + ageHi.value + ' 岁'
+	})
+	const heightReadout = computed((): string => {
+		if (heightMin.value == null && heightMax.value == null) return '不限'
+		if (heightMin.value == null) return '' + heightHi.value + ' cm 以内'
+		if (heightMax.value == null) return '' + heightLo.value + ' cm 以上'
+		return '' + heightLo.value + ' ~ ' + heightHi.value + ' cm'
+	})
+	const dragTarget = ref('')
+	const dragRect = ref(null as any)
+	const dragLo = ref(false)
+	const dragStartX = ref(0)
+	const dragPending = ref(false)
+	const queryRect = (id: string, callback: (rect: any) => void) => {
+		uni.createSelectorQuery().select('#' + id).boundingClientRect((rect: any) => {
+			callback(rect)
+		}).exec()
+	}
+	const applyTrackValue = (clientX: number, min: number, span: number, setLo: (v: number) => void, setHi: (v: number) => void, getLo: () => number, getHi: () => number) => {
+		const rect = dragRect.value
+		if (rect == null || Number(rect.width) <= 0) return
+		let value = Math.round(min + (clientX - Number(rect.left)) / Number(rect.width) * span)
+		value = Math.min(min + span, Math.max(min, value))
+		if (dragLo.value) setLo(Math.min(value, getHi()))
+		else setHi(Math.max(value, getLo()))
+	}
+	const resolveDragLo = (dx: number, min: number, max: number, getLo: () => number, getHi: () => number): boolean => {
+		if (dx > 0) {
+			if (getHi() < max) return false
+			return getLo() < getHi()
+		}
+		if (getLo() > min) return true
+		return getHi() > getLo()
+	}
+	const onAgeTrackTouchStart = (e: any) => {
+		const touch = e.touches != null && e.touches.length > 0 ? e.touches[0] : null
+		if (touch == null) return
+		queryRect('age-track', (rect: any) => {
+			if (rect == null) return
+			dragRect.value = rect
+			const x = Number(touch.clientX)
+			const loX = Number(rect.left) + Number(rect.width) * (Number(ageMin.value == null ? AGE_MIN : ageMin.value) - AGE_MIN) / (AGE_MAX - AGE_MIN)
+			const hiX = Number(rect.left) + Number(rect.width) * (Number(ageMax.value == null ? AGE_MAX : ageMax.value) - AGE_MIN) / (AGE_MAX - AGE_MIN)
+			const tie = Math.abs(x - loX) == Math.abs(x - hiX)
+			dragLo.value = Math.abs(x - loX) <= Math.abs(x - hiX)
+			dragStartX.value = x
+			dragPending.value = tie
+			dragTarget.value = 'age'
+			if (!tie) applyTrackValue(x, AGE_MIN, AGE_MAX - AGE_MIN,
+				(v: number) => { ageMin.value = v },
+				(v: number) => { ageMax.value = v },
+				() : number => ageLo.value,
+				() : number => ageHi.value)
+		})
+	}
+	const onAgeTrackTouchMove = (e: any) => {
+		if (dragTarget.value != 'age') return
+		const touch = e.touches != null && e.touches.length > 0 ? e.touches[0] : null
+		if (touch == null) return
+		const x = Number(touch.clientX)
+		if (dragPending.value) {
+			const dx = x - Number(dragStartX.value)
+			if (Math.abs(dx) < 2) return
+			dragPending.value = false
+			dragLo.value = resolveDragLo(dx, AGE_MIN, AGE_MAX, () : number => ageLo.value, () : number => ageHi.value)
+		}
+		applyTrackValue(x, AGE_MIN, AGE_MAX - AGE_MIN,
+			(v: number) => { ageMin.value = v },
+			(v: number) => { ageMax.value = v },
+			() : number => ageLo.value,
+			() : number => ageHi.value)
+	}
+	const onHeightTrackTouchStart = (e: any) => {
+		const touch = e.touches != null && e.touches.length > 0 ? e.touches[0] : null
+		if (touch == null) return
+		queryRect('height-track', (rect: any) => {
+			if (rect == null) return
+			dragRect.value = rect
+			const x = Number(touch.clientX)
+			const loX = Number(rect.left) + Number(rect.width) * (Number(heightMin.value == null ? HEIGHT_MIN : heightMin.value) - HEIGHT_MIN) / (HEIGHT_MAX - HEIGHT_MIN)
+			const hiX = Number(rect.left) + Number(rect.width) * (Number(heightMax.value == null ? HEIGHT_MAX : heightMax.value) - HEIGHT_MIN) / (HEIGHT_MAX - HEIGHT_MIN)
+			const tie = Math.abs(x - loX) == Math.abs(x - hiX)
+			dragLo.value = Math.abs(x - loX) <= Math.abs(x - hiX)
+			dragStartX.value = x
+			dragPending.value = tie
+			dragTarget.value = 'height'
+			if (!tie) applyTrackValue(x, HEIGHT_MIN, HEIGHT_MAX - HEIGHT_MIN,
+				(v: number) => { heightMin.value = v },
+				(v: number) => { heightMax.value = v },
+				() : number => heightLo.value,
+				() : number => heightHi.value)
+		})
+	}
+	const onHeightTrackTouchMove = (e: any) => {
+		if (dragTarget.value != 'height') return
+		const touch = e.touches != null && e.touches.length > 0 ? e.touches[0] : null
+		if (touch == null) return
+		const x = Number(touch.clientX)
+		if (dragPending.value) {
+			const dx = x - Number(dragStartX.value)
+			if (Math.abs(dx) < 2) return
+			dragPending.value = false
+			dragLo.value = resolveDragLo(dx, HEIGHT_MIN, HEIGHT_MAX, () : number => heightLo.value, () : number => heightHi.value)
+		}
+		applyTrackValue(x, HEIGHT_MIN, HEIGHT_MAX - HEIGHT_MIN,
+			(v: number) => { heightMin.value = v },
+			(v: number) => { heightMax.value = v },
+			() : number => heightLo.value,
+			() : number => heightHi.value)
+	}
+	const onTrackTouchEnd = () => { dragTarget.value = ''; dragPending.value = false }
+	const incomeStopIndex = (value: number): number => {
+		let best = 0
+		for (let i = 1; i < INCOME_STOPS.length; i++) {
+			if (Math.abs(INCOME_STOPS[i] - value) < Math.abs(INCOME_STOPS[best] - value)) best = i
+		}
+		return best
+	}
+	const incomeLoIdx = computed((): number => incomeMin.value == null ? 0 : incomeStopIndex(Number(incomeMin.value)))
+	const incomeHiIdx = computed((): number => incomeMax.value == null ? INCOME_STOPS.length - 1 : incomeStopIndex(Number(incomeMax.value)))
+	const incomeLoPct = computed((): number => incomeLoIdx.value / (INCOME_STOPS.length - 1) * 100)
+	const incomeHiPct = computed((): number => incomeHiIdx.value / (INCOME_STOPS.length - 1) * 100)
+	const incomeZoneWidth = computed((): number => incomeHiPct.value - incomeLoPct.value)
+	const incomeReadout = computed((): string => {
+		const loOpen = incomeMin.value == null
+		const hiIdx = incomeHiIdx.value
+		if (loOpen && hiIdx == INCOME_STOPS.length - 1) return '不限'
+		if (hiIdx == INCOME_STOPS.length - 1) return '' + INCOME_STOPS[incomeLoIdx.value] + 'w 以上'
+		if (loOpen) return '' + INCOME_STOPS[hiIdx] + 'w 以内'
+		return '' + INCOME_STOPS[incomeLoIdx.value] + 'w ~ ' + INCOME_STOPS[hiIdx] + 'w'
+	})
+	const applyIncomeTrackValue = (clientX: number) => {
+		const rect = dragRect.value
+		if (rect == null || Number(rect.width) <= 0) return
+		let ratio = (clientX - Number(rect.left)) / Number(rect.width)
+		ratio = Math.min(1, Math.max(0, ratio))
+		const idx = Math.round(ratio * (INCOME_STOPS.length - 1))
+		if (dragLo.value) incomeMin.value = INCOME_STOPS[Math.min(idx, incomeHiIdx.value)]
+		else incomeMax.value = INCOME_STOPS[Math.max(idx, incomeLoIdx.value)]
+	}
+	const onIncomeTrackTouchStart = (e: any) => {
+		const touch = e.touches != null && e.touches.length > 0 ? e.touches[0] : null
+		if (touch == null) return
+		queryRect('income-track', (rect: any) => {
+			if (rect == null) return
+			dragRect.value = rect
+			const x = Number(touch.clientX)
+			const cell = Number(rect.width) / (INCOME_STOPS.length - 1)
+			const loX = Number(rect.left) + cell * incomeLoIdx.value
+			const hiX = Number(rect.left) + cell * incomeHiIdx.value
+			const tie = Math.abs(x - loX) == Math.abs(x - hiX)
+			dragLo.value = Math.abs(x - loX) <= Math.abs(x - hiX)
+			dragStartX.value = x
+			dragPending.value = tie
+			dragTarget.value = 'income'
+			if (!tie) applyIncomeTrackValue(x)
+		})
+	}
+	const onIncomeTrackTouchMove = (e: any) => {
+		if (dragTarget.value != 'income') return
+		const touch = e.touches != null && e.touches.length > 0 ? e.touches[0] : null
+		if (touch == null) return
+		const x = Number(touch.clientX)
+		if (dragPending.value) {
+			const dx = x - Number(dragStartX.value)
+			if (Math.abs(dx) < 2) return
+			dragPending.value = false
+			dragLo.value = resolveDragLo(dx, 0, INCOME_STOPS.length - 1, () : number => incomeLoIdx.value, () : number => incomeHiIdx.value)
+		}
+		applyIncomeTrackValue(x)
+	}
+	const resetCondition = () => { hometownIndex.value = 0; residenceIndex.value = 0; ageMin.value = null; ageMax.value = null; heightMin.value = null; heightMax.value = null; incomeMin.value = null; incomeMax.value = null; education.value = ''; marriage.value = ''; certificationOnly.value = false }
 	const loadHistory = () => {
 		try {
 			const stored = uni.getStorageSync(SEARCH_HISTORY_STORAGE_KEY)
@@ -346,16 +556,19 @@
 			targetMbtis: targetMbtis.value.slice(),
 			hometownIndex: hometownIndex.value,
 			residenceIndex: residenceIndex.value,
-			ageIndex: ageIndex.value,
-			heightIndex: heightIndex.value,
-			income: income.value,
+			ageMin: ageMin.value,
+			ageMax: ageMax.value,
+			heightMin: heightMin.value,
+			heightMax: heightMax.value,
+			incomeMin: incomeMin.value,
+			incomeMax: incomeMax.value,
 			education: education.value,
 			marriage: marriage.value,
 			certificationOnly: certificationOnly.value
 		}
 		if (record.tab == 0) record.label = `AI：${aiQuery.value.trim()}`
 		else if (record.tab == 1) record.label = `MBTI：${targetMbtis.value.join(' / ')}`
-		else record.label = `条件：${residenceOptions[residenceIndex.value]}，${ageOptions[ageIndex.value]}`
+		else record.label = `条件：${residenceOptions[residenceIndex.value]}，${ageReadout.value}`
 		return record
 	}
 	const saveHistory = (record: any) => {
@@ -376,7 +589,7 @@
 	const resultQuerySummary = computed(() => {
 		if (activeTab.value == 0) return aiQuery.value.trim()
 		if (activeTab.value == 1) return 'MBTI ' + targetMbtis.value.join(' / ')
-		return residenceOptions[residenceIndex.value] + '，' + ageOptions[ageIndex.value]
+		return residenceOptions[residenceIndex.value] + '，' + ageReadout.value
 	})
 	const resultProfile = (item: any): any => item != null && item.profile != null ? item.profile : (item != null ? item : {})
 	const resultAvatar = (item: any): string => {
@@ -401,7 +614,7 @@
 		return parts.join(' | ')
 	}
 	const resultMatchCount = (index: number): number => {
-		const base = activeTab.value == 0 ? 2 : activeTab.value == 1 ? targetMbtis.value.length : 1 + (education.value != '' ? 1 : 0) + (income.value != '' ? 1 : 0)
+		const base = activeTab.value == 0 ? 2 : activeTab.value == 1 ? targetMbtis.value.length : 1 + (education.value != '' ? 1 : 0) + (incomeMin.value != null || incomeMax.value != null ? 1 : 0)
 		return Math.max(1, Math.min(5, base - (index % 2)))
 	}
 	const resultReasons = (index: number): string[] => {
@@ -469,9 +682,12 @@
 		} else if (tab == 2) {
 			hometownIndex.value = validIndex(item.hometownIndex, hometownOptions.length)
 			residenceIndex.value = validIndex(item.residenceIndex, residenceOptions.length)
-			ageIndex.value = validIndex(item.ageIndex, ageOptions.length)
-			heightIndex.value = validIndex(item.heightIndex, heightOptions.length)
-			income.value = toText(item.income)
+			ageMin.value = item.ageMin == null ? null : clampInt(item.ageMin, AGE_MIN, AGE_MAX, AGE_MIN)
+			ageMax.value = item.ageMax == null ? null : clampInt(item.ageMax, AGE_MIN, AGE_MAX, AGE_MAX)
+			heightMin.value = item.heightMin == null ? null : clampInt(item.heightMin, HEIGHT_MIN, HEIGHT_MAX, HEIGHT_MIN)
+			heightMax.value = item.heightMax == null ? null : clampInt(item.heightMax, HEIGHT_MIN, HEIGHT_MAX, HEIGHT_MAX)
+			incomeMin.value = item.incomeMin == null ? null : INCOME_STOPS[incomeStopIndex(Number(item.incomeMin))]
+			incomeMax.value = item.incomeMax == null ? null : INCOME_STOPS[incomeStopIndex(Number(item.incomeMax))]
 			education.value = toText(item.education)
 			marriage.value = toText(item.marriage)
 			certificationOnly.value = item.certificationOnly == true
@@ -487,13 +703,16 @@
 	const openTargetSheet = () => { activeTrait.value = ''; mbtiSheetMode.value = 'target'; mbtiSheetVisible.value = true }
 	const closeMbtiSheet = () => { mbtiSheetVisible.value = false }
 	const onOwnMbtiInput = (event: any) => { ownMbtiDraft.value = toText(event.detail.value).toUpperCase() }
-	const showTestPending = () => uni.showToast({ title: 'MBTI 测评页面待接入', icon: 'none' })
+	const goAssessment = () => {
+		closeMbtiSheet()
+		uni.navigateTo({ url: '/pages/emotion-lab/emotion-lab' })
+	}
 	const saveOwnMbti = async () => {
 		const value = ownMbtiDraft.value.trim().toUpperCase()
 		if (mbtiNames[value] == null) { uni.showToast({ title: '请输入 16 型 MBTI，例如 ENTP', icon: 'none' }); return }
 		savingOwnMbti.value = true
 		try {
-			const res = await updateOwnProfile({ mbti: value })
+			const res = await setMyMbtiType({ mbtiType: value, source: 'self_reported', confirmed: true })
 			if (!res.success) { uni.showToast({ title: res.message != null ? toText(res.message) : '保存失败，请重试', icon: 'none' }); return }
 			ownMbti.value = value
 			closeMbtiSheet()
@@ -517,7 +736,7 @@
 		activeTrait.value = trait
 	}
 
-	onMounted(() => { loadOwnMbti(); loadHistory() })
+	onShow(() => { loadOwnMbti(); loadHistory() })
 	onUnmounted(() => { stopAiTyping() })
 </script>
 
@@ -579,18 +798,14 @@
 .condition-control { min-width: 0; flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 14rpx; }
 .location-row .condition-picker, .location-row .condition-add-picker { min-width: 0; flex: 1; }
 .picker-value, .condition-add { width: 100%; min-height: 78rpx; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 12rpx; padding: 0 18rpx; border: 1rpx solid transparent; border-radius: 20rpx; background: var(--canvas); color: var(--ink2); font-size: 22rpx; }
+.range-control { position: relative; min-width: 0; flex: 1; height: 68rpx; margin: 0 18rpx; }
+.range-track { position: absolute; left: 0; right: 0; top: 31rpx; height: 6rpx; border-radius: 999rpx; background: var(--line); }
+.range-active { position: absolute; top: 31rpx; height: 6rpx; border-radius: 999rpx; background: var(--accent); }
+.range-handle { position: absolute; top: 19rpx; width: 30rpx; height: 30rpx; margin-left: -15rpx; border: 1rpx solid var(--line); border-radius: 999rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
+.income-slider { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.income-slider .range-control { flex: 0 0 auto; }
+.range-scale { display: flex; flex-direction: row; justify-content: space-between; margin: 0 18rpx; color: var(--muted); font-size: 18rpx; }
 .condition-range-picker { min-width: 0; flex: 1; }
-.range-control { position: relative; height: 68rpx; margin: 0 18rpx; }
-.range-track, .range-active { position: absolute; top: 31rpx; right: 0; left: 0; height: 6rpx; border-radius: 999rpx; }
-.range-track { background: var(--line); }
-.range-active { background: var(--accent); }
-.age-range { right: 14%; left: 18%; }
-.full-range { right: 0; left: 0; }
-.range-handle { position: absolute; top: 19rpx; width: 30rpx; height: 30rpx; border: 1rpx solid var(--line); border-radius: 999rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
-.range-start { left: calc(18% - 15rpx); }
-.range-end { right: calc(14% - 15rpx); }
-.full-start { left: -15rpx; }
-.full-end { right: -15rpx; }
 .condition-toggle-group { min-height: 124rpx; }
 .condition-toggle-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6rpx; }
 .condition-toggle-copy .condition-label { width: auto; }
@@ -605,7 +820,6 @@
 .condition-choice-grid { min-width: 0; flex: 1; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 12rpx; }
 .condition-choice-grid .choice-chip { min-height: 66rpx; display: flex; flex-direction: row; align-items: center; justify-content: center; padding: 0 8rpx; border-color: transparent; border-radius: 18rpx; background: var(--canvas); font-size: 20rpx; text-align: center; }
 .condition-choice-grid .choice-chip.selected { border-color: transparent; background: var(--accent-bg); }
-.income-grid .choice-chip { width: 30%; }
 .education-grid .choice-chip, .marriage-grid .choice-chip { width: 46%; }
 .wide-condition-picker { min-width: 0; flex: 1; }
 .wide-picker-value { width: 100%; min-height: 78rpx; display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 0 22rpx; border-radius: 20rpx; background: var(--canvas); color: var(--muted); font-size: 22rpx; }

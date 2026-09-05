@@ -27,3 +27,4 @@ open-wechat-devtools.bat
 # local worktrees
 .worktrees/
 .config.uts
+.workbuddy

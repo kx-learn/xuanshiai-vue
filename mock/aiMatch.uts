@@ -1,0 +1,199 @@
+/**
+ * AI 匹配度 · MBTI 配对解析（Mock）
+ *
+ * 根据双方 MBTI 的四个字母维度，生成「合适的点 / 可能的摩擦 / 社交建议」
+ * 结构化文案，供 AI 匹配度小窗展示。任意 16 型组合均可用。
+ *
+ * 文案边界（与 PRODUCT.md 一致）：
+ * - 不承诺关系结果，不使用命中注定、最后机会等表述；
+ * - 语气认真克制，把差异描述为"可磨合的节奏差"而非缺陷。
+ */
+
+const DIMENSIONS: string[] = ['E', 'N', 'T', 'J']
+
+function letterOf(type: string, index: number): string {
+  const t = type != null ? type.toUpperCase() : ''
+  if (t.length != 4) return index == 0 ? 'E' : (index == 1 ? 'N' : (index == 2 ? 'T' : 'J'))
+  const ch = t.charAt(index)
+  return ch == 'I' ? 'I' : (ch == 'S' ? 'S' : (ch == 'F' ? 'F' : (ch == 'P' ? 'P' : DIMENSIONS[index])))
+}
+
+function sameLetter(a: string, b: string, index: number): boolean {
+  return letterOf(a, index) == letterOf(b, index)
+}
+
+/** 合适的点：沟通(N/S)、冲突(T/F)、关系(J/P)、吸引力(E/I) */
+function buildHarmony(a: string, b: string): any[] {
+  const items: any[] = []
+
+  // 沟通：N/S 维度
+  if (sameLetter(a, b, 1)) {
+    if (letterOf(a, 1) == 'N') {
+      items.push({ title: '沟通', text: '你们都习惯聊想法和可能性，话题容易从一个点延伸到一大片，初次聊天也不会没话说。' })
+    } else {
+      items.push({ title: '沟通', text: '你们都偏向聊具体、真实的事，对话踏实不飘，容易就生活细节快速达成一致。' })
+    }
+  } else {
+    items.push({ title: '沟通', text: '一个擅长展开想法，一个更关注现实落地。聊天时一个负责开拓话题，一个负责把话题聊实，刚好互补。' })
+  }
+
+  // 冲突：T/F 维度
+  if (sameLetter(a, b, 2)) {
+    if (letterOf(a, 2) == 'T') {
+      items.push({ title: '冲突', text: '你们讨论分歧时都习惯就事论事，不太容易被情绪带偏，问题能摊开来直接聊。' })
+    } else {
+      items.push({ title: '冲突', text: '你们都在意对方的感受，起争执时更容易先照顾情绪、再处理问题，很少硬碰硬。' })
+    }
+  } else {
+    items.push({ title: '冲突', text: '一个习惯先讲道理，一个更在意被如何对待。只要约定"先回应感受、再讨论对错"，分歧反而吵不起来。' })
+  }
+
+  // 关系：J/P 维度
+  if (sameLetter(a, b, 3)) {
+    if (letterOf(a, 3) == 'J') {
+      items.push({ title: '关系', text: '你们对关系的推进节奏想法接近：都偏好有计划、有确定感的相处方式。' })
+    } else {
+      items.push({ title: '关系', text: '你们都不喜欢被安排感束缚，相处起来轻松随意，关系在自然接触中慢慢升温。' })
+    }
+  } else {
+    items.push({ title: '关系', text: '一个喜欢把安排定好，一个更喜欢随性而为。计划与即兴搭配，日子既有秩序也有惊喜。' })
+  }
+
+  // 吸引力：E/I 维度
+  if (sameLetter(a, b, 0)) {
+    if (letterOf(a, 0) == 'E') {
+      items.push({ title: '吸引力', text: '你们都外向健谈，能一起热闹也能互相接梗，相处氛围鲜活。' })
+    } else {
+      items.push({ title: '吸引力', text: '你们都偏安静，能享受不说话也不尴尬的相处，陪伴感扎实。' })
+    }
+  } else {
+    items.push({ title: '吸引力', text: '一个把气氛带起来，一个把深度留下来。外向的带动、内向的沉淀，正是彼此初见时觉得舒服的地方。' })
+  }
+
+  return items
+}
+
+/** 可能的摩擦：按不同维度生成，最多 3 条，不足时补通用条目 */
+function buildFriction(a: string, b: string): any[] {
+  const items: any[] = []
+
+  if (!sameLetter(a, b, 3)) {
+    items.push({
+      title: '节奏安排',
+      mine: letterOf(a, 3) == 'J' ? '你偏好提前定好计划，临时变动容易让你不舒服。' : '你喜欢看心情行事，被排得太满会觉得被约束。',
+      theirs: letterOf(b, 3) == 'J' ? 'Ta 同样希望事情有确定安排，随性改动会让 Ta 焦虑。' : 'Ta 更习惯随性而为，太固定的日程会让 Ta 感到压力。'
+    })
+  }
+
+  if (!sameLetter(a, b, 2)) {
+    items.push({
+      title: '情感表达',
+      mine: letterOf(a, 2) == 'T' ? '你倾向直接指出问题，语气偏理性，本意是解决事情。' : '你更在意对话里的情绪温度，希望先被理解再谈解决。',
+      theirs: letterOf(b, 2) == 'T' ? 'Ta 回应问题时偏理性直接，可能少了点安抚。' : 'Ta 更看重感受层面的回应，期待你先接住情绪。'
+    })
+  }
+
+  if (!sameLetter(a, b, 0)) {
+    items.push({
+      title: '能量分配',
+      mine: letterOf(a, 0) == 'E' ? '你靠社交回血，热闹之后反而更有劲。' : '你靠独处回血，社交太久需要安静缓冲。',
+      theirs: letterOf(b, 0) == 'E' ? 'Ta 喜欢往外跑，聚会总能给 Ta 充电。' : 'Ta 更享受两个人的安静时光，热闹场合消耗得快。'
+    })
+  }
+
+  // 字母全同或只差一个时，补充通用摩擦点，保证内容不单薄
+  if (items.length < 2) {
+    items.push({
+      title: '熟悉度节奏',
+      mine: '同频的组合也有磨合期：你们容易默认"Ta 应该懂我"，把没说出口的期待攒成小情绪。',
+      theirs: '建议把小期待及时说出来，别等它变成大误会。'
+    })
+  }
+  if (items.length < 3 && sameLetter(a, b, 1)) {
+    items.push({
+      title: '想法落地',
+      mine: '你们都爱聊想法，容易聊得起劲却停在"改天试试"。',
+      theirs: '约定一个最小的行动（比如这周末就去），让话题落地。'
+    })
+  }
+  return items
+}
+
+/** 社交建议：给 A / 给 B / 互相 / 聊天 */
+function buildAdvice(a: string, b: string, myLabel: string, otherLabel: string): any[] {
+  const forA: string[] = []
+  const forB: string[] = []
+
+  // 给 A 的建议：针对 B 与 A 的差异
+  if (!sameLetter(a, b, 2)) {
+    if (letterOf(b, 2) == 'F') forA.push('讨论问题时先回应 Ta 的感受，再给建议，Ta 会更容易听进去')
+    else forA.push('Ta 偏理性直接，别把 Ta 的直话直语当成不在乎')
+  }
+  if (!sameLetter(a, b, 3)) {
+    if (letterOf(b, 3) == 'P') forA.push('给 Ta 的随性留一点空间，重要的事商量着定即可')
+    else forA.push('提前告诉 Ta 你的安排，Ta 会更有安全感')
+  }
+  if (!sameLetter(a, b, 0) && letterOf(b, 0) == 'I') forA.push('热闹场合留意 Ta 的电量，适时带 Ta 撤离到安静角落')
+  if (!sameLetter(a, b, 1) && letterOf(b, 1) == 'S') forA.push('聊想法时多补一句"具体怎么做"，Ta 会觉得更踏实')
+  if (forA.length == 0) forA.push('保持你们习惯的节奏，定期把没说出口的小期待聊开')
+
+  // 给 B 的建议：针对 A 与 B 的差异
+  if (!sameLetter(a, b, 2)) {
+    if (letterOf(a, 2) == 'T') forB.push('Ta 的直接是对事不对人，有情绪可以直接告诉 Ta 你需要先被安抚')
+    else forB.push('Ta 更在意感受，回复前先接一句 Ta 的情绪再谈事情')
+  }
+  if (!sameLetter(a, b, 3)) {
+    if (letterOf(a, 3) == 'J') forB.push('Ta 喜欢有确定感，重要约定提前说清楚，Ta 会很安心')
+    else forB.push('Ta 偏随性，别把日程排太满，留点即兴的空间')
+  }
+  if (!sameLetter(a, b, 0) && letterOf(a, 0) == 'E') forB.push('Ta 靠社交回血，可以陪 Ta 参加一部分聚会，也坦然留自己的独处时间')
+  if (!sameLetter(a, b, 1) && letterOf(a, 1) == 'N') forB.push('Ta 爱聊可能性，听 Ta 展开，再帮 Ta 挑一个落地即可')
+  if (forB.length == 0) forB.push('多直接表达欣赏，同频不等于不用经营')
+
+  const items: any[] = [
+    { title: '给' + myLabel + '的建议', points: forA },
+    { title: '给' + otherLabel + '的建议', points: forB },
+    { title: '互相建议', points: [
+      '分歧时先说感受、再说观点，避免把小事攒成心结',
+      '每段时间留一次只属于你们的对话，不谈安排、只聊彼此'
+    ] },
+    { title: '聊天建议', points: [
+      '从你们重合的兴趣切入，比"在吗"更容易聊起来',
+      '把一个话题聊深，好过同时开很多个话题',
+      '约定下一次见面或通话，让对话有落点'
+    ] }
+  ]
+  return items
+}
+
+/**
+ * 生成一对 MBTI 的关系解析。
+ * @param myType    用户自己的 MBTI（如 INFP）
+ * @param otherType 对方的 MBTI（如 ENTP）
+ * @param myLabel   建议区显示的称呼（默认 "INTJ"）
+ * @param otherLabel 建议区显示的对方称呼
+ */
+export function getMbtiPairAnalysis(myType: string, otherType: string, myLabel: string = '', otherLabel: string = ''): any {
+  const a = myType != null && myType.length == 4 ? myType : 'INFP'
+  const b = otherType != null && otherType.length == 4 ? otherType : 'ENTP'
+  const labelA = myLabel != null && myLabel != '' ? myLabel : a
+  const labelB = otherLabel != null && otherLabel != '' ? otherLabel : b
+
+  let diffCount = 0
+  for (let i = 0; i < 4; i++) {
+    if (!sameLetter(a, b, i)) diffCount++
+  }
+
+  let headline = ''
+  if (diffCount == 0) headline = '你们是高相似组合，习惯和节奏天然接近，容易一眼看懂对方。'
+  else if (diffCount == 1) headline = '你们只在一个维度上不同，高度同频，又刚好补上彼此的小盲区。'
+  else if (diffCount == 2) headline = '你们一半相似、一半互补，既有共同语言，也有值得探索的新鲜感。'
+  else headline = '你们是互补型组合，初见会觉得对方很有意思，磨合后往往比相似型走得更稳。'
+
+  return {
+    headline: headline,
+    harmony: buildHarmony(a, b),
+    friction: buildFriction(a, b),
+    advice: buildAdvice(a, b, labelA, labelB)
+  }
+}
