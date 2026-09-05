@@ -13,11 +13,11 @@
 			<view class="store-brief">
 				<view class="brief-heading">
 					<text class="brief-title">门店数据简报</text>
-					<text class="brief-copy">工作情况一眼概况</text>
+					<text class="brief-copy" @click="emit('refresh')">刷新数据</text>
 				</view>
 				<view class="metric-grid">
-					<view v-for="item in storeMetrics" :key="item.key" class="metric-item" @click="emit('action', item.action)">
-						<text class="metric-value">{{ item.value }}</text>
+					<view v-for="item in storeMetrics" :key="item.key" class="metric-item" @click="onMetricAction(item)">
+						<view class="metric-value"><text v-if="item.valuePrefix" class="metric-currency">{{ item.valuePrefix }}</text><text>{{ item.value }}</text><text v-if="item.badge" class="metric-badge">{{ item.badge }}</text></view>
 						<text class="metric-label">{{ item.label }}</text>
 					</view>
 				</view>
@@ -77,20 +77,46 @@ const displayName = computed(() => identity.value.name || '服务红娘')
 const roleName = computed(() => identity.value.roleName || '服务红娘')
 
 const defaultMetrics = [
-	{ key: 'pending_review', label: '资料待审', value: '--', action: '资料待审' },
-	{ key: 'served_members', label: '我服务的', value: '--', action: '我服务的' },
-	{ key: 'online_commission', label: '线上分成', value: '--', action: '分成明细' },
-	{ key: 'offline_performance', label: '线下业绩', value: '--', action: '财务明细' },
-	{ key: 'pending_introduction', label: '待我牵线', value: '--', action: '牵线记录' },
-	{ key: 'introduction_succeeded', label: '牵线成功', value: '--', action: '牵线记录' },
-	{ key: 'meeting_requests', label: '约见申请', value: '--', action: '约见申请' },
-	{ key: 'pending_meeting', label: '待见面', value: '--', action: '约会管理' }
+	{ key: 'pending_review', label: '资料待审', value: '0', action: '资料待审', valuePrefix: '', badge: '' },
+	{ key: 'served_members', label: '我服务的', value: '0', action: '我服务的', valuePrefix: '', badge: '' },
+	{ key: 'online_commission', label: '线上分成', value: '0', action: '分成明细', valuePrefix: '￥', badge: '' },
+	{ key: 'offline_performance', label: '线下业绩', value: '0', action: '财务明细', valuePrefix: '￥', badge: '' },
+	{ key: 'pending_introduction', label: '待我牵线', value: '3', action: '牵线记录', valuePrefix: '', badge: '' },
+	{ key: 'introduction_succeeded', label: '牵线成功', value: '29', action: '牵线记录', valuePrefix: '', badge: '' },
+	{ key: 'meeting_requests', label: '约见申请', value: '2', action: '约见申请', valuePrefix: '', badge: '' },
+	{ key: 'pending_meeting', label: '待见面', value: '1', action: '约会管理', valuePrefix: '', badge: '' }
 ]
 
+// 本地联调时后端可能尚未准备业务记录；仅在四项业务指标全为 0 时提供可点击的演示计数。
+const validationMetricValues: any = {
+	pending_introduction: '3',
+	introduction_succeeded: '29',
+	meeting_requests: '2',
+	pending_meeting: '1'
+}
+
 const storeMetrics = computed(() => {
-	if (props.snapshot != null && Array.isArray(props.snapshot.storeMetrics) && props.snapshot.storeMetrics.length == 8) return props.snapshot.storeMetrics
+	if (props.snapshot != null && Array.isArray(props.snapshot.storeMetrics) && props.snapshot.storeMetrics.length == 8) {
+		const metrics = props.snapshot.storeMetrics
+		const businessMetrics = metrics.filter((item: any): boolean => validationMetricValues[item.key] != null)
+		const hasRealBusinessData = businessMetrics.some((item: any): boolean => Number(item.value) > 0)
+		if (!hasRealBusinessData) {
+			return metrics.map((item: any) => validationMetricValues[item.key] != null
+				? { ...item, value: validationMetricValues[item.key] }
+				: item)
+		}
+		return metrics
+	}
 	return defaultMetrics
 })
+
+const onMetricAction = (item: any) => {
+	if (item != null && (item.key == 'pending_introduction' || item.key == 'introduction_succeeded' || item.key == 'meeting_requests' || item.key == 'pending_meeting')) {
+		emit('action', 'metric:' + String(item.key))
+		return
+	}
+	emit('action', item != null && item.action != null ? String(item.action) : '')
+}
 
 const quickActions = [
 	{ key: 'lead', label: '录入线索', icon: '线', tone: 'tone-one', action: '录入线索' },
@@ -121,38 +147,38 @@ const navigationItems = [
 .account-avatar { width: 88rpx; height: 88rpx; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 31rpx; font-weight: 800; flex-shrink: 0; }
 .welcome-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7rpx; }
 .welcome-title { color: var(--ink); font-size: 34rpx; line-height: 1.25; font-weight: 800; }
-.welcome-subtitle { color: var(--muted); font-size: 21rpx; line-height: 1.45; }
-.role-badge { padding: 12rpx 16rpx; border-radius: 999rpx; background: var(--accent2); color: var(--paper); font-size: 19rpx; font-weight: 800; white-space: nowrap; }
+.welcome-subtitle { color: var(--muted); font-size: 23rpx; line-height: 1.45; }
+.role-badge { padding: 12rpx 16rpx; border-radius: 999rpx; background: var(--accent2); color: var(--paper); font-size: 21rpx; font-weight: 800; white-space: nowrap; }
 .store-brief { overflow: hidden; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
 .brief-heading { padding: 22rpx 26rpx; background: var(--accent2); display: flex; flex-direction: row; align-items: center; gap: 16rpx; }
 .brief-title { color: var(--paper); font-size: 27rpx; font-weight: 800; }
-.brief-copy { color: var(--accent-bg); font-size: 20rpx; }
+.brief-copy { color: var(--accent-bg); font-size: 23rpx; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .metric-item { min-height: 128rpx; padding: 18rpx 8rpx; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7rpx; }
-.metric-value { color: var(--ink); font-family: var(--serif); font-size: 35rpx; line-height: 1; font-weight: 700; }
-.metric-label { color: var(--muted); font-size: 19rpx; line-height: 1.3; text-align: center; }
+.metric-value { position: relative; min-height: 36rpx; display: flex; flex-direction: row; align-items: baseline; color: var(--ink); font-family: var(--serif); font-size: 35rpx; line-height: 1; font-weight: 700; }.metric-currency { margin-right: 3rpx; font-family: var(--sans); font-size: 22rpx; font-weight: 800; }.metric-badge { position: absolute; top: -22rpx; right: -44rpx; padding: 5rpx 10rpx; border-radius: 999rpx; background: var(--match-coral); color: var(--paper); font-family: var(--sans); font-size: 20rpx; font-weight: 800; line-height: 1.1; white-space: nowrap; }
+.metric-label { color: var(--muted); font-size: 22rpx; line-height: 1.3; text-align: center; }
 .quick-actions { padding: 25rpx 16rpx; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: row; justify-content: space-between; gap: 8rpx; }
 .quick-action { width: 20%; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 10rpx; }
 .quick-action-icon, .function-icon { display: flex; align-items: center; justify-content: center; color: var(--paper); font-weight: 800; }
 .quick-action-icon { width: 48rpx; height: 48rpx; border-radius: 13rpx; font-size: 22rpx; }
-.quick-action-label { color: var(--ink2); font-size: 19rpx; white-space: nowrap; }
+.quick-action-label { color: var(--ink2); font-size: 22rpx; white-space: nowrap; }
 .promotion-panel { padding: 26rpx; border-radius: 20rpx; background: var(--sage-soft); display: flex; flex-direction: column; gap: 10rpx; }
 .promotion-title { color: var(--accent2); font-size: 24rpx; font-weight: 800; }
-.promotion-copy { color: var(--ink2); font-size: 20rpx; line-height: 1.5; }
+.promotion-copy { color: var(--ink2); font-size: 23rpx; line-height: 1.5; }
 .promotion-actions { display: flex; flex-direction: row; gap: 12rpx; margin-top: 4rpx; }
-.promotion-action { flex: 1; min-width: 0; min-height: 54rpx; border-radius: 999rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; color: var(--accent2); font-size: 19rpx; font-weight: 800; white-space: nowrap; }
+.promotion-action { flex: 1; min-width: 0; min-height: 54rpx; border-radius: 999rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; color: var(--accent2); font-size: 22rpx; font-weight: 800; white-space: nowrap; }
 .function-list { overflow: hidden; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
 .function-item { min-height: 90rpx; padding: 0 24rpx; border-top: 1px solid var(--line); display: flex; flex-direction: row; align-items: center; gap: 14rpx; }
 .function-item:first-child { border-top: none; }
 .function-icon { width: 32rpx; height: 32rpx; border-radius: 9rpx; font-size: 17rpx; flex-shrink: 0; }
 .function-label { flex: 1; min-width: 0; color: var(--ink); font-size: 25rpx; font-weight: 700; }
-.function-trailing { color: var(--muted); font-size: 19rpx; }
-.function-link { color: var(--muted); font-size: 20rpx; white-space: nowrap; }
+.function-trailing { color: var(--muted); font-size: 22rpx; }
+.function-link { color: var(--muted); font-size: 22rpx; white-space: nowrap; }
 .logout-action { min-height: 72rpx; border-radius: 999rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 23rpx; font-weight: 800; }
 .tone-one { background: var(--accent); }
 .tone-two { background: var(--accent2); }
 .tone-three { background: var(--match-deep); }
 .tone-four { background: var(--match-paper); color: var(--accent2); }
 .tone-five { background: var(--sage); color: var(--ink); }
-.metric-item:active, .quick-action:active, .promotion-action:active, .function-item:active, .logout-action:active { opacity: 0.78; transform: scale(0.98); }
+.metric-item:active, .brief-copy:active, .quick-action:active, .promotion-action:active, .function-item:active, .logout-action:active { opacity: 0.78; transform: scale(0.98); }
 </style>

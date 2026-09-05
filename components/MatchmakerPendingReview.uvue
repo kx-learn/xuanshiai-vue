@@ -1,89 +1,295 @@
 <template>
-  <view class="pending-review-shell">
-    <view class="review-workspace-heading">
-      <view class="review-heading-copy">
-        <text class="review-heading-title">资料待审</text>
-        <text class="review-heading-desc">审核会员公开资料，确认后才会进入服务流程。</text>
-      </view>
-      <text class="review-heading-count">{{ members.length }} 份</text>
-    </view>
+  <view class="pr-shell">
 
-    <view class="review-filter-card">
-      <view class="review-tabs">
-        <view v-for="tab in tabs" :key="tab.key" class="review-tab" :class="{ active: activeStatus == tab.key }" @tap="selectStatus(tab.key)">
-          <text>{{ tab.label }}</text>
-        </view>
-      </view>
-      <view class="review-search">
-        <input placeholder="搜索昵称或会员编号" :value="keyword" @input="onKeyword" @confirm="loadMembers" />
-        <view @tap="loadMembers"><text>搜索</text></view>
-      </view>
-    </view>
-
-    <scroll-view scroll-y class="review-list" :show-scrollbar="false">
-      <view v-if="loading" class="state-card"><text>正在加载资料待审数据…</text></view>
-      <view v-else-if="errorMessage != ''" class="state-card">
-        <text>{{ errorMessage }}</text>
-        <view class="state-action" @tap="loadMembers"><text>重新加载</text></view>
-      </view>
-      <view v-else-if="members.length == 0" class="state-card"><text>当前没有符合条件的会员资料</text></view>
-
-      <view v-for="member in members" :key="member.user_id" class="member-card">
-        <view class="member-head">
-          <image v-if="member.avatar" :src="member.avatar" mode="aspectFill" />
-          <view v-else class="member-avatar"><text>会</text></view>
-          <view class="member-copy">
-            <text class="member-name">{{ member.nickname }}</text>
-            <text>会员编号：{{ member.user_id }}</text>
-            <text>资料完整度：{{ completionText(member.profile_completion_score) }}</text>
+    <!-- ============ 列表视图 ============ -->
+    <view v-if="subview == ''" class="pr-main">
+      <scroll-view scroll-x class="pr-tabs" :show-scrollbar="false">
+        <view class="pr-tabs-row">
+          <view v-for="tab in tabs" :key="tab.key" class="pr-tab" :class="{ active: activeTab == tab.key }" @tap="selectTab(tab.key)">
+            <text>{{ tab.label }}</text>
+            <view class="pr-tab-line"></view>
           </view>
-          <text class="review-badge" :class="member.review_status.toLowerCase()">{{ reviewLabel(member.review_status) }}</text>
         </view>
-        <view class="member-meta">
-          <text>{{ genderText(member.gender) }}</text>
-          <text v-if="member.residence">现居：{{ member.residence }}</text>
-          <text v-if="member.education">学历：{{ member.education }}</text>
-          <text v-if="member.job">职业：{{ member.job }}</text>
+      </scroll-view>
+
+      <view class="pr-search">
+        <text class="pr-search-icon">⌕</text>
+        <input class="pr-search-input" placeholder="请输入昵称/编号/姓名/手机号" placeholder-class="pr-search-ph" :value="keyword" confirm-type="search" @input="onKeyword" @confirm="loadMembers" />
+        <view class="pr-search-btn" @tap="loadMembers"><text>搜索</text></view>
+      </view>
+
+      <scroll-view scroll-y class="pr-list" :show-scrollbar="false">
+        <view v-if="loading" class="state-card"><text>正在加载资料数据…</text></view>
+        <view v-else-if="errorMessage != ''" class="state-card">
+          <text>{{ errorMessage }}</text>
+          <view class="state-action" @tap="loadMembers"><text>重新加载</text></view>
         </view>
-        <text v-if="member.review_reason" class="review-reason">审核说明：{{ member.review_reason }}</text>
-        <view class="member-actions">
-          <text @tap="openFollowUps(member)">服务跟进</text>
-          <text @tap="openMatchHistory(member)">牵线记录</text>
-          <text @tap="openContact(member)">联系信息</text>
-          <text @tap="openReview(member)">{{ member.review_status == 'PENDING' ? '审核资料' : '重新审核' }}</text>
+        <view v-else-if="members.length == 0" class="state-card"><text>{{ emptyText }}</text></view>
+
+          <view v-for="member in members" :key="member.user_id" class="mcard" :id="'mcard-' + member.user_id">
+          <view class="mcard-top">
+            <view class="mcard-ark"><text class="mcard-ark-glyph">◈</text><text>公开档案</text></view>
+            <text class="mcard-no">编号：G{{ member.user_id }}</text>
+            <view class="mcard-status" :class="'st-' + member.review_status.toLowerCase()" @tap="openReview(member)">
+              <text>{{ reviewLabel(member.review_status) }}</text>
+              <text class="mcard-status-dot">●</text>
+            </view>
+          </view>
+
+          <view class="mcard-body">
+            <view class="mcard-ava" :class="member.gender == 1 ? 'male' : 'female'">
+              <image v-if="member.avatar" :src="member.avatar" mode="aspectFill" />
+              <text v-else>{{ avatarText(member.nickname) }}</text>
+              <view class="mcard-ava-badge"><text>{{ member.gender == 1 ? '♂' : (member.gender == 2 ? '♀' : '') }}</text></view>
+            </view>
+            <view class="mcard-info">
+              <view class="mcard-name-row">
+                <text class="mcard-name">{{ member.nickname }}</text>
+                <view class="realname-tag" :class="member.realname_status == 2 ? 'ok' : ''"><text>{{ member.realname_status == 2 ? '已实名' : '未实名' }}</text></view>
+              </view>
+              <text class="mcard-meta">{{ memberMeta(member) }}</text>
+              <view class="mcard-owner" @tap="openAssign(member)">
+                <text class="mcard-owner-glyph">❥</text>
+                <text class="mcard-owner-label">跟进服务：</text>
+                <text class="mcard-owner-value">{{ member.matchmaker_name || '待分派' }}</text>
+              </view>
+              <view class="mcard-reg">
+                <text class="mcard-reg-glyph">◷</text>
+                <text>登记：{{ formatTime(member.created_at) }}</text>
+              </view>
+            </view>
+          </view>
+
+          <text v-if="member.review_status == 'REJECTED' && member.review_reason" class="mcard-reason">弃海说明：{{ member.review_reason }}</text>
+
+          <view class="mcard-actions">
+            <view :id="'more-trigger-' + member.user_id" class="act-more" @tap.stop="toggleMenu(member, $event)"><text>更多</text></view>
+            <view class="act" @tap="openContact(member)"><text>联系</text></view>
+            <view class="act" @tap="openFollowUps(member)"><text>跟进({{ member.followCount || 0 }})</text></view>
+            <view class="act" @tap="copyProfile(member)"><text>复制资料</text></view>
+            <view class="act" @tap="onEditProfile(member)"><text>编辑资料</text></view>
+          </view>
+
+        </view>
+      </scroll-view>
+
+      <view class="review-float-actions">
+        <view class="fab-enter" @tap="onEnterMember"><text class="fab-enter-glyph">✎</text><text>录入</text></view>
+        <view class="fab-filter" @tap="onFilter"><text class="fab-filter-glyph">☲</text><text>筛选</text></view>
+      </view>
+    </view>
+
+    <!-- 页面级筛选抽屉，放在滚动列表之外，避免被列表或卡片裁切。 -->
+    <view v-if="filterVisible" class="filter-layer">
+      <view class="filter-mask" @tap="closeMemberFilter"></view>
+      <view class="filter-drawer" @tap.stop>
+        <view class="filter-head">
+          <view>
+            <text class="filter-title">条件筛选</text>
+            <text class="filter-subtitle">按会员资料缩小查看范围</text>
+          </view>
+          <view class="filter-close" @tap="closeMemberFilter"><text>✕</text></view>
+        </view>
+        <scroll-view scroll-y class="filter-scroll" :show-scrollbar="false">
+          <view v-for="row in filterRows" :key="row.key" class="filter-row">
+            <view class="filter-row-summary" @tap="toggleMemberFilter(row.key)">
+              <text class="filter-label">{{ row.label }}</text>
+              <view class="filter-current"><text>{{ filterValueText(row.key) }}</text><text class="filter-chevron">›</text></view>
+            </view>
+            <view v-if="expandedFilterKey == row.key" class="filter-options">
+              <view v-for="option in row.options" :key="row.key + option.value" class="filter-option" :class="{ selected: memberFilter[row.key] == option.value }" @tap="selectMemberFilter(row.key, option.value)">
+                <text>{{ option.label }}</text>
+              </view>
+            </view>
+          </view>
+          <text class="filter-data-note">筛选结果会依据当前可用的会员资料实时更新。</text>
+        </scroll-view>
+        <view class="filter-footer">
+          <view class="filter-reset" @tap="resetMemberFilter"><text>重置</text></view>
+          <view class="filter-confirm" @tap="confirmMemberFilter"><text>确定</text></view>
         </view>
       </view>
-    </scroll-view>
+    </view>
 
-    <view v-if="panel != ''" class="overlay" @tap="closePanel">
+    <!-- 页面级菜单不受 scroll-view 裁切，坐标取自点击事件。 -->
+    <view v-if="menuForId != 0 && menuMember != null" class="more-layer" @tap="closeMenu">
+      <view class="more-pop" :style="{ left: menuLeft + 'px', top: menuTop + 'px' }" @tap.stop>
+        <view class="more-item" @tap="openIntroductions(menuMember)"><text>牵线({{ menuMember.introCount || 0 }})</text></view>
+        <view class="more-item" @tap="openMatch(menuMember)"><text>匹配</text></view>
+        <view class="more-item" @tap="openNote(menuMember)"><text>红娘说</text></view>
+        <view class="more-item" @tap="openAssign(menuMember)"><text>修改红娘</text></view>
+        <view class="more-item last" @tap="onAbandonEntry(menuMember)"><text>{{ menuMember.review_status == 'REJECTED' ? '已在弃海' : '放入弃海' }}</text></view>
+      </view>
+    </view>
+
+    <!-- ============ 子页：牵线记录 ============ -->
+    <view v-else-if="subview == 'introductions' && selected != null" class="subpage">
+      <view class="subpage-head">
+        <text class="subpage-title">会员 {{ selected.nickname }} 的牵线记录</text>
+        <view class="subpage-close" @tap="closeSubpage"><text>✕</text></view>
+      </view>
+      <view class="seg">
+        <view class="seg-item" :class="{ on: introTab == 'OUTGOING' }" @tap="selectIntroTab('OUTGOING')"><text>主动牵线</text></view>
+        <view class="seg-item" :class="{ on: introTab == 'INCOMING' }" @tap="selectIntroTab('INCOMING')"><text>被动牵线</text></view>
+      </view>
+      <scroll-view scroll-y class="subpage-list" :show-scrollbar="false">
+        <view v-if="introLoading" class="state-card"><text>正在加载牵线记录…</text></view>
+        <view v-else-if="visibleIntroductions.length == 0" class="state-card"><text>暂无牵线记录</text></view>
+        <view v-for="row in visibleIntroductions" :key="row.id" class="intro-row">
+          <view class="intro-ava"><text>{{ avatarText(row.counterpart_nickname) }}</text></view>
+          <view class="intro-copy">
+            <text class="intro-name">{{ row.counterpart_nickname }}</text>
+            <text class="intro-sub">编号：G{{ row.counterpart_user_id }} · {{ row.direction == 'OUTGOING' ? '会员主动申请' : '对方申请会员' }}</text>
+          </view>
+          <view class="intro-right">
+            <text class="intro-status" :class="'ms-' + row.status">{{ matchStatusLabel(row.status) }}</text>
+            <text class="intro-time">{{ formatTime(row.created_at) }}</text>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+
+    <!-- ============ 子页：匹配 ============ -->
+    <view v-else-if="subview == 'match' && selected != null" class="subpage">
+      <view class="subpage-head">
+        <text class="subpage-title">匹配合适的人</text>
+        <view class="subpage-close" @tap="closeSubpage"><text>✕</text></view>
+      </view>
+      <scroll-view scroll-y class="subpage-list" :show-scrollbar="false">
+        <view class="match-member">
+          <view class="match-member-ava"><image v-if="selected.avatar" :src="selected.avatar" mode="aspectFill" /><text v-else>{{ avatarText(selected.nickname) }}</text></view>
+          <view class="match-member-copy">
+            <view class="mcard-name-row"><text class="mcard-name">{{ selected.nickname }}</text><text class="match-member-no">会员(G{{ selected.user_id }})</text></view>
+            <text class="mcard-meta">{{ memberMeta(selected) }}</text>
+          </view>
+        </view>
+
+        <view class="match-pref">
+          <text class="match-pref-title">根据该会员的择偶要求：</text>
+          <view class="match-pref-chips">
+            <view v-for="chip in preferenceChips" :key="chip" class="match-chip"><text>{{ chip }}</text></view>
+          </view>
+        </view>
+
+        <view class="match-tip">
+          <text class="match-tip-title">温馨提示</text>
+          <text class="match-tip-copy">状态为"停止相亲"、"已经脱单"的会员资料不会显示在匹配结果中。</text>
+        </view>
+
+        <view v-if="matchLoading" class="state-card"><text>正在匹配合适人选…</text></view>
+        <view v-else-if="candidates.length == 0" class="state-card"><text>暂无符合条件的会员资料</text></view>
+        <view v-for="row in candidates" :key="row.user_id" class="candidate-card">
+          <view class="mcard-body">
+            <view class="mcard-ava" :class="row.gender == 1 ? 'male' : 'female'">
+              <image v-if="row.avatar" :src="row.avatar" mode="aspectFill" />
+              <text v-else>{{ avatarText(row.nickname) }}</text>
+            </view>
+            <view class="mcard-info">
+              <view class="mcard-name-row"><text class="mcard-name">{{ row.nickname }}</text></view>
+              <text class="cand-no">编号:G{{ row.user_id }}</text>
+              <view class="mcard-owner"><text class="mcard-owner-glyph">❥</text><text class="mcard-owner-label">服务红娘：</text><text class="mcard-owner-value">{{ row.matchmaker_name || '待分派' }}</text></view>
+            </view>
+            <view class="cand-ark"><text>公开相亲</text></view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+
+    <!-- ============ 子页：录入会员 ============ -->
+    <view v-else-if="subview == 'entry'" class="subpage entry-page">
+      <view class="subpage-head">
+        <text class="subpage-title">录入会员</text>
+        <view class="subpage-close" @tap="closeSubpage"><text>✕</text></view>
+      </view>
+      <scroll-view scroll-y class="entry-scroll" :show-scrollbar="false">
+        <view class="entry-card">
+          <view class="entry-avatar" @tap="chooseEntryAvatar">
+            <image v-if="entryDraft.avatar" :src="entryDraft.avatar" mode="aspectFill" />
+            <view v-else class="entry-avatar-empty"><text class="entry-avatar-plus">＋</text><text>上传头像</text></view>
+          </view>
+
+          <view class="entry-row entry-code-row">
+            <text class="entry-label">编号</text>
+            <view class="entry-options"><view class="entry-option" :class="{ selected: entryDraft.codeMode == 'auto' }" @tap="entryDraft.codeMode = 'auto'"><text class="entry-radio"></text><text>系统自动</text></view><view class="entry-option" :class="{ selected: entryDraft.codeMode == 'custom' }" @tap="entryDraft.codeMode = 'custom'"><text class="entry-radio"></text><text>自定义</text></view></view>
+          </view>
+          <view v-if="entryDraft.codeMode == 'custom'" class="entry-row"><text class="entry-label">自定义编号</text><input class="entry-input" :value="entryDraft.memberCode" placeholder="请输入会员编号" @input="onEntryInput('memberCode', $event)" /></view>
+
+          <view v-for="field in entryTextFields" :key="field.key" class="entry-row">
+            <text class="entry-label">{{ field.label }}</text>
+            <input class="entry-input" :type="field.type || 'text'" :value="entryDraft[field.key]" :placeholder="field.placeholder" @input="onEntryInput(field.key, $event)" />
+          </view>
+
+          <view class="entry-row"><text class="entry-label">性别</text><view class="entry-options"><view class="entry-option" :class="{ selected: entryDraft.gender == 1 }" @tap="entryDraft.gender = 1"><text class="entry-radio"></text><text>男</text></view><view class="entry-option" :class="{ selected: entryDraft.gender == 2 }" @tap="entryDraft.gender = 2"><text class="entry-radio"></text><text>女</text></view></view></view>
+          <picker class="entry-row entry-picker" mode="date" :value="entryDraft.birthday" start="1940-01-01" end="2008-12-31" @change="onEntryBirthday"><text class="entry-label">生日</text><view class="entry-value"><text>{{ entryDraft.birthday || '请选择' }}</text><text class="entry-chevron">›</text></view></picker>
+          <view class="entry-row"><text class="entry-label">体重</text><input class="entry-input" type="digit" :value="entryDraft.weight" placeholder="例如 50" @input="onEntryInput('weight', $event)" /><text class="entry-unit">kg</text></view>
+          <view class="entry-row"><text class="entry-label">身高</text><input class="entry-input" type="number" :value="entryDraft.height" placeholder="例如 165" @input="onEntryInput('height', $event)" /><text class="entry-unit">cm</text></view>
+
+          <view class="entry-row entry-status-row"><text class="entry-label">状态</text><view class="entry-options"><view class="entry-option" :class="{ selected: entryDraft.status == 'PUBLIC' }" @tap="entryDraft.status = 'PUBLIC'"><text class="entry-radio"></text><text>公开相亲</text></view><view class="entry-option" :class="{ selected: entryDraft.status == 'PAUSED' }" @tap="entryDraft.status = 'PAUSED'"><text class="entry-radio"></text><text>暂停相亲</text></view></view></view>
+          <view class="entry-row entry-readonly"><text class="entry-label">审核</text><text>待审</text></view>
+          <view class="entry-row entry-readonly"><text class="entry-label">红娘</text><text>当前服务红娘</text></view>
+        </view>
+        <text class="entry-note">请确认本人已同意录入并完成必要的信息告知；提交后将进入公开资料审核。</text>
+      </scroll-view>
+      <view class="entry-footer"><view class="entry-submit" :class="{ disabled: entrySubmitting }" @tap="submitEntry"><text>{{ entrySubmitting ? '正在提交' : '完成' }}</text></view></view>
+    </view>
+
+    <!-- ============ 红娘说 / 修改红娘 / 弃因 / 联系 / 跟进 面板 ============ -->
+    <view v-if="sheet != ''" class="overlay" @tap="closeSheet">
       <view class="panel" @tap.stop>
-        <view class="panel-head"><text>{{ panelTitle }}</text><text @tap="closePanel">关闭</text></view>
-
-        <view v-if="panel == 'review' && selected != null" class="panel-body">
-          <text class="panel-copy">此审核仅决定公开资料是否可展示，不会修改实名认证或学历认证。</text>
-          <view class="review-choice" :class="{ selected: reviewStatus == 'PASSED' }" @tap="reviewStatus = 'PASSED'"><text>审核通过</text></view>
-          <view class="review-choice" :class="{ selected: reviewStatus == 'REJECTED' }" @tap="reviewStatus = 'REJECTED'"><text>审核不通过</text></view>
-          <textarea v-if="reviewStatus == 'REJECTED'" maxlength="500" placeholder="请填写不通过原因" :value="reviewReason" @input="onReviewReason" />
-          <view class="primary-action" @tap="submitReview"><text>提交审核</text></view>
+        <view v-if="sheet != 'assign'" class="panel-head">
+          <text class="panel-title">{{ sheetTitle }}</text>
+          <view class="panel-close" @tap="closeSheet"><text>✕</text></view>
         </view>
 
-        <view v-else-if="panel == 'follow-ups' && selected != null" class="panel-body">
-          <view v-for="item in followUps" :key="item.id" class="record-row"><text>{{ followMethodLabel(item.method) }}</text><text>{{ item.content }}</text><text>{{ formatTime(item.created_at) }}</text></view>
-          <view v-if="followUps.length == 0" class="empty-row"><text>暂无服务跟进</text></view>
-          <textarea maxlength="2000" placeholder="记录本次服务跟进" :value="followContent" @input="onFollowContent" />
-          <view class="primary-action" @tap="submitFollowUp"><text>新增跟进</text></view>
+        <view v-if="sheet == 'note' && selected != null" class="panel-body">
+          <textarea class="panel-textarea" maxlength="200" placeholder="请输入一段红娘对该会员的评价，本信息公开展示，限制200汉字" :value="noteDraft" @input="onNoteDraft" />
+          <view class="panel-submit" @tap="submitNote"><text>提交</text></view>
         </view>
 
-        <view v-else-if="panel == 'contact' && selected != null" class="panel-body">
+        <view v-else-if="sheet == 'assign' && selected != null" class="panel-body">
+          <view class="assign-head">
+            <text class="assign-cancel" @tap="closeSheet">取消</text>
+            <text class="assign-title">修改红娘</text>
+            <view class="assign-confirm" @tap="submitAssign"><text>确认</text></view>
+          </view>
+          <view v-if="assignLoading" class="state-inline"><text>正在加载红娘名单…</text></view>
+          <view v-for="option in assignOptions" :key="option.user_id" class="assign-row" :class="{ disabled: option.user_id == (selected.matchmaker_id || 0), picked: assignTarget == option.user_id }" @tap="pickAssign(option)">
+            <text>{{ option.display_name }}</text>
+            <text v-if="option.user_id == (selected.matchmaker_id || 0)" class="assign-current">当前</text>
+          </view>
+        </view>
+
+        <view v-else-if="sheet == 'abandonReason' && selected != null" class="panel-body">
+          <textarea class="panel-textarea" maxlength="100" placeholder="请输入" :value="abandonReason" @input="onAbandonReason" />
+          <text class="panel-counter">已输入 {{ abandonReason.length }}/100字</text>
+          <view class="panel-submit" @tap="submitAbandon"><text>确定提交</text></view>
+        </view>
+
+        <view v-else-if="sheet == 'contact' && selected != null" class="panel-body">
           <text class="panel-copy">本次查看已记录到服务审计日志。</text>
           <text class="contact-value">{{ contactPhone || '该会员未绑定手机号' }}</text>
         </view>
 
-        <view v-else-if="panel == 'history' && selected != null" class="panel-body">
-          <view v-for="item in matchHistory" :key="item.id" class="record-row"><text>{{ item.counterpart_nickname }}</text><text>{{ matchStatusLabel(item.status) }}</text><text>{{ formatTime(item.created_at) }}</text></view>
-          <view v-if="matchHistory.length == 0" class="empty-row"><text>暂无牵线记录</text></view>
-          <view class="secondary-action" @tap="loadCandidates"><text>查看只读候选人</text></view>
-          <view v-for="item in matchCandidates" :key="item.user_id" class="candidate-row"><text>{{ item.nickname }}</text><text>{{ genderText(item.gender) }}</text><text>{{ item.residence || '未填写现居' }}</text></view>
+        <view v-else-if="sheet == 'followups' && selected != null" class="panel-body">
+          <view v-for="item in followUps" :key="item.id" class="fu-row">
+            <text class="fu-method">{{ followMethodLabel(item.method) }}</text>
+            <text class="fu-content">{{ item.content }}</text>
+            <text class="fu-time">{{ formatTime(item.created_at) }}</text>
+          </view>
+          <view v-if="followUps.length == 0" class="state-inline"><text>暂无服务跟进</text></view>
+          <textarea class="panel-textarea" maxlength="2000" placeholder="记录本次服务跟进" :value="followContent" @input="onFollowContent" />
+          <view class="panel-submit" @tap="submitFollowUp"><text>新增跟进</text></view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 放入弃海确认弹窗 -->
+    <view v-if="modal == 'abandon' && selected != null" class="modal-mask" @tap="closeModal">
+      <view class="modal-card" @tap.stop>
+        <text class="modal-copy">放入弃海后该客源的红娘分派将被改为"待分派"，并生成弃海记录，所有红娘可以在"弃海客源"中进行捞取。</text>
+        <view class="modal-actions">
+          <view class="modal-btn" @tap="closeModal"><text>取消</text></view>
+          <view class="modal-btn strong" @tap="confirmAbandon"><text>确定</text></view>
         </view>
       </view>
     </view>
@@ -92,72 +298,282 @@
 
 <script setup lang="uts">
 import {
+  assignMatchmakerMemberMatchmaker,
+  createMatchmakerWorkspaceMember,
   createMatchmakerMemberFollowUp,
   getMatchmakerMemberContact,
   getMatchmakerMemberFollowUps,
   getMatchmakerMemberMatchCandidates,
   getMatchmakerMemberMatchHistory,
+  getMatchmakerMemberMatchmakers,
+  getMatchmakerMemberNote,
   getMatchmakerReviewMembers,
+  getMatchmakerWorkspaceProfile,
+  updateMatchmakerMemberNote,
   updateMatchmakerReviewMember
 } from '@/api'
+
+interface Props {
+  snapshot: any;
+  initialTab?: string;
+}
+const props = defineProps<Props>()
 
 const tabs = [
   { key: '', label: '全部' },
   { key: 'PENDING', label: '待审' },
-  { key: 'PASSED', label: '已通过' },
-  { key: 'REJECTED', label: '未通过' }
+  { key: 'mine', label: '我的' },
+  { key: 'REJECTED', label: '弃海' },
+  { key: 'vip_online', label: '线上VIP' },
+  { key: 'vip_offline', label: '线下VIP' }
 ]
-const activeStatus = ref('PENDING')
+
+const activeTab = ref(props.initialTab == 'mine' ? 'mine' : (props.initialTab == '' ? '' : 'PENDING'))
 const keyword = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
 const members = ref<any[]>([])
-const panel = ref('')
+const rawMembers = ref<any[]>([])
+const selfUserId = ref(0)
+
+const filterVisible = ref(false)
+const expandedFilterKey = ref('')
+const createMemberFilter = (): any => ({
+  hometown: '', residence: '', gender: '', ageRange: '', heightRange: '', education: '', occupation: '', income: '',
+  marital: '', housing: '', vehicle: '', smoking: '', drinking: '', certification: '', vipOnline: '', vipOffline: ''
+})
+const memberFilter = ref<any>(createMemberFilter())
+const filterRows = [
+  { key: 'hometown', label: '籍贯', options: [{ label: '不限', value: '' }, { label: '江苏', value: '江苏' }, { label: '浙江', value: '浙江' }, { label: '上海', value: '上海' }, { label: '北京', value: '北京' }, { label: '广东', value: '广东' }, { label: '其他', value: '其他' }] },
+  { key: 'residence', label: '现居', options: [{ label: '不限', value: '' }, { label: '江苏', value: '江苏' }, { label: '浙江', value: '浙江' }, { label: '上海', value: '上海' }, { label: '北京', value: '北京' }, { label: '广东', value: '广东' }, { label: '其他', value: '其他' }] },
+  { key: 'gender', label: '性别', options: [{ label: '不限', value: '' }, { label: '男', value: 'male' }, { label: '女', value: 'female' }] },
+  { key: 'ageRange', label: '年龄', options: [{ label: '不限', value: '' }, { label: '20岁以下', value: 'under20' }, { label: '20-25岁', value: '20-25' }, { label: '26-30岁', value: '26-30' }, { label: '31-35岁', value: '31-35' }, { label: '36-40岁', value: '36-40' }, { label: '41岁以上', value: 'over40' }] },
+  { key: 'heightRange', label: '身高', options: [{ label: '不限', value: '' }, { label: '160cm以下', value: 'under160' }, { label: '160-169cm', value: '160-169' }, { label: '170-179cm', value: '170-179' }, { label: '180cm及以上', value: 'over180' }] },
+  { key: 'education', label: '学历', options: [{ label: '不限', value: '' }, { label: '高中及以下', value: 'highschool' }, { label: '大专', value: 'college' }, { label: '本科', value: 'bachelor' }, { label: '硕士及以上', value: 'master' }] },
+  { key: 'occupation', label: '职业', options: [{ label: '不限', value: '' }, { label: '事业单位/国企', value: '事业单位' }, { label: '教师/医生', value: '教师' }, { label: 'IT/互联网', value: '互联网' }, { label: '金融/法律', value: '金融' }, { label: '自由职业', value: '自由职业' }, { label: '其他', value: '其他' }] },
+  { key: 'income', label: '收入', options: [{ label: '不限', value: '' }, { label: '10万以下', value: '10万以下' }, { label: '10-20万', value: '10-20万' }, { label: '20-30万', value: '20-30万' }, { label: '30万以上', value: '30万以上' }] },
+  { key: 'marital', label: '婚况', options: [{ label: '不限', value: '' }, { label: '未婚', value: '0' }, { label: '已婚', value: '1' }, { label: '离异', value: '2' }, { label: '丧偶', value: '3' }] },
+  { key: 'housing', label: '购房', options: [{ label: '不限', value: '' }, { label: '已购房', value: '已购房' }, { label: '未购房', value: '未购房' }, { label: '购房中', value: '购房中' }] },
+  { key: 'vehicle', label: '购车', options: [{ label: '不限', value: '' }, { label: '已购车', value: '已购车' }, { label: '未购车', value: '未购车' }, { label: '购车中', value: '购车中' }] },
+  { key: 'smoking', label: '吸烟', options: [{ label: '不限', value: '' }, { label: '不吸烟', value: '不吸烟' }, { label: '偶尔吸烟', value: '偶尔吸烟' }, { label: '吸烟', value: '吸烟' }] },
+  { key: 'drinking', label: '喝酒', options: [{ label: '不限', value: '' }, { label: '不喝酒', value: '不喝酒' }, { label: '偶尔喝酒', value: '偶尔喝酒' }, { label: '喝酒', value: '喝酒' }] },
+  { key: 'certification', label: '认证', options: [{ label: '不限', value: '' }, { label: '已实名', value: 'verified' }, { label: '未实名', value: 'unverified' }] },
+  { key: 'vipOnline', label: '线上VIP', options: [{ label: '不限', value: '' }, { label: '只看VIP', value: 'vip' }] },
+  { key: 'vipOffline', label: '线下VIP', options: [{ label: '不限', value: '' }, { label: '只看VIP', value: 'vip' }] }
+]
+
+const subview = ref('')
 const selected = ref<any>(null)
-const reviewStatus = ref('PASSED')
-const reviewReason = ref('')
+
+const introTab = ref('OUTGOING')
+const introLoading = ref(false)
+const introductions = ref<any[]>([])
+
+const matchLoading = ref(false)
+const candidates = ref<any[]>([])
+const preference = ref<any>(null)
+
+const sheet = ref('')
+const noteDraft = ref('')
+const assignOptions = ref<any[]>([])
+const assignLoading = ref(false)
+const assignTarget = ref(0)
+const abandonReason = ref('')
+const pendingAbandon = ref(false)
+const contactPhone = ref('')
 const followUps = ref<any[]>([])
 const followContent = ref('')
-const contactPhone = ref('')
-const matchHistory = ref<any[]>([])
-const matchCandidates = ref<any[]>([])
 
-const panelTitle = computed(() => {
-  if (panel.value == 'review') return '审核公开资料'
-  if (panel.value == 'follow-ups') return '服务跟进'
-  if (panel.value == 'contact') return '联系信息'
-  return '牵线记录'
+const modal = ref('')
+const menuForId = ref(0)
+const menuLeft = ref(8)
+const menuTop = ref(8)
+const menuMember = computed(() => {
+  const id = menuForId.value
+  if (id == 0) return null
+  return (members.value as any[]).find((item: any) => Number(item.user_id) == id) || null
 })
 
-const notify = (message: string) => uni.showToast({ title: message, icon: 'none' })
-const reviewLabel = (status: string) => status == 'PASSED' ? '审核通过' : (status == 'REJECTED' ? '审核不通过' : '待审核')
-const genderText = (gender: any) => gender == 1 ? '男' : (gender == 2 ? '女' : '性别未填写')
-const completionText = (score: any) => String(Math.round(Number(score || 0))) + '%'
-const followMethodLabel = (method: string) => method == 'PHONE' ? '电话' : (method == 'WECHAT' ? '微信' : (method == 'VISIT' ? '面谈' : '其他'))
-const matchStatusLabel = (status: any) => Number(status) == 1 ? '双方同意' : (Number(status) == 2 ? '已拒绝' : (Number(status) == 3 ? '已关闭' : '待回应'))
-const formatTime = (value: any) => value == null ? '' : String(value).replace('T', ' ').substring(0, 19)
-const onKeyword = (event: any) => { keyword.value = event.detail.value }
-const onReviewReason = (event: any) => { reviewReason.value = event.detail.value }
-const onFollowContent = (event: any) => { followContent.value = event.detail.value }
+const entrySubmitting = ref(false)
+const entryDraft = ref<any>({
+  avatar: '', codeMode: 'auto', memberCode: '', nickname: '', realName: '', gender: 1,
+  phone: '', wechat: '', birthday: '1990-01-01', zodiac: '', hometown: '', household: '', residence: '',
+  weight: '', height: '', education: '', maritalStatus: '', occupation: '', income: '', ethnicity: '',
+  housing: '', vehicle: '', smoking: '', drinking: '', religion: '', marriagePlan: '', tags: '', status: 'PUBLIC'
+})
+const entryTextFields = [
+  { key: 'nickname', label: '昵称', placeholder: '请输入昵称' },
+  { key: 'realName', label: '姓名', placeholder: '请输入姓名' },
+  { key: 'phone', label: '手机', placeholder: '请输入手机号', type: 'number' },
+  { key: 'wechat', label: '微信', placeholder: '请输入微信号' },
+  { key: 'zodiac', label: '属相', placeholder: '例如：属马' },
+  { key: 'hometown', label: '家乡', placeholder: '请输入家乡' },
+  { key: 'household', label: '户口', placeholder: '请输入户口所在地' },
+  { key: 'residence', label: '现居', placeholder: '请输入现居地' },
+  { key: 'education', label: '学历', placeholder: '请输入学历' },
+  { key: 'maritalStatus', label: '婚况', placeholder: '例如：未婚' },
+  { key: 'occupation', label: '职业', placeholder: '请输入职业' },
+  { key: 'income', label: '收入', placeholder: '请输入收入范围' },
+  { key: 'ethnicity', label: '民族', placeholder: '请输入民族' },
+  { key: 'housing', label: '购房', placeholder: '例如：已购房' },
+  { key: 'vehicle', label: '购车', placeholder: '例如：已购车' },
+  { key: 'smoking', label: '吸烟', placeholder: '例如：不吸烟' },
+  { key: 'drinking', label: '喝酒', placeholder: '例如：偶尔' },
+  { key: 'religion', label: '宗教', placeholder: '如无请填写无' },
+  { key: 'marriagePlan', label: '结婚', placeholder: '请输入结婚计划' },
+  { key: 'tags', label: '标签', placeholder: '多个标签用逗号分隔' }
+]
 
+const notify = (message: string) => uni.showToast({ title: message, icon: 'none' })
+
+const emptyText = computed(() => {
+  if (activeTab.value == 'PENDING') return '暂无待审核的会员资料'
+  if (activeTab.value == 'REJECTED') return '暂无弃海客源'
+  if (activeTab.value == 'vip_online' || activeTab.value == 'vip_offline') return 'VIP 标签服务端暂未开放，敬请期待'
+  return '当前没有符合条件的会员资料'
+})
+
+const sheetTitle = computed(() => {
+  if (sheet.value == 'note') return '红娘说'
+  if (sheet.value == 'abandonReason') return '放弃原因'
+  if (sheet.value == 'contact') return '联系信息'
+  if (sheet.value == 'followups') return '服务跟进'
+  return ''
+})
+
+const visibleIntroductions = computed(() => {
+  return (introductions.value as any[]).filter((row: any) => row.direction == introTab.value)
+})
+
+const preferenceChips = computed(() => {
+  const chips: string[] = []
+  const pref = preference.value
+  if (pref != null && pref.age_min != null && pref.age_max != null) chips.push('年龄' + pref.age_min + '-' + pref.age_max)
+  else chips.push('年龄不限')
+  if (pref != null && pref.height_min != null && pref.height_max != null) chips.push('身高' + pref.height_min + '-' + pref.height_max)
+  else chips.push('身高不限')
+  if (pref != null && pref.income_min != null) chips.push('收入' + pref.income_min + '以上')
+  else chips.push('收入不限')
+  if (pref != null && pref.education_min != null) chips.push(educationLabel(Number(pref.education_min)))
+  else chips.push('学历不限')
+  return chips
+})
+
+/* ---------- 工具 ---------- */
+const formatTime = (value: any): string => value == null ? '' : String(value).replace('T', ' ').substring(0, 19)
+const avatarText = (name: any): string => {
+  const text = name != null ? String(name).trim() : ''
+  return text.length > 0 ? text.substring(0, 1) : '会'
+}
+const ageText = (birthday: any): string => {
+  if (birthday == null) return ''
+  const text = String(birthday)
+  if (text.length < 4) return ''
+  const birth = parseInt(text.substring(0, 4))
+  if (isNaN(birth)) return ''
+  return String(new Date().getFullYear() - birth) + '岁'
+}
+const marriedText = (value: any): string => {
+  const status = value != null ? Number(value) : -1
+  if (status == 0) return '未婚'
+  if (status == 1) return '已婚'
+  if (status == 2) return '离异'
+  if (status == 3) return '丧偶'
+  return '婚况未填'
+}
+const educationLabel = (code: number): string => {
+  if (code == 1) return '博士及以上'
+  if (code == 2) return '硕士及以上'
+  if (code == 3) return '本科及以上'
+  if (code == 4) return '大专及以上'
+  if (code == 5) return '高中及以上'
+  return '学历不限'
+}
+const memberMeta = (member: any): string => {
+  const parts: string[] = []
+  parts.push(marriedText(member.is_married))
+  const age = ageText(member.birthday)
+  if (age.length > 0) parts.push(age)
+  if (member.education != null && String(member.education).length > 0) parts.push(String(member.education))
+  else if (member.job != null && String(member.job).length > 0) parts.push(String(member.job))
+  if (member.height != null) parts.push(String(member.height) + 'cm')
+  return parts.join(' · ')
+}
+const reviewLabel = (status: string): string => status == 'PASSED' ? '已通过' : (status == 'REJECTED' ? '已弃海' : '待审核')
+const matchStatusLabel = (status: any): string => {
+  const value = Number(status)
+  if (value == 1) return '双方同意'
+  if (value == 2) return '已拒绝'
+  if (value == 3) return '已关闭'
+  return '待回应'
+}
+const followMethodLabel = (method: string): string => method == 'PHONE' ? '电话' : (method == 'WECHAT' ? '微信' : (method == 'VISIT' ? '面谈' : '其他'))
+const onKeyword = (event: any) => { keyword.value = event.detail.value }
+const onNoteDraft = (event: any) => { noteDraft.value = event.detail.value }
+const onAbandonReason = (event: any) => { abandonReason.value = event.detail.value }
+const onFollowContent = (event: any) => { followContent.value = event.detail.value }
+const onEntryInput = (key: string, event: any) => { entryDraft.value[key] = event.detail.value }
+const onEntryBirthday = (event: any) => { entryDraft.value.birthday = event.detail.value }
+
+const chooseEntryAvatar = () => {
+  uni.chooseImage({
+    count: 1,
+    sizeType: ['compressed'],
+    success: (result: any) => {
+      if (result.tempFilePaths != null && result.tempFilePaths.length > 0) entryDraft.value.avatar = String(result.tempFilePaths[0])
+    },
+    fail: () => notify('头像选择已取消')
+  })
+}
+
+const resetEntryDraft = () => {
+  entryDraft.value = { avatar: '', codeMode: 'auto', memberCode: '', nickname: '', realName: '', gender: 1, phone: '', wechat: '', birthday: '1990-01-01', zodiac: '', hometown: '', household: '', residence: '', weight: '', height: '', education: '', maritalStatus: '', occupation: '', income: '', ethnicity: '', housing: '', vehicle: '', smoking: '', drinking: '', religion: '', marriagePlan: '', tags: '', status: 'PUBLIC' }
+}
+
+const submitEntry = async () => {
+  if (entrySubmitting.value) return
+  const draft = entryDraft.value
+  if (String(draft.nickname).trim().length == 0) { notify('请填写昵称'); return }
+  if (String(draft.realName).trim().length == 0) { notify('请填写姓名'); return }
+  if (!/^1[3-9]\d{9}$/.test(String(draft.phone).trim())) { notify('请填写正确的手机号'); return }
+  if (draft.codeMode == 'custom' && String(draft.memberCode).trim().length == 0) { notify('请填写自定义编号'); return }
+  if (String(draft.height).trim().length > 0 && (isNaN(Number(draft.height)) || Number(draft.height) < 100 || Number(draft.height) > 250)) { notify('请填写正确的身高'); return }
+  if (String(draft.weight).trim().length > 0 && (isNaN(Number(draft.weight)) || Number(draft.weight) < 40 || Number(draft.weight) > 120)) { notify('请填写正确的体重'); return }
+  entrySubmitting.value = true
+  try {
+    const result = await createMatchmakerWorkspaceMember({
+      codeMode: draft.codeMode, memberCode: String(draft.memberCode).trim(), nickname: String(draft.nickname).trim(), realName: String(draft.realName).trim(), gender: draft.gender,
+      phone: String(draft.phone).trim(), wechat: String(draft.wechat).trim(), birthday: draft.birthday, zodiac: String(draft.zodiac).trim(), hometown: String(draft.hometown).trim(), household: String(draft.household).trim(), residence: String(draft.residence).trim(), weight: draft.weight == '' ? null : Number(draft.weight), height: draft.height == '' ? null : Number(draft.height), education: String(draft.education).trim(), maritalStatus: String(draft.maritalStatus).trim(), occupation: String(draft.occupation).trim(), income: String(draft.income).trim(), ethnicity: String(draft.ethnicity).trim(), housing: String(draft.housing).trim(), vehicle: String(draft.vehicle).trim(), smoking: String(draft.smoking).trim(), drinking: String(draft.drinking).trim(), religion: String(draft.religion).trim(), marriagePlan: String(draft.marriagePlan).trim(), tags: String(draft.tags).trim(), status: draft.status
+    })
+    if (!result.success) { notify(result.message || '会员录入暂未开放'); return }
+    notify('会员资料已录入，等待审核')
+    resetEntryDraft()
+    subview.value = ''
+    activeTab.value = 'PENDING'
+    await loadMembers()
+  } finally { entrySubmitting.value = false }
+}
+
+/* ---------- 列表加载 ---------- */
 const loadMembers = async () => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const result = await getMatchmakerReviewMembers()
+    const data: any = { page: 1, page_size: 100 }
+    if (activeTab.value == 'PENDING' || activeTab.value == 'REJECTED') data['review_status'] = activeTab.value
+    if (keyword.value.trim().length > 0) data['search'] = keyword.value.trim()
+    const result = await getMatchmakerReviewMembers(data)
     if (!result.success || result.data == null) {
+      rawMembers.value = []
+      errorMessage.value = result.message || '资料数据加载失败'
       members.value = []
-      errorMessage.value = result.message || '资料待审数据加载失败'
       return
     }
     const raw = Array.isArray(result.data.items) ? result.data.items : []
-    const key = keyword.value.trim().toLowerCase()
-    members.value = raw.filter((item: any) => {
-      if (activeStatus.value != '' && item.review_status != activeStatus.value) return false
-      if (key == '') return true
-      return (String(item.nickname || '') + String(item.user_id || '')).toLowerCase().indexOf(key) >= 0
-    })
+    rawMembers.value = raw
+    applyMemberFilter()
   } catch (error) {
+    rawMembers.value = []
     members.value = []
     errorMessage.value = '网络异常，请稍后重试'
   } finally {
@@ -165,126 +581,728 @@ const loadMembers = async () => {
   }
 }
 
-const selectStatus = (status: string) => { activeStatus.value = status; loadMembers() }
-const closePanel = () => {
-  panel.value = ''
-  selected.value = null
-  followUps.value = []
-  matchHistory.value = []
-  matchCandidates.value = []
-  contactPhone.value = ''
+const filterValueText = (key: string): string => {
+  const row = (filterRows as any[]).find((item: any) => item.key == key)
+  if (row == null) return '不限'
+  const option = (row.options as any[]).find((item: any) => item.value == memberFilter.value[key])
+  return option != null ? String(option.label) : '不限'
 }
-const openReview = (member: any) => {
-  selected.value = member
-  reviewStatus.value = member.review_status == 'REJECTED' ? 'REJECTED' : 'PASSED'
-  reviewReason.value = member.review_reason || ''
-  panel.value = 'review'
+
+const toggleMemberFilter = (key: string) => {
+  expandedFilterKey.value = expandedFilterKey.value == key ? '' : key
 }
-const openFollowUps = async (member: any) => {
-  selected.value = member
-  followContent.value = ''
-  panel.value = 'follow-ups'
-  const result = await getMatchmakerMemberFollowUps(String(member.user_id))
-  if (result.success && result.data != null) followUps.value = Array.isArray(result.data.items) ? result.data.items : []
-  else notify(result.message || '服务跟进加载失败')
+
+const selectMemberFilter = (key: string, value: string) => {
+  memberFilter.value[key] = value
+  expandedFilterKey.value = ''
 }
-const openContact = async (member: any) => {
-  selected.value = member
-  contactPhone.value = ''
-  panel.value = 'contact'
-  const result = await getMatchmakerMemberContact(String(member.user_id))
-  if (result.success && result.data != null) contactPhone.value = result.data.phone != null ? String(result.data.phone) : ''
-  else { notify(result.message || '联系信息加载失败'); closePanel() }
+
+const closeMemberFilter = () => {
+  filterVisible.value = false
+  expandedFilterKey.value = ''
 }
-const openMatchHistory = async (member: any) => {
-  selected.value = member
-  matchHistory.value = []
-  matchCandidates.value = []
-  panel.value = 'history'
-  const result = await getMatchmakerMemberMatchHistory(String(member.user_id))
-  if (result.success && result.data != null) matchHistory.value = Array.isArray(result.data.items) ? result.data.items : []
-  else notify(result.message || '牵线记录加载失败')
+
+const hasMemberValue = (member: any, key: string): boolean => {
+  return member != null && member[key] != null && String(member[key]).trim().length > 0
 }
-const loadCandidates = async () => {
-  if (selected.value == null) return
-  const result = await getMatchmakerMemberMatchCandidates(String(selected.value.user_id))
-  if (result.success && result.data != null) matchCandidates.value = Array.isArray(result.data.items) ? result.data.items : []
-  else notify(result.message || '候选人加载失败')
+
+const textFilterMatches = (member: any, key: string, value: string): boolean => {
+  if (value.length == 0 || !hasMemberValue(member, key)) return true
+  const text = String(member[key])
+  if (value == '其他') return text.indexOf('江苏') < 0 && text.indexOf('浙江') < 0 && text.indexOf('上海') < 0 && text.indexOf('北京') < 0 && text.indexOf('广东') < 0
+  return text.indexOf(value) >= 0
 }
-const submitReview = async () => {
-  if (selected.value == null) return
-  if (reviewStatus.value == 'REJECTED' && reviewReason.value.trim() == '') {
-    notify('请填写不通过原因')
+
+const ageOfMember = (member: any): number => {
+  if (!hasMemberValue(member, 'birthday')) return -1
+  const year = parseInt(String(member.birthday).substring(0, 4))
+  return isNaN(year) ? -1 : new Date().getFullYear() - year
+}
+
+const rangeMatches = (numberValue: number, range: string, kind: string): boolean => {
+  if (range.length == 0 || numberValue < 0) return true
+  if (kind == 'age') {
+    if (range == 'under20') return numberValue < 20
+    if (range == '20-25') return numberValue >= 20 && numberValue <= 25
+    if (range == '26-30') return numberValue >= 26 && numberValue <= 30
+    if (range == '31-35') return numberValue >= 31 && numberValue <= 35
+    if (range == '36-40') return numberValue >= 36 && numberValue <= 40
+    return numberValue > 40
+  }
+  if (range == 'under160') return numberValue < 160
+  if (range == '160-169') return numberValue >= 160 && numberValue <= 169
+  if (range == '170-179') return numberValue >= 170 && numberValue <= 179
+  return numberValue >= 180
+}
+
+const educationFilterMatches = (member: any, value: string): boolean => {
+  if (value.length == 0 || !hasMemberValue(member, 'education')) return true
+  const education = String(member.education)
+  if (value == 'highschool') return education.indexOf('高中') >= 0 || education == '5'
+  if (value == 'college') return education.indexOf('大专') >= 0 || education == '4'
+  if (value == 'bachelor') return education.indexOf('本科') >= 0 || education == '3'
+  return education.indexOf('硕') >= 0 || education.indexOf('博') >= 0 || education == '1' || education == '2'
+}
+
+const occupationFilterMatches = (member: any, value: string): boolean => {
+  if (value.length == 0 || !hasMemberValue(member, 'job')) return true
+  const job = String(member.job)
+  if (value == '教师') return job.indexOf('教师') >= 0 || job.indexOf('医生') >= 0
+  if (value == '金融') return job.indexOf('金融') >= 0 || job.indexOf('法律') >= 0
+  if (value == '互联网') return job.indexOf('互联网') >= 0 || job.indexOf('IT') >= 0
+  return textFilterMatches(member, 'job', value)
+}
+
+const vipFilterMatches = (member: any, keys: string[], value: string): boolean => {
+  if (value.length == 0) return true
+  let available = false
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]
+    if (hasMemberValue(member, key)) {
+      available = true
+      const raw = member[key]
+      if (raw === true || raw == 1 || String(raw).toUpperCase() == 'VIP' || String(raw).toLowerCase() == 'true') return true
+    }
+  }
+  return !available
+}
+
+const isFilterAvailable = (key: string): boolean => {
+  const fields: any = {
+    hometown: ['hometown'], residence: ['residence'], gender: ['gender'], ageRange: ['birthday'], heightRange: ['height'], education: ['education'], occupation: ['job'], income: ['income'], marital: ['is_married'], housing: ['housing'], vehicle: ['vehicle'], smoking: ['smoking'], drinking: ['drinking'], certification: ['realname_status'], vipOnline: ['vip_online', 'online_vip', 'vipOnline'], vipOffline: ['vip_offline', 'offline_vip', 'vipOffline']
+  }
+  const keys = fields[key] as string[]
+  if (keys == null) return false
+  return (rawMembers.value as any[]).some((member: any) => keys.some((field: string) => hasMemberValue(member, field)))
+}
+
+const unavailableFilterCount = (): number => {
+  let count = 0
+  const keys = Object.keys(memberFilter.value)
+  for (let i = 0; i < keys.length; i++) {
+    if (String(memberFilter.value[keys[i]]).length > 0 && !isFilterAvailable(keys[i])) count++
+  }
+  return count
+}
+
+const applyMemberFilter = () => {
+  const selectedFilter = memberFilter.value
+  let list = rawMembers.value as any[]
+  if (activeTab.value == 'mine') list = list.filter((item: any) => Number(item.matchmaker_id) == selfUserId.value)
+  list = list.filter((member: any) => {
+    if (selectedFilter.gender == 'male' && Number(member.gender) != 1) return false
+    if (selectedFilter.gender == 'female' && Number(member.gender) != 2) return false
+    if (!rangeMatches(ageOfMember(member), selectedFilter.ageRange, 'age')) return false
+    const height = hasMemberValue(member, 'height') ? Number(member.height) : -1
+    if (!rangeMatches(isNaN(height) ? -1 : height, selectedFilter.heightRange, 'height')) return false
+    if (!textFilterMatches(member, 'hometown', selectedFilter.hometown)) return false
+    if (!textFilterMatches(member, 'residence', selectedFilter.residence)) return false
+    if (!educationFilterMatches(member, selectedFilter.education)) return false
+    if (!occupationFilterMatches(member, selectedFilter.occupation)) return false
+    if (!textFilterMatches(member, 'income', selectedFilter.income)) return false
+    if (selectedFilter.marital.length > 0 && hasMemberValue(member, 'is_married') && String(member.is_married) != selectedFilter.marital) return false
+    if (!textFilterMatches(member, 'housing', selectedFilter.housing)) return false
+    if (!textFilterMatches(member, 'vehicle', selectedFilter.vehicle)) return false
+    if (!textFilterMatches(member, 'smoking', selectedFilter.smoking)) return false
+    if (!textFilterMatches(member, 'drinking', selectedFilter.drinking)) return false
+    if (selectedFilter.certification == 'verified' && Number(member.realname_status) != 2) return false
+    if (selectedFilter.certification == 'unverified' && Number(member.realname_status) == 2) return false
+    if (!vipFilterMatches(member, ['vip_online', 'online_vip', 'vipOnline'], selectedFilter.vipOnline)) return false
+    if (!vipFilterMatches(member, ['vip_offline', 'offline_vip', 'vipOffline'], selectedFilter.vipOffline)) return false
+    return true
+  })
+  members.value = list
+}
+
+const resetMemberFilter = () => {
+  memberFilter.value = createMemberFilter()
+  expandedFilterKey.value = ''
+  applyMemberFilter()
+}
+
+const confirmMemberFilter = () => {
+  applyMemberFilter()
+  const unavailableCount = unavailableFilterCount()
+  closeMemberFilter()
+  if (unavailableCount > 0) {
+    notify('已筛选 ' + String(members.value.length) + ' 位会员，部分条件待数据源支持')
     return
   }
-  const result = await updateMatchmakerReviewMember(String(selected.value.user_id), { status: reviewStatus.value, reason: reviewReason.value.trim() })
-  if (!result.success) { notify(result.message || '审核提交失败'); return }
-  notify('审核结果已保存')
-  closePanel()
+  notify('已按条件筛选 ' + String(members.value.length) + ' 位会员')
+}
+
+const selectTab = (key: string) => {
+  activeTab.value = key
+  if (key == 'vip_online' || key == 'vip_offline') {
+    members.value = []
+    return
+  }
   loadMembers()
 }
+
+const loadSelfProfile = async () => {
+  try {
+    const result = await getMatchmakerWorkspaceProfile()
+    if (result.success && result.data != null && result.data.user_id != null) {
+      selfUserId.value = Number(result.data.user_id)
+      if (activeTab.value == 'mine') applyMemberFilter()
+    }
+  } catch (e) {
+  }
+}
+
+/* ---------- 更多菜单 ---------- */
+const toggleMenu = (member: any, event: any) => {
+  const id = Number(member.user_id)
+  if (menuForId.value == id) {
+    closeMenu()
+    return
+  }
+  const windowInfo = uni.getSystemInfoSync()
+  const menuWidth = 270 * windowInfo.windowWidth / 750
+  const menuHeight = 5 * 84 * windowInfo.windowWidth / 750
+  let tapX = 0
+  let tapY = 0
+  if (event != null && event.detail != null) {
+    if (event.detail.x != null) tapX = Number(event.detail.x)
+    if (event.detail.y != null) tapY = Number(event.detail.y)
+  }
+  if ((tapX <= 0 || tapY <= 0) && event != null && event.touches != null && event.touches.length > 0) {
+    const touch = event.touches[0]
+    if (tapX <= 0 && touch.clientX != null) tapX = Number(touch.clientX)
+    if (tapY <= 0 && touch.clientY != null) tapY = Number(touch.clientY)
+  }
+  // tap 坐标以屏幕为准；保底值只在极少数旧端未提供坐标时使用。
+  if (tapX <= 0) tapX = 56 * windowInfo.windowWidth / 375
+  if (tapY <= 0) tapY = windowInfo.windowHeight / 2
+  const maxLeft = Math.max(8, windowInfo.windowWidth - menuWidth - 8)
+  menuLeft.value = Math.min(maxLeft, Math.max(8, tapX - 26))
+  const maxTop = Math.max(8, windowInfo.windowHeight - menuHeight - 8)
+  const aboveTop = tapY - menuHeight - 28
+  menuTop.value = aboveTop >= 8 ? aboveTop : Math.min(maxTop, tapY + 28)
+  menuForId.value = id
+  if (!(member.introCount > 0)) loadIntroCount(member)
+}
+const closeMenu = () => { menuForId.value = 0 }
+
+const loadIntroCount = async (member: any) => {
+  const result = await getMatchmakerMemberMatchHistory(String(member.user_id))
+  if (result.success && result.data != null) {
+    member.introCount = result.data.total != null ? Number(result.data.total) : 0
+  }
+}
+
+/* ---------- 子页：牵线记录 ---------- */
+const openIntroductions = (member: any) => {
+  closeMenu()
+  selected.value = member
+  subview.value = 'introductions'
+  introTab.value = 'OUTGOING'
+  introductions.value = []
+  loadIntroductions(member)
+}
+const selectIntroTab = (tab: string) => { introTab.value = tab }
+const loadIntroductions = async (member: any) => {
+  introLoading.value = true
+  const result = await getMatchmakerMemberMatchHistory(String(member.user_id))
+  if (result.success && result.data != null) {
+    introductions.value = Array.isArray(result.data.items) ? result.data.items : []
+    member.introCount = result.data.total != null ? Number(result.data.total) : 0
+  } else {
+    notify(result.message || '牵线记录加载失败')
+  }
+  introLoading.value = false
+}
+
+/* ---------- 子页：匹配 ---------- */
+const openMatch = (member: any) => {
+  closeMenu()
+  selected.value = member
+  subview.value = 'match'
+  candidates.value = []
+  preference.value = null
+  loadCandidates(member)
+}
+const loadCandidates = async (member: any) => {
+  matchLoading.value = true
+  const result = await getMatchmakerMemberMatchCandidates(String(member.user_id))
+  if (result.success && result.data != null) {
+    candidates.value = Array.isArray(result.data.items) ? result.data.items : []
+    preference.value = result.data.preference != null ? result.data.preference : null
+  } else {
+    notify(result.message || '匹配候选加载失败')
+  }
+  matchLoading.value = false
+}
+
+const closeSubpage = () => {
+  subview.value = ''
+  selected.value = null
+  introductions.value = []
+  candidates.value = []
+}
+
+/* ---------- 红娘说 ---------- */
+const openNote = (member: any) => {
+  closeMenu()
+  selected.value = member
+  noteDraft.value = ''
+  sheet.value = 'note'
+  loadNote(member)
+}
+const loadNote = async (member: any) => {
+  const result = await getMatchmakerMemberNote(String(member.user_id))
+  if (result.success && result.data != null) noteDraft.value = result.data.note != null ? String(result.data.note) : ''
+}
+const submitNote = async () => {
+  if (selected.value == null) return
+  const text = noteDraft.value.trim()
+  if (text.length == 0) {
+    notify('请输入红娘说内容')
+    return
+  }
+  if (text.length > 200) {
+    notify('红娘说最多 200 字')
+    return
+  }
+  const result = await updateMatchmakerMemberNote(String(selected.value.user_id), text)
+  if (!result.success) {
+    notify(result.message || '红娘说保存失败')
+    return
+  }
+  notify('红娘说已保存')
+  closeSheet()
+}
+
+/* ---------- 修改红娘 ---------- */
+const openAssign = (member: any) => {
+  closeMenu()
+  selected.value = member
+  assignOptions.value = []
+  assignTarget.value = member.matchmaker_id != null ? Number(member.matchmaker_id) : 0
+  sheet.value = 'assign'
+  loadAssignOptions(member)
+}
+const loadAssignOptions = async (member: any) => {
+  assignLoading.value = true
+  const result = await getMatchmakerMemberMatchmakers(String(member.user_id))
+  if (result.success && result.data != null) {
+    assignOptions.value = Array.isArray(result.data) ? result.data : []
+    if (assignTarget.value == 0 && assignOptions.value.length > 0) assignTarget.value = Number(assignOptions.value[0].user_id)
+  } else {
+    notify(result.message || '红娘名单加载失败')
+  }
+  assignLoading.value = false
+}
+const pickAssign = (option: any) => {
+  if (selected.value != null && option.user_id == (selected.value.matchmaker_id || 0)) return
+  assignTarget.value = Number(option.user_id)
+}
+const submitAssign = async () => {
+  if (selected.value == null) return
+  if (assignTarget.value == 0) {
+    notify('请选择接手的服务红娘')
+    return
+  }
+  if (assignTarget.value == (selected.value.matchmaker_id || 0)) {
+    notify('该会员已由当前红娘跟进')
+    return
+  }
+  const result = await assignMatchmakerMemberMatchmaker(String(selected.value.user_id), String(assignTarget.value))
+  if (!result.success) {
+    notify(result.message || '修改红娘失败')
+    return
+  }
+  notify('跟进红娘已更新')
+  closeSheet()
+  loadMembers()
+}
+
+/* ---------- 放入弃海 ---------- */
+const onAbandonEntry = (member: any) => {
+  closeMenu()
+  selected.value = member
+  if (member.review_status == 'REJECTED') {
+    notify('该会员已在弃海中')
+    return
+  }
+  pendingAbandon.value = false
+  abandonReason.value = ''
+  modal.value = 'abandon'
+}
+const closeModal = () => { modal.value = '' }
+const confirmAbandon = () => {
+  modal.value = ''
+  abandonReason.value = ''
+  pendingAbandon.value = true
+  sheet.value = 'abandonReason'
+}
+const submitAbandon = async () => {
+  if (selected.value == null) return
+  const reason = abandonReason.value.trim()
+  if (reason.length == 0) {
+    notify('请填写放弃原因')
+    return
+  }
+  if (!pendingAbandon.value) {
+    closeSheet()
+    return
+  }
+  const result = await updateMatchmakerReviewMember(String(selected.value.user_id), { status: 'REJECTED', reason: reason })
+  if (!result.success) {
+    notify(result.message || '放入弃海失败')
+    return
+  }
+  pendingAbandon.value = false
+  notify('已放入弃海')
+  closeSheet()
+  loadMembers()
+}
+
+/* ---------- 联系 / 跟进（保留原真实接口） ---------- */
+const openContact = async (member: any) => {
+  closeMenu()
+  selected.value = member
+  contactPhone.value = ''
+  sheet.value = 'contact'
+  const result = await getMatchmakerMemberContact(String(member.user_id))
+  if (result.success && result.data != null) contactPhone.value = result.data.phone != null ? String(result.data.phone) : ''
+  else {
+    notify(result.message || '联系信息加载失败')
+    closeSheet()
+  }
+}
+const openFollowUps = async (member: any) => {
+  closeMenu()
+  selected.value = member
+  followContent.value = ''
+  followUps.value = []
+  sheet.value = 'followups'
+  const result = await getMatchmakerMemberFollowUps(String(member.user_id))
+  if (result.success && result.data != null) {
+    followUps.value = Array.isArray(result.data.items) ? result.data.items : []
+    member.followCount = result.data.total != null ? Number(result.data.total) : 0
+  } else notify(result.message || '服务跟进加载失败')
+}
 const submitFollowUp = async () => {
-  if (selected.value == null || followContent.value.trim() == '') {
+  if (selected.value == null) return
+  if (followContent.value.trim() == '') {
     notify('请填写跟进内容')
     return
   }
   const result = await createMatchmakerMemberFollowUp(String(selected.value.user_id), { method: 'OTHER', content: followContent.value.trim() })
-  if (!result.success) { notify(result.message || '跟进提交失败'); return }
+  if (!result.success) {
+    notify(result.message || '跟进提交失败')
+    return
+  }
   followContent.value = ''
   notify('服务跟进已保存')
   const reload = await getMatchmakerMemberFollowUps(String(selected.value.user_id))
-  if (reload.success && reload.data != null) followUps.value = Array.isArray(reload.data.items) ? reload.data.items : []
+  if (reload.success && reload.data != null) {
+    followUps.value = Array.isArray(reload.data.items) ? reload.data.items : []
+    selected.value.followCount = reload.data.total != null ? Number(reload.data.total) : 0
+  }
 }
 
-onMounted(() => { loadMembers() })
+/* ---------- 复制 / 编辑 / 悬浮球（按键逻辑保留） ---------- */
+const copyProfile = (member: any) => {
+  closeMenu()
+  const lines: string[] = []
+  lines.push('昵称：' + String(member.nickname || ''))
+  lines.push('编号：G' + String(member.user_id))
+  lines.push('性别：' + (member.gender == 1 ? '男' : (member.gender == 2 ? '女' : '未填写')))
+  lines.push('基本资料：' + memberMeta(member))
+  lines.push('现居：' + String(member.residence || '未填写'))
+  lines.push('跟进服务：' + String(member.matchmaker_name || '待分派'))
+  lines.push('登记：' + formatTime(member.created_at))
+  uni.setClipboardData({
+    data: lines.join('\n'),
+    success: () => notify('资料已复制'),
+    fail: () => notify('复制失败，请重试')
+  })
+}
+const onEditProfile = (member: any) => {
+  closeMenu()
+  notify('会员资料编辑开放后可直接修改')
+}
+const onEnterMember = () => {
+  closeMenu()
+  resetEntryDraft()
+  subview.value = 'entry'
+}
+const onFilter = () => {
+  closeMenu()
+  filterVisible.value = true
+}
+
+const closeSheet = () => {
+  sheet.value = ''
+  if (!pendingAbandon.value) selected.value = null
+}
+
+onMounted(() => {
+  loadMembers()
+  loadSelfProfile()
+})
 </script>
 
 <style scoped>
-.pending-review-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--canvas); }
-.review-workspace-heading { padding: 24rpx 28rpx 18rpx; display: flex; flex-direction: row; align-items: center; gap: 18rpx; }
-.review-heading-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6rpx; }
-.review-heading-title { color: var(--ink); font-size: 32rpx; font-weight: 800; }
-.review-heading-desc { color: var(--muted); font-size: 20rpx; line-height: 1.5; }
-.review-heading-count { padding: 9rpx 13rpx; border-radius: 999rpx; background: var(--accent-bg); color: var(--accent2); font-size: 19rpx; font-weight: 800; white-space: nowrap; }
-.review-filter-card { margin: 0 24rpx 20rpx; overflow: hidden; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
-.review-tabs { height: 82rpx; padding: 0 14rpx; display: flex; flex-direction: row; border-bottom: 1rpx solid var(--line); }
-.review-tab { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; font-size: 24rpx; color: var(--muted); }
-.review-tab.active { color: var(--ink); font-weight: 800; }
-.review-tab.active:after { content: ''; position: absolute; bottom: 0; width: 42rpx; height: 6rpx; border-radius: 999rpx; background: var(--accent); }
-.review-search { height: 70rpx; margin: 16rpx; padding: 0 7rpx 0 20rpx; border: 1rpx solid var(--line); border-radius: 14rpx; background: var(--paper); display: flex; flex-direction: row; align-items: center; gap: 10rpx; }
-.review-search input { flex: 1; min-width: 0; font-size: 23rpx; color: var(--ink); }
-.review-search > view, .state-action { min-width: 94rpx; height: 56rpx; border-radius: 10rpx; background: var(--accent2); color: var(--paper); display: flex; align-items: center; justify-content: center; font-size: 21rpx; font-weight: 800; }
-.review-list { flex: 1; height: 0; padding: 0 24rpx 44rpx; box-sizing: border-box; }
-.state-card, .member-card { margin-bottom: 18rpx; padding: 24rpx; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
-.state-card { min-height: 180rpx; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22rpx; color: var(--muted); font-size: 24rpx; text-align: center; }
-.member-head { display: flex; flex-direction: row; align-items: center; gap: 16rpx; }
-.member-head image, .member-avatar { width: 80rpx; height: 80rpx; border-radius: 50%; flex-shrink: 0; }
-.member-avatar { background: var(--accent-bg); color: var(--accent2); display: flex; align-items: center; justify-content: center; font-size: 26rpx; font-weight: 800; }
-.member-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5rpx; color: var(--muted); font-size: 20rpx; }
-.member-name { color: var(--ink); font-size: 28rpx; font-weight: 800; }
-.review-badge { padding: 7rpx 11rpx; border-radius: 999rpx; background: var(--review-orange-soft); color: var(--review-orange); font-size: 19rpx; font-weight: 800; white-space: nowrap; }
-.review-badge.passed { background: var(--sage-soft); color: var(--sage); }
-.review-badge.rejected { background: var(--match-blush); color: var(--match-coral); }
-.member-meta { margin-top: 17rpx; display: flex; flex-direction: row; flex-wrap: wrap; gap: 10rpx; color: var(--ink2); font-size: 20rpx; }
-.member-meta text { padding: 5rpx 10rpx; border-radius: 8rpx; background: var(--warm); }
-.review-reason { display: block; margin-top: 14rpx; color: var(--match-coral); font-size: 20rpx; line-height: 1.5; }
-.member-actions { margin-top: 19rpx; padding-top: 17rpx; border-top: 1px solid var(--line); display: flex; flex-direction: row; flex-wrap: wrap; justify-content: space-between; gap: 10rpx 0; }
-.member-actions text { width: 48%; min-height: 56rpx; padding: 0 10rpx; border-radius: 10rpx; background: var(--warm); color: var(--accent2); display: flex; align-items: center; justify-content: center; font-size: 19rpx; text-align: center; }
-.member-actions text:last-child { background: var(--accent2); color: var(--paper); }
-.overlay { position: fixed; inset: 0; z-index: 90; padding: 28rpx; display: flex; flex-direction: row; align-items: flex-end; }
-.overlay:before { content: ''; position: absolute; inset: 0; background: var(--ink); opacity: .55; }
-.panel { position: relative; z-index: 1; width: 100%; max-height: 82%; padding: 26rpx; border-radius: 20rpx 20rpx 0 0; background: var(--surface); display: flex; flex-direction: column; box-sizing: border-box; box-shadow: var(--shadow-lg); }
-.panel-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; color: var(--ink); font-size: 29rpx; font-weight: 800; }
-.panel-head text:last-child { color: var(--muted); font-size: 21rpx; }
-.panel-body { margin-top: 22rpx; display: flex; flex-direction: column; gap: 14rpx; overflow: scroll; }
-.panel-copy, .empty-row { color: var(--muted); font-size: 21rpx; line-height: 1.55; }
-.review-choice, .record-row, .candidate-row { padding: 17rpx; border-radius: 12rpx; background: var(--warm); display: flex; flex-direction: row; gap: 12rpx; align-items: center; color: var(--ink2); font-size: 21rpx; }
-.review-choice.selected { border: 2rpx solid var(--accent); background: var(--surface); color: var(--accent2); font-weight: 800; }
-.panel textarea { width: 100%; min-height: 150rpx; padding: 16rpx; border: 1rpx solid var(--line); border-radius: 12rpx; background: var(--paper); box-sizing: border-box; color: var(--ink); font-size: 22rpx; }
-.primary-action, .secondary-action { min-height: 70rpx; border-radius: 12rpx; background: var(--accent2); display: flex; align-items: center; justify-content: center; color: var(--paper); font-size: 24rpx; font-weight: 800; }
-.secondary-action { background: var(--accent-bg); color: var(--accent2); }
-.record-row text:first-child, .candidate-row text:first-child { flex: 1; min-width: 0; color: var(--ink); }
-.record-row text:last-child { color: var(--muted); font-size: 18rpx; }
-.contact-value { padding: 22rpx; border-radius: 16rpx; background: var(--review-orange-soft); color: var(--ink); font-size: 30rpx; font-weight: 800; text-align: center; }
-.member-actions text:active, .primary-action:active, .secondary-action:active, .review-choice:active { opacity: .75; }
+.pr-shell { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--canvas); }
+.pr-main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* tabs */
+.pr-tabs { flex-shrink: 0; width: 100%; border-bottom: 1rpx solid var(--line); background: var(--canvas); }
+.pr-tabs-row { flex-direction: row; display: flex; }
+.pr-tab { flex-shrink: 0; padding: 22rpx 24rpx 18rpx; display: flex; flex-direction: column; align-items: center; }
+.pr-tab text { color: var(--muted); font-size: 25rpx; }
+.pr-tab.active text { color: var(--ink); font-size: 27rpx; font-weight: 800; }
+.pr-tab-line { display: none; width: 42rpx; height: 6rpx; margin-top: 8rpx; border-radius: 999rpx; background: var(--accent); }
+.pr-tab.active .pr-tab-line { display: flex; }
+
+/* search */
+.pr-search { flex-shrink: 0; margin: 20rpx 24rpx 4rpx; height: 72rpx; padding: 0 8rpx 0 22rpx; border-radius: 999rpx; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: row; align-items: center; gap: 12rpx; }
+.pr-search-icon { color: var(--muted); font-size: 30rpx; font-weight: 800; }
+.pr-search-input { flex: 1; min-width: 0; height: 70rpx; font-size: 23rpx; color: var(--ink); }
+.pr-search-ph { color: var(--muted); font-size: 23rpx; }
+.pr-search-btn { width: 118rpx; height: 58rpx; border-radius: 999rpx; background: var(--accent2); color: var(--paper); display: flex; align-items: center; justify-content: center; font-size: 23rpx; font-weight: 800; }
+
+/* list */
+.pr-list { flex: 1; height: 0; padding: 14rpx 24rpx 260rpx; box-sizing: border-box; }
+.state-card { margin-bottom: 18rpx; min-height: 170rpx; padding: 24rpx; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20rpx; color: var(--muted); font-size: 24rpx; text-align: center; }
+.state-action { min-width: 160rpx; height: 60rpx; border-radius: 999rpx; background: var(--accent2); color: var(--paper); display: flex; align-items: center; justify-content: center; font-size: 22rpx; font-weight: 800; }
+.state-inline { padding: 14rpx 0; color: var(--muted); font-size: 21rpx; text-align: center; }
+
+/* member card */
+.mcard { position: relative; margin-bottom: 20rpx; padding: 22rpx 22rpx 18rpx; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
+.mcard-top { display: flex; flex-direction: row; align-items: center; gap: 12rpx; }
+.mcard-ark { display: flex; flex-direction: row; align-items: center; gap: 6rpx; padding: 6rpx 12rpx; border-radius: 8rpx; background: var(--review-orange-soft); }
+.mcard-ark text { color: var(--review-orange); font-size: 18rpx; font-weight: 800; }
+.mcard-ark-glyph { font-size: 16rpx !important; }
+.mcard-no { flex: 1; min-width: 0; color: var(--muted); font-size: 19rpx; }
+.mcard-status { display: flex; flex-direction: row; align-items: center; gap: 6rpx; padding: 7rpx 12rpx; border-radius: 8rpx; background: var(--review-orange-soft); }
+.mcard-status text { color: var(--review-orange); font-size: 19rpx; font-weight: 800; }
+.mcard-status-dot { font-size: 12rpx !important; }
+.mcard-status.st-passed { background: var(--sage-soft); }
+.mcard-status.st-passed text { color: var(--sage); }
+.mcard-status.st-rejected { background: var(--match-blush); }
+.mcard-status.st-rejected text { color: var(--match-coral); }
+
+.mcard-body { margin-top: 18rpx; display: flex; flex-direction: row; gap: 18rpx; }
+.mcard-ava { position: relative; width: 96rpx; height: 96rpx; border-radius: 50%; overflow: hidden; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mcard-ava image { width: 96rpx; height: 96rpx; border-radius: 50%; }
+.mcard-ava text { color: var(--accent2); font-size: 36rpx; font-weight: 800; }
+.mcard-ava.female { background: var(--match-blush); }
+.mcard-ava.female text { color: var(--match-coral); }
+.mcard-ava-badge { position: absolute; left: 2rpx; bottom: 2rpx; width: 30rpx; height: 30rpx; border-radius: 50%; background: var(--accent2); display: flex; align-items: center; justify-content: center; }
+.mcard-ava-badge text { color: var(--paper); font-size: 16rpx; }
+.mcard-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9rpx; }
+.mcard-name-row { display: flex; flex-direction: row; align-items: center; gap: 12rpx; }
+.mcard-name { color: var(--ink); font-size: 29rpx; font-weight: 800; }
+.realname-tag { padding: 4rpx 12rpx; border-radius: 999rpx; background: var(--match-sky); }
+.realname-tag text { color: var(--accent); font-size: 17rpx; font-weight: 700; }
+.realname-tag.ok { background: var(--sage-soft); }
+.realname-tag.ok text { color: var(--sage); }
+.mcard-meta { color: var(--ink2); font-size: 21rpx; line-height: 1.4; }
+.mcard-owner { display: flex; flex-direction: row; align-items: center; gap: 8rpx; align-self: flex-start; padding: 6rpx 14rpx; border-radius: 8rpx; background: var(--accent-bg); }
+.mcard-owner-glyph { color: var(--accent2); font-size: 18rpx; }
+.mcard-owner-label { color: var(--ink2); font-size: 19rpx; }
+.mcard-owner-value { color: var(--accent2); font-size: 19rpx; font-weight: 800; }
+.mcard-reg { display: flex; flex-direction: row; align-items: center; gap: 8rpx; }
+.mcard-reg-glyph { color: var(--muted); font-size: 19rpx; }
+.mcard-reg text { color: var(--muted); font-size: 19rpx; }
+.mcard-reason { display: block; margin-top: 14rpx; color: var(--match-coral); font-size: 20rpx; line-height: 1.5; }
+
+.mcard-actions { margin-top: 18rpx; padding-top: 16rpx; border-top: 1px solid var(--line); display: flex; flex-direction: row; align-items: center; gap: 12rpx; }
+.act-more { width: 96rpx; height: 56rpx; border: 1rpx solid var(--accent); border-radius: 999rpx; display: flex; align-items: center; justify-content: center; }
+.act-more text { color: var(--accent); font-size: 20rpx; font-weight: 800; }
+.act { flex: 1; min-width: 0; height: 56rpx; border-radius: 999rpx; background: var(--warm); display: flex; align-items: center; justify-content: center; }
+.act text { color: var(--ink2); font-size: 19rpx; }
+.act:last-child { flex: 1.35; }
+
+/* 筛选为页面级右侧抽屉，不受列表和卡片的 overflow 影响。 */
+.filter-layer { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 110; display: flex; flex-direction: row; }
+.filter-mask { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: var(--ink); opacity: .44; }
+.filter-drawer { position: relative; width: 640rpx; max-width: 88%; height: 100%; margin-left: auto; background: var(--surface); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
+.filter-head { flex-shrink: 0; padding: calc(env(safe-area-inset-top) + 30rpx) 28rpx 24rpx; border-bottom: 1rpx solid var(--line); display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+.filter-title { display: block; color: var(--ink); font-size: 31rpx; font-weight: 800; }
+.filter-subtitle { display: block; margin-top: 7rpx; color: var(--muted); font-size: 20rpx; }
+.filter-close { width: 56rpx; height: 56rpx; border-radius: 50%; background: var(--warm); display: flex; align-items: center; justify-content: center; }
+.filter-close text { color: var(--muted); font-size: 25rpx; }
+.filter-scroll { flex: 1; height: 0; padding: 0 28rpx 30rpx; box-sizing: border-box; }
+.filter-row { border-bottom: 1rpx solid var(--line); }
+.filter-row-summary { min-height: 94rpx; display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 20rpx; }
+.filter-label { color: var(--ink); font-size: 25rpx; font-weight: 700; }
+.filter-current { min-width: 0; max-width: 360rpx; display: flex; flex-direction: row; align-items: center; gap: 10rpx; }
+.filter-current text:first-child { color: var(--muted); font-size: 22rpx; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-chevron { color: var(--muted) !important; font-size: 35rpx !important; line-height: 1; }
+.filter-options { padding: 0 0 22rpx; display: flex; flex-direction: row; flex-wrap: wrap; gap: 14rpx; }
+.filter-option { min-height: 54rpx; padding: 0 18rpx; border: 1rpx solid var(--line); border-radius: 999rpx; background: var(--paper); display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.filter-option text { color: var(--ink2); font-size: 21rpx; }
+.filter-option.selected { border-color: var(--accent); background: var(--accent-bg); }
+.filter-option.selected text { color: var(--accent2); font-weight: 800; }
+.filter-data-note { display: block; padding: 28rpx 0 10rpx; color: var(--muted); font-size: 19rpx; line-height: 1.5; }
+.filter-footer { flex-shrink: 0; padding: 18rpx 28rpx calc(env(safe-area-inset-bottom) + 18rpx); border-top: 1rpx solid var(--line); background: var(--surface); display: flex; flex-direction: row; gap: 18rpx; }
+.filter-reset, .filter-confirm { height: 78rpx; border-radius: 12rpx; display: flex; align-items: center; justify-content: center; }
+.filter-reset { width: 180rpx; border: 1rpx solid var(--accent); background: var(--surface); }
+.filter-reset text { color: var(--accent2); font-size: 25rpx; font-weight: 800; }
+.filter-confirm { flex: 1; background: var(--accent2); }
+.filter-confirm text { color: var(--paper); font-size: 25rpx; font-weight: 800; }
+.filter-close:active, .filter-row-summary:active, .filter-option:active, .filter-reset:active, .filter-confirm:active { opacity: .75; }
+
+/* 页面级更多菜单在 scroll-view 之外，不会被单张卡片裁切。 */
+.more-layer { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 80; background: transparent; }
+.more-pop {
+  position: absolute;
+  z-index: 81;
+  width: 270rpx;
+  max-height: 70vh;
+  border-radius: 18rpx;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.more-item {
+  min-height: 84rpx;
+  margin: 0 18rpx;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.more-item text { color: var(--ink); font-size: 24rpx; font-weight: 700; }
+.more-item.last { border-bottom: none; }
+.more-item:active { opacity: 0.7; }
+.more-item:active { opacity: 0.7; }
+
+/* 操作组固定在视口右下方，列表滚动时始终可见。 */
+.review-float-actions { position: fixed; right: 20rpx; bottom: calc(env(safe-area-inset-bottom) + 20rpx); z-index: 75; display: flex; flex-direction: column; gap: 16rpx; }
+.fab-enter, .fab-filter { width: 104rpx; height: 104rpx; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2rpx; box-shadow: var(--match-shadow); }
+.fab-enter { background: var(--accent-bg); }
+.fab-enter text { color: var(--accent2); font-size: 19rpx; font-weight: 800; }
+.fab-enter-glyph { font-size: 26rpx !important; }
+.fab-filter { background: var(--match-blush); }
+.fab-filter text { color: var(--match-coral); font-size: 19rpx; font-weight: 800; }
+.fab-filter-glyph { font-size: 26rpx !important; }
+.fab-enter:active, .fab-filter:active { opacity: 0.8; transform: scale(0.96); }
+
+/* subpages */
+.subpage { position: absolute; left: 0; top: 0; right: 0; bottom: 0; z-index: 20; background: var(--canvas); display: flex; flex-direction: column; }
+.subpage-head { flex-shrink: 0; padding: 26rpx 28rpx; border-bottom: 1rpx solid var(--line); display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+.subpage-title { color: var(--ink); font-size: 28rpx; font-weight: 800; }
+.subpage-close { width: 52rpx; height: 52rpx; border-radius: 50%; background: var(--warm); display: flex; align-items: center; justify-content: center; }
+.subpage-close text { color: var(--muted); font-size: 24rpx; }
+.subpage-list { flex: 1; height: 0; padding: 20rpx 24rpx 60rpx; box-sizing: border-box; }
+
+/* member entry */
+.entry-page { z-index: 26; }
+.entry-scroll { flex: 1; height: 0; padding: 20rpx 24rpx 150rpx; box-sizing: border-box; }
+.entry-card { overflow: hidden; padding: 28rpx 24rpx 8rpx; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
+.entry-avatar { width: 156rpx; height: 156rpx; margin: 0 auto 28rpx; border-radius: 16rpx; overflow: hidden; background: var(--paper); display: flex; align-items: center; justify-content: center; }
+.entry-avatar image { width: 156rpx; height: 156rpx; }
+.entry-avatar-empty { display: flex; flex-direction: column; align-items: center; gap: 4rpx; color: var(--muted); font-size: 20rpx; }
+.entry-avatar-plus { color: var(--accent); font-size: 52rpx; font-weight: 300; line-height: 1; }
+.entry-row { min-height: 92rpx; border-bottom: 1rpx solid var(--line); display: flex; flex-direction: row; align-items: center; gap: 18rpx; }
+.entry-row:last-child { border-bottom: none; }
+.entry-label { flex-shrink: 0; width: 112rpx; color: var(--ink); font-size: 25rpx; font-weight: 800; }
+.entry-input { flex: 1; min-width: 0; height: 76rpx; color: var(--ink); font-size: 23rpx; text-align: right; }
+.entry-options { flex: 1; min-width: 0; display: flex; flex-direction: row; justify-content: flex-end; gap: 20rpx; }
+.entry-option { display: flex; flex-direction: row; align-items: center; gap: 7rpx; color: var(--muted); font-size: 22rpx; }
+.entry-radio { width: 24rpx; height: 24rpx; border: 2rpx solid var(--line); border-radius: 50%; box-sizing: border-box; }
+.entry-option.selected { color: var(--accent2); font-weight: 700; }
+.entry-option.selected .entry-radio { border: 7rpx solid var(--accent); }
+.entry-picker { width: 100%; }
+.entry-value { flex: 1; min-width: 0; display: flex; flex-direction: row; justify-content: flex-end; align-items: center; gap: 10rpx; color: var(--muted); font-size: 23rpx; }
+.entry-chevron { color: var(--muted); font-size: 34rpx; line-height: 1; }
+.entry-unit { color: var(--muted); font-size: 22rpx; }
+.entry-readonly { justify-content: space-between; color: var(--muted); font-size: 23rpx; }
+.entry-note { display: block; padding: 20rpx 8rpx; color: var(--muted); font-size: 20rpx; line-height: 1.6; }
+.entry-footer { flex-shrink: 0; padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 16rpx); background: var(--surface); border-top: 1rpx solid var(--line); }
+.entry-submit { min-height: 80rpx; border-radius: 14rpx; background: var(--accent); display: flex; align-items: center; justify-content: center; }
+.entry-submit text { color: var(--paper); font-size: 27rpx; font-weight: 800; }
+.entry-submit.disabled { opacity: .62; }
+.entry-submit:active, .entry-avatar:active, .entry-option:active { opacity: .76; transform: scale(.98); }
+
+.seg { flex-shrink: 0; margin: 20rpx 28rpx 0; height: 72rpx; border-radius: 12rpx; background: var(--warm); display: flex; flex-direction: row; padding: 6rpx; }
+.seg-item { flex: 1; border-radius: 10rpx; display: flex; align-items: center; justify-content: center; }
+.seg-item text { color: var(--muted); font-size: 23rpx; }
+.seg-item.on { background: var(--surface); box-shadow: var(--shadow-sm); }
+.seg-item.on text { color: var(--accent); font-weight: 800; }
+
+.intro-row { margin-bottom: 16rpx; padding: 20rpx; border-radius: 16rpx; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: row; align-items: center; gap: 16rpx; }
+.intro-ava { width: 76rpx; height: 76rpx; border-radius: 50%; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.intro-ava text { color: var(--accent2); font-size: 28rpx; font-weight: 800; }
+.intro-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8rpx; }
+.intro-name { color: var(--ink); font-size: 25rpx; font-weight: 700; }
+.intro-sub { color: var(--muted); font-size: 19rpx; }
+.intro-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8rpx; }
+.intro-status { font-size: 19rpx; font-weight: 800; color: var(--accent); }
+.intro-status.ms-2 { color: var(--match-coral); }
+.intro-status.ms-3 { color: var(--muted); }
+.intro-time { color: var(--muted); font-size: 18rpx; }
+
+/* match page */
+.match-member { margin-bottom: 18rpx; padding: 22rpx; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: row; align-items: center; gap: 18rpx; }
+.match-member-ava { width: 84rpx; height: 84rpx; border-radius: 50%; background: var(--accent-bg); overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.match-member-ava image { width: 84rpx; height: 84rpx; border-radius: 50%; }
+.match-member-ava text { color: var(--accent2); font-size: 30rpx; font-weight: 800; }
+.match-member-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9rpx; }
+.match-member-no { color: var(--muted); font-size: 19rpx; }
+.match-pref { margin-bottom: 18rpx; padding: 20rpx 22rpx; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
+.match-pref-title { color: var(--ink); font-size: 23rpx; font-weight: 800; }
+.match-pref-chips { margin-top: 14rpx; display: flex; flex-direction: row; flex-wrap: wrap; gap: 12rpx; }
+.match-chip { padding: 8rpx 16rpx; border-radius: 999rpx; background: var(--accent-bg); }
+.match-chip text { color: var(--accent2); font-size: 19rpx; font-weight: 700; }
+.match-tip { margin-bottom: 18rpx; padding: 20rpx 22rpx; border-radius: 20rpx; background: var(--review-orange-soft); display: flex; flex-direction: column; gap: 8rpx; }
+.match-tip-title { color: var(--review-orange); font-size: 21rpx; font-weight: 800; }
+.match-tip-copy { color: var(--ink2); font-size: 19rpx; line-height: 1.5; }
+.candidate-card { margin-bottom: 16rpx; padding: 20rpx 22rpx; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
+.candidate-card .mcard-body { margin-top: 0; }
+.cand-no { color: var(--muted); font-size: 19rpx; }
+.cand-ark { align-self: flex-start; padding: 6rpx 12rpx; border-radius: 8rpx; background: var(--review-orange-soft); }
+.cand-ark text { color: var(--review-orange); font-size: 18rpx; font-weight: 800; }
+
+/* overlay sheets */
+.overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 90; display: flex; flex-direction: row; align-items: flex-end; }
+.overlay:before { content: ''; position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: var(--ink); opacity: 0.55; }
+.panel { position: relative; z-index: 1; width: 100%; max-height: 80%; padding: 26rpx 26rpx calc(env(safe-area-inset-bottom) + 26rpx); border-radius: 24rpx 24rpx 0 0; background: var(--surface); display: flex; flex-direction: column; box-sizing: border-box; box-shadow: var(--shadow-lg); }
+.panel-head { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+.panel-title { color: var(--ink); font-size: 29rpx; font-weight: 800; }
+.panel-close { width: 52rpx; height: 52rpx; border-radius: 50%; background: var(--warm); display: flex; align-items: center; justify-content: center; }
+.panel-close text { color: var(--muted); font-size: 24rpx; }
+.panel-body { margin-top: 22rpx; display: flex; flex-direction: column; gap: 16rpx; }
+.panel-textarea { width: 100%; min-height: 170rpx; padding: 18rpx; border: 1rpx solid var(--line); border-radius: 14rpx; background: var(--canvas); box-sizing: border-box; color: var(--ink); font-size: 22rpx; }
+.panel-counter { align-self: flex-end; color: var(--muted); font-size: 19rpx; }
+.panel-submit { min-height: 76rpx; border-radius: 999rpx; background: var(--accent2); display: flex; align-items: center; justify-content: center; }
+.panel-submit text { color: var(--paper); font-size: 24rpx; font-weight: 800; }
+.panel-copy { color: var(--muted); font-size: 21rpx; line-height: 1.55; }
+.contact-value { padding: 24rpx; border-radius: 16rpx; background: var(--accent-bg); color: var(--ink); font-size: 30rpx; font-weight: 800; text-align: center; }
+.fu-row { padding: 16rpx; border-radius: 12rpx; background: var(--warm); display: flex; flex-direction: column; gap: 8rpx; }
+.fu-method { color: var(--accent2); font-size: 20rpx; font-weight: 800; }
+.fu-content { color: var(--ink); font-size: 21rpx; line-height: 1.5; }
+.fu-time { color: var(--muted); font-size: 18rpx; }
+
+/* assign sheet */
+.assign-head { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 6rpx; }
+.assign-cancel { color: var(--muted); font-size: 23rpx; }
+.assign-title { color: var(--ink); font-size: 29rpx; font-weight: 800; }
+.assign-confirm { min-width: 110rpx; height: 56rpx; border-radius: 999rpx; background: var(--accent2); display: flex; align-items: center; justify-content: center; }
+.assign-confirm text { color: var(--paper); font-size: 21rpx; font-weight: 800; }
+.assign-row { min-height: 88rpx; margin: 0 4rpx; border-bottom: 1px solid var(--line); display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 12rpx; }
+.assign-row text { color: var(--ink); font-size: 24rpx; }
+.assign-row.picked text { color: var(--accent2); font-weight: 800; }
+.assign-row.disabled { opacity: 0.45; }
+.assign-current { color: var(--muted) !important; font-size: 19rpx !important; }
+
+/* abandon modal */
+.modal-mask { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 95; display: flex; align-items: center; justify-content: center; }
+.modal-mask:before { content: ''; position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: var(--ink); opacity: 0.55; }
+.modal-card { position: relative; z-index: 1; width: 560rpx; padding: 40rpx 34rpx 30rpx; border-radius: 24rpx; background: var(--surface); display: flex; flex-direction: column; }
+.modal-copy { color: var(--ink); font-size: 24rpx; line-height: 1.7; text-align: center; }
+.modal-actions { margin-top: 34rpx; padding-top: 24rpx; border-top: 1px solid var(--line); display: flex; flex-direction: row; }
+.modal-btn { flex: 1; min-height: 60rpx; display: flex; align-items: center; justify-content: center; }
+.modal-btn text { color: var(--ink); font-size: 25rpx; }
+.modal-btn.strong text { color: var(--accent2); font-weight: 800; }
+.modal-btn:active { opacity: 0.7; }
+
+.mcard-status:active, .act:active, .act-more:active, .more-item:active, .panel-submit:active, .pr-search-btn:active, .state-action:active, .seg-item:active { opacity: 0.75; }
 </style>

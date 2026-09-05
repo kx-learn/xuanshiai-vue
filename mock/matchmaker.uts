@@ -65,6 +65,71 @@ export const mockMatchmakerManagementCenterSnapshot = {
 }
 
 /**
+ * 红娘工作台统计卡片的联调明细。
+ * 这些均为脱敏测试资料，覆盖牵线的待处理、进行中、成功、失败，
+ * 以及约见的处理中、待见面、已完成、已结束等完整状态。
+ */
+const demoWomen = ['周书仪', '许清禾', '沈知意', '程晚晴', '叶舒然', '林初夏']
+const demoMen = ['陈向远', '陆景川', '顾言之', '宋知行', '谢予安', '傅明远']
+
+const matchmakingAnimeAvatar = (index: number, gender: number): string => {
+  // 牵线记录使用 1-72，约见记录使用 73-82；同一嘉宾始终映射到同一张本地头像。
+  const compactIndex = index <= 35 ? index : 36 + (index - 41)
+  const avatarNumber = compactIndex * 2 + gender
+  const padded = avatarNumber < 10 ? '00' + String(avatarNumber) : (avatarNumber < 100 ? '0' + String(avatarNumber) : String(avatarNumber))
+  return '/static/avatars/matchmaking-anime-' + padded + '.jpg'
+}
+
+const buildDemoPerson = (index: number, gender: number) => ({
+  user_id: (gender == 1 ? 'M' : 'W') + String(10001 + index),
+  nickname: gender == 1 ? demoMen[index % demoMen.length] : demoWomen[index % demoWomen.length],
+  gender: gender,
+  avatar: matchmakingAnimeAvatar(index, gender)
+})
+
+const buildDemoIntroduction = (index: number, status: string, createdAt: string) => ({
+  id: 'INTRO-' + String(1000 + index),
+  status: status,
+  failure_reason: status == 'FAILED' ? (index % 2 == 0 ? '双方时间暂未匹配，建议下月再沟通' : '沟通后发现核心需求不一致') : '',
+  note: status == 'SUCCEEDED' ? '双方已确认继续相处，由服务红娘持续跟进。' : '服务红娘已完成资料核验与匹配建议。',
+  created_at: createdAt,
+  updated_at: createdAt,
+  from_user: buildDemoPerson(index, 2),
+  to_user: buildDemoPerson(index, 1)
+})
+
+export const mockMatchmakerWorkspaceIntroductions: any[] = []
+
+// 统计口径：3 条待我牵线、29 条牵线成功；其余状态用于完整筛选回归。
+for (let i = 0; i < 3; i++) mockMatchmakerWorkspaceIntroductions.push(buildDemoIntroduction(i, 'PENDING', '2026-09-0' + String(i + 1) + ' 10:0' + String(i) + ':00'))
+for (let i = 0; i < 2; i++) mockMatchmakerWorkspaceIntroductions.push(buildDemoIntroduction(i + 3, 'IN_PROGRESS', '2026-08-2' + String(i + 1) + ' 14:30:00'))
+for (let i = 0; i < 29; i++) mockMatchmakerWorkspaceIntroductions.push(buildDemoIntroduction(i + 5, 'SUCCEEDED', '2026-08-' + String((i % 20) + 1).padStart(2, '0') + ' 11:20:00'))
+for (let i = 0; i < 2; i++) mockMatchmakerWorkspaceIntroductions.push(buildDemoIntroduction(i + 34, 'FAILED', '2026-07-1' + String(i + 1) + ' 16:40:00'))
+
+export const mockMatchmakerWorkspaceMeetingRequests: any[] = [
+  {
+    id: 'MEET-2001', status: 'SUBMITTED', note: '双方希望先由红娘确认周末时间。', created_at: '2026-09-04 09:20:00', updated_at: '2026-09-04 09:20:00',
+    applicant: buildDemoPerson(41, 2), target: buildDemoPerson(41, 1), meeting: null
+  },
+  {
+    id: 'MEET-2002', status: 'CONTACTED', note: '已分别联系双方，等待确认见面地点。', created_at: '2026-09-03 16:10:00', updated_at: '2026-09-04 10:00:00',
+    applicant: buildDemoPerson(42, 1), target: buildDemoPerson(42, 2), meeting: null
+  },
+  {
+    id: 'MEET-2003', status: 'ACCEPTED', note: '双方确认参加，请提前一天提醒。', created_at: '2026-09-02 13:40:00', updated_at: '2026-09-04 10:30:00',
+    applicant: buildDemoPerson(43, 2), target: buildDemoPerson(43, 1), meeting: { id: 'ARR-3001', status: 'SCHEDULED', scheduled_at: '2026-09-06 14:30:00', location: '南京新街口门店会客区', cancel_reason: '' }
+  },
+  {
+    id: 'MEET-2004', status: 'ACCEPTED', note: '已完成首次见面，等待红娘回访。', created_at: '2026-08-27 11:30:00', updated_at: '2026-08-30 18:20:00',
+    applicant: buildDemoPerson(44, 1), target: buildDemoPerson(44, 2), meeting: { id: 'ARR-3002', status: 'COMPLETED', scheduled_at: '2026-08-30 15:00:00', location: '玄武湖咖啡馆', cancel_reason: '' }
+  },
+  {
+    id: 'MEET-2005', status: 'DECLINED', note: '本次时间不合适，已结束申请。', created_at: '2026-08-20 10:10:00', updated_at: '2026-08-21 09:00:00',
+    applicant: buildDemoPerson(45, 2), target: buildDemoPerson(45, 1), meeting: null
+  }
+]
+
+/**
  * 服务红娘「资料待审」本地工作台数据。
  * 这是前端暂存的数据源：用于完整走通审核、跟进、弃海和捞取流程；
  * 后端接入时以同名字段替换读写实现即可。
@@ -312,38 +377,87 @@ export const mockAiChatSeed = [
 ]
 
 /**
- * 合伙人中心本地数据源。
- * 默认只提供当前账号可确认的空业务状态，不预置人员、订单、交易或收益记录。
+ * 合伙人中心本地测试数据。
+ * 成员、团队业绩与奖励明细均为脱敏演示值，用于完整校验名下会员、统计和搜索流程。
  */
 export const mockPartnerCenterSnapshot = {
   source: 'mock',
   profile: {
-    teamName: '我的团队',
-    nickname: '',
-    phone: '',
-    wechatBound: false,
-    registerAt: '',
-    balance: 0,
-    points: 0,
-    level: '初级合伙'
+    teamName: '山海相知团队',
+    nickname: 'Sofia',
+    phone: '13800138086',
+    wechatBound: true,
+    registerAt: '2026-03-18 09:20:00',
+    balance: 2864.50,
+    withdrawableBalance: 1864.50,
+    teamPerformance: 28760.00,
+    totalEarned: 4386.80,
+    points: 1280,
+    level: '成长合伙人'
   },
-  inviteCode: 'PARTNER-LOCAL',
-  teamMembers: [] as any[],
-  effectiveMembers: [] as any[],
-  registrationRewards: [] as any[],
-  commissionRecords: [] as any[],
-  withdrawalRecords: [] as any[]
+  inviteCode: 'PARTNER-SOFIA-2026',
+  teamPerformance: 28760.00,
+  totalEarned: 4386.80,
+  teamMembers: [
+    { id: 'PM-10021', name: '周雅', joinedAt: '2026-04-02 10:30:00', performance: 12680.00, effectiveCount: 5 },
+    { id: 'PM-10035', name: '林舟', joinedAt: '2026-04-18 14:15:00', performance: 9340.00, effectiveCount: 4 },
+    { id: 'PM-10048', name: '陈思远', joinedAt: '2026-05-06 09:45:00', performance: 6740.00, effectiveCount: 3 }
+  ],
+  effectiveMembers: [
+    { id: 'G847150', name: '许知夏', gender: '女', registerAt: '2026-07-12 10:24:00', promoterName: '周雅', avatar: '/static/avatars/matchmaking-anime-001.jpg', reviewStatus: 'PASSED' },
+    { id: 'G824771', name: '沈清禾', gender: '女', registerAt: '2026-07-10 16:48:00', promoterName: '周雅', avatar: '/static/avatars/matchmaking-anime-002.jpg', reviewStatus: 'PASSED' },
+    { id: 'G815406', name: '陆明远', gender: '男', registerAt: '2026-07-08 11:12:00', promoterName: '林舟', avatar: '/static/avatars/matchmaking-anime-003.jpg', reviewStatus: 'PASSED' },
+    { id: 'G803592', name: '苏晚晴', gender: '女', registerAt: '2026-07-04 18:06:00', promoterName: '林舟', avatar: '/static/avatars/matchmaking-anime-004.jpg', reviewStatus: 'PASSED' },
+    { id: 'G796238', name: '顾言', gender: '男', registerAt: '2026-06-29 09:36:00', promoterName: '林舟', avatar: '/static/avatars/matchmaking-anime-005.jpg', reviewStatus: 'PASSED' },
+    { id: 'G781945', name: '姜月白', gender: '女', registerAt: '2026-06-23 15:20:00', promoterName: '周雅', avatar: '/static/avatars/matchmaking-anime-006.jpg', reviewStatus: 'PASSED' },
+    { id: 'G774681', name: '程予安', gender: '男', registerAt: '2026-06-18 13:08:00', promoterName: '陈思远', avatar: '/static/avatars/matchmaking-anime-007.jpg', reviewStatus: 'PASSED' },
+    { id: 'G762304', name: '叶书宁', gender: '女', registerAt: '2026-06-11 17:42:00', promoterName: '陈思远', avatar: '/static/avatars/matchmaking-anime-008.jpg', reviewStatus: 'PASSED' },
+    { id: 'G758119', name: '方亦辰', gender: '男', registerAt: '2026-06-08 10:16:00', promoterName: '周雅', avatar: '/static/avatars/matchmaking-anime-009.jpg', reviewStatus: 'PASSED' },
+    { id: 'G746830', name: '唐雨桐', gender: '女', registerAt: '2026-06-01 14:32:00', promoterName: '林舟', avatar: '/static/avatars/matchmaking-anime-010.jpg', reviewStatus: 'PASSED' },
+    { id: 'G731526', name: '宋致远', gender: '男', registerAt: '2026-05-24 09:54:00', promoterName: '陈思远', avatar: '/static/avatars/matchmaking-anime-011.jpg', reviewStatus: 'PASSED' },
+    { id: 'G728097', name: '许安然', gender: '女', registerAt: '2026-05-20 16:05:00', promoterName: '周雅', avatar: '/static/avatars/matchmaking-anime-012.jpg', reviewStatus: 'PASSED' }
+  ],
+  registrationRewards: [
+    { id: 'RR-1001', promoterName: '周雅', memberName: '许知夏', memberId: 'G847150', gender: '女', itemName: '会员注册奖励', amount: 1.00, createdAt: '2026-07-15 14:36:00' },
+    { id: 'RR-1002', promoterName: '周雅', memberName: '沈清禾', memberId: 'G824771', gender: '女', itemName: '会员注册奖励', amount: 1.00, createdAt: '2026-07-11 11:29:00' },
+    { id: 'RR-1003', promoterName: '林舟', memberName: '陆明远', memberId: 'G815406', gender: '男', itemName: '会员注册奖励', amount: 1.00, createdAt: '2026-07-08 11:20:00' }
+  ],
+  commissionRecords: [
+    { id: 'CR-1001', promoterName: '周雅', memberName: '沈清禾', memberId: 'G824771', gender: '女', itemName: '线下服务', amount: 368.00, createdAt: '2026-07-14 09:20:00' },
+    { id: 'CR-1002', promoterName: '林舟', memberName: '顾言', memberId: 'G796238', gender: '男', itemName: '资料服务', amount: 228.00, createdAt: '2026-07-02 12:16:00' }
+  ],
+  withdrawalRecords: [
+    { id: 'WD-1001', amount: 999.00, fee: 9.99, status: '提现成功-线下结算', createdAt: '2026-06-28 15:24:00' },
+    { id: 'WD-1002', amount: 1200.00, fee: 12.00, status: '提现成功-线下结算', createdAt: '2026-07-15 09:30:00' }
+  ]
 }
 
 /** 推广红娘中心本地数据源：默认不预置客源、会员、收益、订单或商家数据。 */
 export const mockPromoterCenterSnapshot = {
   source: 'mock',
-  profile: { nickname: '', phone: '', wechatBound: false, balance: 0, points: 0, level: '初级', teamName: '', registerAt: '' },
-  teamOptions: [] as any[],
-  leads: [] as any[],
-  effectiveMembers: [] as any[],
+  profile: { nickname: 'Lemon', phone: '13712347543', wechatBound: false, balance: 0, points: 0, level: '初级', teamName: '', registerAt: '2026-08-23 21:44:00' },
+  teamOptions: [
+    { id: 'PT-001', name: '宣誓爱1' },
+    { id: 'PT-002', name: '山海相知团队' },
+    { id: 'PT-003', name: '星河牵线团队' }
+  ],
+  leads: [
+    { id: 301, name: '小雅', phone: '13800001234', wechat: 'xiaoya_hz', source: '朋友介绍', status: 'NEW', created_at: '2026-08-28 10:20:00' },
+    { id: 302, name: '陈先生', phone: '13900005678', wechat: '', source: '线下活动', status: 'INTENDED', created_at: '2026-08-25 16:45:00' },
+    { id: 303, name: '林小姐', phone: '', wechat: 'lin_ms', source: '社群引流', status: 'CONVERTED', created_at: '2026-08-20 09:12:00' },
+    { id: 304, name: '匿名咨询', phone: '13700009999', wechat: '', source: '电话咨询', status: 'LOST', created_at: '2026-08-15 14:08:00' }
+  ],
+  effectiveMembers: [
+    { user_id: 104201, memberCode: 'G412252', nickname: '画爸爸打球', gender: 2, register_at: '2026-06-30 14:35:41', review_status: 'PASSED', avatar: '/static/avatars/matchmaking-anime-001.jpg' },
+    { user_id: 104202, memberCode: 'G765156', nickname: '宋宋', gender: 2, register_at: '2026-06-30 14:30:44', review_status: 'PASSED', avatar: '/static/avatars/matchmaking-anime-002.jpg' },
+    { user_id: 104203, memberCode: 'G880913', nickname: '超级无敌赖格宝', gender: 1, register_at: '2026-06-30 12:52:48', review_status: 'PASSED', avatar: '/static/avatars/matchmaking-anime-003.jpg' }
+  ],
   incompleteMembers: [] as any[],
-  rewards: [] as any[],
+  rewards: [
+    { id: 'PR-2001', memberName: '画爸爸打球', memberId: 'G412252', gender: '女', amount: 0, createdAt: '2026-06-30 14:35:00', avatar: '/static/avatars/matchmaking-anime-001.jpg' },
+    { id: 'PR-2002', memberName: '宋宋', memberId: 'G765156', gender: '女', amount: 0, createdAt: '2026-06-30 14:30:00', avatar: '/static/avatars/matchmaking-anime-002.jpg' },
+    { id: 'PR-2003', memberName: '超级无敌赖格宝', memberId: 'G880913', gender: '男', amount: 0, createdAt: '2026-06-30 12:52:00', avatar: '/static/avatars/matchmaking-anime-003.jpg' }
+  ],
   commissions: [] as any[],
   withdrawals: [] as any[],
   offlineOrders: [] as any[],
