@@ -15,7 +15,6 @@ import {
 
 export const AI_AVATAR_STORAGE_PREFIX = 'xsa-ai-avatar-conversations-v1-'
 export const AI_AVATAR_OWNER_STORAGE_PREFIX = 'xsa-ai-avatar-owner-v1-'
-export const AI_AVATAR_SESSION_STORAGE_PREFIX = 'xsa-ai-avatar-session-v1-'
 export const AI_AVATAR_HANDOFF_DELAY = 6000
 const AI_AVATAR_PROFILE_PREFIX = 'xsa-ai-avatar-profile-v1-'
 const SELF_AVATAR = '/static/portraits/profile-man-light.webp'
@@ -166,30 +165,6 @@ function ownerStorageKey(userId: number): string {
   return AI_AVATAR_OWNER_STORAGE_PREFIX + String(userId)
 }
 
-function sessionStorageKey(ownerId: number): string {
-  return AI_AVATAR_SESSION_STORAGE_PREFIX + String(ownerId) + '-' + tokenScope()
-}
-
-function readServerSessionId(ownerId: number): number {
-  if (ownerId <= 0) return 0
-  try {
-    const value = uni.getStorageSync(sessionStorageKey(ownerId))
-    const id = Number(value)
-    return id > 0 ? id : 0
-  } catch (e) {
-    return 0
-  }
-}
-
-function writeServerSessionId(ownerId: number, sessionId: number): void {
-  if (ownerId <= 0 || sessionId <= 0) return
-  try { uni.setStorageSync(sessionStorageKey(ownerId), sessionId) } catch (e) {}
-}
-
-function clearServerSessionId(ownerId: number): void {
-  try { uni.removeStorageSync(sessionStorageKey(ownerId)) } catch (e) {}
-}
-
 function normalizeServerProfile(raw: any, ownerId: number): any {
   const profile = normalizeAiAvatarProfile(raw, false)
   profile.id = ownerId
@@ -202,8 +177,10 @@ function normalizeServerProfile(raw: any, ownerId: number): any {
 }
 
 function serverMessageRows(raw: any): any[] {
-  if (raw == null || typeof raw != 'object' || !Array.isArray(raw.messages)) return []
-  return raw.messages as any[]
+  if (raw == null || typeof raw != 'object') return []
+  const value = raw.data != null && typeof raw.data == 'object' ? raw.data : raw
+  if (!Array.isArray(value.messages)) return []
+  return value.messages as any[]
 }
 
 function mapServerMessages(raw: any, profile: any): any[] {
@@ -212,66 +189,48 @@ function mapServerMessages(raw: any, profile: any): any[] {
     id: item.id,
     type: 'text',
     content: textValue(item.content, ''),
-    time: item.created_at != null ? String(item.created_at) : '',
+    time: item.time != null ? item.time : (item.created_at != null ? String(item.created_at) : ''),
     showTime: index == 0,
-    isMine: item.role == 'visitor',
-    avatar: item.role == 'visitor' ? SELF_AVATAR : profile.avatar,
+    isMine: item.isMine != null ? item.isMine === true : item.role == 'visitor' || item.role == 'user',
+    avatar: item.isMine === true || item.role == 'visitor' || item.role == 'user' ? SELF_AVATAR : profile.avatar,
     source: item.source != null ? String(item.source) : 'system',
-    handoffStatus: item.handoff_status != null ? String(item.handoff_status) : 'none'
+    handoffStatus: item.handoffStatus != null
+      ? String(item.handoffStatus)
+      : (item.handoff_status != null ? String(item.handoff_status) : 'not_requested')
   }))
 }
 
 function normalizeServerDashboard(raw: any): any {
   const value = raw != null && typeof raw == 'object' ? raw : {}
-  const pendingSource = Array.isArray(value.pending_questions) ? value.pending_questions : []
-  const answersSource = Array.isArray(value.answers) ? value.answers : []
+  const pendingSource = Array.isArray(value.pending_questions)
+    ? value.pending_questions
+    : (Array.isArray(value.pendingQuestions) ? value.pendingQuestions : [])
+  const answersSource = Array.isArray(value.answers)
+    ? value.answers
+    : (Array.isArray(value.myAnswers) ? value.myAnswers : [])
   const mapQuestion = (item: any): any => ({
     id: item.id,
     question: item.question != null ? String(item.question) : '',
     answer: item.answer != null ? String(item.answer) : '',
     status: item.status != null ? String(item.status) : 'pending',
-    time: item.answered_at != null ? String(item.answered_at) : (item.created_at != null ? String(item.created_at) : '刚刚')
+    time: item.answered_at != null
+      ? String(item.answered_at)
+      : (item.created_at != null ? String(item.created_at) : (item.time != null ? String(item.time) : '刚刚'))
   })
   return {
     chatRecords: [],
     pendingQuestions: pendingSource.map(mapQuestion),
     myAnswers: answersSource.map(mapQuestion),
     enabled: value.enabled == true,
-    retentionDays: value.retention_days != null ? Number(value.retention_days) : 30
+    retentionDays: value.retention_days != null ? Number(value.retention_days) : (value.retentionDays != null ? Number(value.retentionDays) : 30)
   }
-}
-
-async function ensureServerSession(ownerId: number): Promise<any> {
-  const savedId = readServerSessionId(ownerId)
-  if (savedId > 0) return success(savedId)
-  const res = await request({
-    url: '/users/' + ownerId + '/ai-avatar/sessions',
-    method: 'POST',
-    data: { consent_version: 'ai-avatar-v1' }
-  })
-  if (!res.success || res.data == null) return res
-  const sessionId = Number(res.data.id)
-  if (sessionId <= 0) return failure('AI 分身会话创建失败', 'SESSION_INVALID')
-  writeServerSessionId(ownerId, sessionId)
-  return success(sessionId)
 }
 
 async function loadServerConversation(ownerId: number, profile: any): Promise<any> {
-  let sessionRes = await ensureServerSession(ownerId)
-  if (!sessionRes.success) return sessionRes
-  let res = await request({
-    url: '/users/' + ownerId + '/ai-avatar/sessions/' + Number(sessionRes.data) + '/messages',
+  const res = await request({
+    url: '/ai-avatars/' + ownerId + '/conversations',
     method: 'GET'
   })
-  if (!res.success && (res.code == 404 || res.code == 410)) {
-    clearServerSessionId(ownerId)
-    sessionRes = await ensureServerSession(ownerId)
-    if (!sessionRes.success) return sessionRes
-    res = await request({
-      url: '/users/' + ownerId + '/ai-avatar/sessions/' + Number(sessionRes.data) + '/messages',
-      method: 'GET'
-    })
-  }
   if (!res.success || res.data == null) return res
   const rows = mapServerMessages(res.data, profile)
   if (rows.length == 0) rows.unshift(initialMessage(profile))
@@ -279,26 +238,12 @@ async function loadServerConversation(ownerId: number, profile: any): Promise<an
 }
 
 async function sendServerMessage(ownerId: number, content: string, idempotencyKey: string): Promise<any> {
-  let sessionRes = await ensureServerSession(ownerId)
-  if (!sessionRes.success) return sessionRes
-  let res = await request({
-    url: '/users/' + ownerId + '/ai-avatar/sessions/' + Number(sessionRes.data) + '/messages',
+  return await request({
+    url: '/ai-avatars/' + ownerId + '/messages',
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
     data: { content: content }
   })
-  if (!res.success && (res.code == 404 || res.code == 410)) {
-    clearServerSessionId(ownerId)
-    sessionRes = await ensureServerSession(ownerId)
-    if (!sessionRes.success) return sessionRes
-    res = await request({
-      url: '/users/' + ownerId + '/ai-avatar/sessions/' + Number(sessionRes.data) + '/messages',
-      method: 'POST',
-      headers: { 'Idempotency-Key': idempotencyKey },
-      data: { content: content }
-    })
-  }
-  return res
 }
 
 function readProfileSnapshot(userId: number): any {
@@ -475,7 +420,7 @@ export async function getAiAvatarProfile(userId: number, restricted: boolean = f
   if (userId <= 0) return failure('用户资料不存在', 'USER_NOT_FOUND')
 
   if (!USE_MOCK) {
-    const res = await request({ url: '/users/' + userId + '/ai-avatar/profile', method: 'GET' })
+    const res = await request({ url: '/ai-avatars/' + userId + '/profile', method: 'GET' })
     if (!res.success || res.data == null) return res
     return success(normalizeServerProfile(res.data, userId), res.message)
   }
@@ -560,9 +505,10 @@ export async function sendAiAvatarMessage(userId: number, content: string, profi
     const key = 'ai-avatar-' + userId + '-' + Date.now() + '-' + Math.floor(Math.random() * 100000)
     const sendRes = await sendServerMessage(userId, question, key)
     if (!sendRes.success || sendRes.data == null) return sendRes
-    const historyRes = await loadServerConversation(userId, profile)
-    if (!historyRes.success || historyRes.data == null) return historyRes
-    return success({ messages: historyRes.data, result: sendRes.data }, sendRes.message)
+    const rows = mapServerMessages(sendRes.data, profile)
+    if (rows.length == 0) rows.unshift(initialMessage(profile))
+    const result = sendRes.data.result != null ? sendRes.data.result : sendRes.data
+    return success({ messages: rows, result: result }, sendRes.message)
   }
   profile = enrichProfileWithOwnerAnswers(profile, profile.restricted === true)
   let messages = readMessages(userId)
@@ -603,15 +549,12 @@ export async function resolveAiAvatarHandoffs(userId: number, profile: any): Pro
 export async function clearAiAvatarConversation(userId: number): Promise<any> {
   if (userId <= 0) return failure('用户资料不存在', 'USER_NOT_FOUND')
   if (!USE_MOCK) {
-    const sessionId = readServerSessionId(userId)
-    if (sessionId <= 0) return success([], 'AI 分身聊天记录已清空')
     const res = await request({
-      url: '/users/' + userId + '/ai-avatar/sessions/' + sessionId,
+      url: '/ai-avatars/' + userId + '/conversations',
       method: 'DELETE'
     })
     if (!res.success) return res
-    clearServerSessionId(userId)
-    return success([], 'AI 分身聊天记录已清空')
+    return success([], res.message)
   }
   try { uni.removeStorageSync(storageKey(userId)) } catch (e) { return failure('清空记录失败') }
   return success([], 'AI 分身聊天记录已清空')
@@ -628,7 +571,7 @@ export async function getAiAvatarOwnerDashboard(ownerId: number = 0): Promise<an
   if (currentId <= 0 || id <= 0) return failure('当前账号资料暂时无法读取', 'USER_REQUIRED')
   if (id != currentId) return failure('无权管理其他账号的 AI 分身', 'FORBIDDEN')
   if (!USE_MOCK) {
-    const res = await request({ url: '/users/me/ai-avatar/dashboard', method: 'GET' })
+    const res = await request({ url: '/ai-avatars/me/dashboard', method: 'GET' })
     if (!res.success || res.data == null) return res
     return success(normalizeServerDashboard(res.data), res.message)
   }
@@ -670,7 +613,7 @@ export async function submitAiAvatarOwnerAnswer(ownerId: number, questionId: str
   if (value.length > 500) return failure('回答不能超过 500 个字', 'ANSWER_TOO_LONG')
   if (!USE_MOCK) {
     const res = await request({
-      url: '/users/me/ai-avatar/questions/' + Number(questionId) + '/answer',
+      url: '/ai-avatars/me/questions/' + Number(questionId) + '/answer',
       method: 'POST',
       data: { answer: value }
     })
@@ -721,7 +664,7 @@ export async function addAiAvatarOwnerAnswer(ownerId: number, question: string, 
   if (value.length > 500) return failure('回答不能超过 500 个字', 'ANSWER_TOO_LONG')
   if (!USE_MOCK) {
     const res = await request({
-      url: '/users/me/ai-avatar/questions',
+      url: '/ai-avatars/me/questions',
       method: 'POST',
       data: { question: q, answer: value }
     })
@@ -748,7 +691,7 @@ export async function deleteAiAvatarOwnerQuestion(ownerId: number, questionId: s
   const id = ownerId > 0 ? ownerId : currentId
   if (currentId <= 0 || id != currentId) return failure('无权管理其他账号的 AI 分身', 'FORBIDDEN')
   if (!USE_MOCK) {
-    const res = await request({ url: '/users/me/ai-avatar/questions/' + Number(questionId), method: 'DELETE' })
+    const res = await request({ url: '/ai-avatars/me/questions/' + Number(questionId), method: 'DELETE' })
     if (!res.success) return res
     return getAiAvatarOwnerDashboard(id)
   }
@@ -764,7 +707,7 @@ export async function deleteAiAvatarOwnerAnswer(ownerId: number, answerId: strin
   const id = ownerId > 0 ? ownerId : currentId
   if (currentId <= 0 || id != currentId) return failure('无权管理其他账号的 AI 分身', 'FORBIDDEN')
   if (!USE_MOCK) {
-    const res = await request({ url: '/users/me/ai-avatar/questions/' + Number(answerId), method: 'DELETE' })
+    const res = await request({ url: '/ai-avatars/me/answers/' + Number(answerId), method: 'DELETE' })
     if (!res.success) return res
     return getAiAvatarOwnerDashboard(id)
   }
