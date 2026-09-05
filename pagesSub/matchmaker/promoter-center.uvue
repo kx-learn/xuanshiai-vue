@@ -3,41 +3,259 @@
 		<view class="promoter-nav"><view class="back" @click="goBack"><view></view></view><text>{{ title }}</text><view class="menu"><view></view><view></view></view></view>
 		<scroll-view scroll-y class="scroll" :show-scrollbar="false">
 			<view v-if="loading" class="loading"><view></view><view></view><view></view></view>
-			<view v-else-if="page == 'home'" class="content">
-				<view class="cash-card"><view><text>资金结算</text><text>--</text></view><view class="cash-bottom"><text>推广红娘</text><text>支付、奖励和提现不在本期范围内</text></view></view>
-				<view class="data-card"><view class="metrics"><view><text>{{ pendingCount }}</text><text>待审人数</text></view><view><text>{{ effectiveMembers.length }}</text><text>通过人数</text></view><view><text>0</text><text>未通过人数</text></view></view><view class="hint"><text>温馨提示</text><text>在平台中登录状态下分享或转发会员详情页、会员海报和活动页面，链接会包含专属参数。引流进入的注册会员将计入您的推广名下，资料审核通过后即可获得提成。</text></view></view>
-				<view class="promo-card"><text>专属推广码：{{ profile.promotionCode || '尚未生成' }}</text><view><text @click="copyLink">生成并复制推广码</text><text @click="savePoster">推广海报待配置</text></view></view>
-				<view class="list-card">
-					<view class="row" @click="teamPickerVisible = true"><text>隶属团队</text><text>{{ profile.teamName || '暂未加入团队' }}</text><i></i></view>
-					<view class="row" @click="showToast('资金结算能力不在本期范围内')"><text>资金结算</text><text>本期未开放</text><i></i></view>
-					<view class="row" @click="open('members')"><text>名下会员</text><text>有效会员{{ effectiveMembers.length }}人</text><i></i></view>
-					<view class="row" @click="open('leads')"><text>客源线索</text><text>录入</text><i></i></view>
-					<view class="row" @click="showToast('消费分成、商家联盟和线下开单不在本期范围内')"><text>业务结算</text><text>本期未开放</text><i></i></view>
-					<view class="row" @click="contactVisible = true"><text>联系客服</text><text>需要帮助请联系</text><i></i></view>
-					<view class="row" @click="uni.navigateTo({ url: '/pagesSub/matchmaker/become-partner' })"><text>申请合伙</text><text>申请成为合伙人</text><i></i></view>
-					<view class="row last" @click="showToast('账号资料请在“我的”页面设置')"><text>账号资料</text><text>前往我的页面</text><i></i></view>
+			<view v-else-if="page == 'home'" class="content promoter-home">
+				<view class="promoter-fund-card">
+					<view class="promoter-fund-main"><text>可提现额度（元）</text><text>{{ availableBalance }}</text></view>
+					<view class="promoter-withdraw" @click="open('withdraw')"><text>立即提现</text></view>
+					<view class="promoter-fund-foot"><view class="promoter-user-mark"><text>{{ promoterInitial }}</text></view><text>{{ profile.nickname || '推广红娘' }}</text><text>累计推广：{{ totalPromoted }} 人</text></view>
+				</view>
+
+				<view class="promoter-review-card">
+					<view class="promoter-review-metrics"><view><text>{{ pendingMemberCount }}</text><text>待审人数</text></view><view><text>{{ effectiveMembers.length }}</text><text>通过人数</text></view><view><text>{{ rejectedMemberCount }}</text><text>未通过人数</text></view></view>
+					<view class="promoter-notice"><view class="promoter-notice-mark"><text>i</text></view><view><text>温馨提示</text><text>登录状态下分享会员详情、会员海报或活动页，链接会包含您的专属参数；引流注册的会员通过资料审核后，将归入您的推广名下。</text></view></view>
+				</view>
+
+				<view class="promoter-share-card"><view class="promoter-share-head"><view class="promoter-share-icon"><text>↗</text></view><text>分享专属推广链接，邀请新会员注册</text></view><view class="promoter-share-actions"><view @click="copyLink"><text>复制专属推广码</text></view><view @click="savePoster"><text>推广海报</text></view></view></view>
+
+				<view class="promoter-menu-card">
+					<view class="promoter-menu-row" @click="openTeamEntry"><view class="promoter-menu-icon team"><text>团</text></view><text>隶属团队</text><view class="promoter-menu-value"><text>{{ profile.teamName || '暂未加入团队' }}</text><i></i></view></view>
+					<view class="promoter-menu-row" @click="open('level')"><view class="promoter-menu-icon level"><text>级</text></view><text>分成级别</text><view class="promoter-menu-value"><text>{{ profile.level || '初级' }}</text><i></i></view></view>
+					<view class="promoter-menu-row" @click="showToast('注册奖励将在服务端结算接入后展示')"><view class="promoter-menu-icon reward"><text>奖</text></view><text>注册奖励</text><view class="promoter-menu-value"><text>待结算</text><i></i></view></view>
+					<view class="promoter-menu-row" @click="open('members')"><view class="promoter-menu-icon members"><text>会</text></view><text>名下会员</text><view class="promoter-menu-value"><text>有效会员 {{ effectiveMembers.length }} 人</text><i></i></view></view>
+					<view class="promoter-menu-row" @click="open('leads')"><view class="promoter-menu-icon leads"><text>线</text></view><text>客源线索</text><view class="promoter-menu-value"><text>录入</text><i></i></view></view>
+					<view class="promoter-menu-row" @click="open('commission')"><view class="promoter-menu-icon commission"><text>分</text></view><text>消费分成</text><view class="promoter-menu-value"><text>待结算</text><i></i></view></view>
+					<view class="promoter-menu-row" @click="open('merchant')"><view class="promoter-menu-icon merchant-entry"><text>商</text></view><text>商家联盟</text><view class="promoter-menu-value"><text>待开放</text><i></i></view></view>
+					<view class="promoter-menu-row" @click="open('offline')"><view class="promoter-menu-icon offline"><text>单</text></view><text>线下开单</text><view class="promoter-menu-value"><text>签约后可见</text><i></i></view></view>
+					<view class="promoter-menu-row" @click="open('withdraw')"><view class="promoter-menu-icon withdraw"><text>提</text></view><text>申请提现</text><view class="promoter-menu-value"><text>待开放</text><i></i></view></view>
+					<view class="promoter-menu-row" @click="contactVisible = true"><view class="promoter-menu-icon support"><text>服</text></view><text>联系客服</text><view class="promoter-menu-value"><text>需要帮助请联系</text><i></i></view></view>
+					<view class="promoter-menu-row" @click="goApplyPartner"><view class="promoter-menu-icon partner"><text>合</text></view><text>申请合伙</text><view class="promoter-menu-value"><text>申请成为合伙人</text><i></i></view></view>
+					<view class="promoter-menu-row last" @click="showToast('账号资料请在“我的”页面设置')"><view class="promoter-menu-icon account"><text>我</text></view><text>我的账号</text><view class="promoter-menu-value"><text>设置</text><i></i></view></view>
 				</view>
 			</view>
 
 			<view v-else class="content sub-content">
-				<view v-if="page == 'withdraw'" class="section"><view class="cash-card compact"><view><text>可提现额度（元）</text><text>{{ money(profile.balance) }}</text></view><view class="cash-button" @click="withdrawForm = !withdrawForm"><text>申请提现</text></view></view><view v-if="withdrawForm" class="form-card"><input type="digit" placeholder="输入金额(1-1000元)" :value="withdrawAmount" @input="withdrawAmount = $event.detail.value"/><view class="method" v-for="item in methods" :key="item" @click="withdrawMethod = item"><text :class="{ checked: withdrawMethod == item }">{{ withdrawMethod == item ? '选中' : '选择' }}</text><text>提现到{{ item }}</text></view><input placeholder="输入收款账号" :value="withdrawAccount" @input="withdrawAccount = $event.detail.value"/><input placeholder="输入收款人姓名" :value="withdrawPayee" @input="withdrawPayee = $event.detail.value"/><view class="gradient-btn" @click="submitWithdraw"><text>确认提现</text></view></view><view v-else class="empty"><text>什么都还没有哦</text></view></view>
-				<view v-else-if="page == 'level'" class="section white"><view class="level-card"><text>{{ profile.level }}</text><text>推广红娘设有4个级别，每个级别可享不同的分成标准，将根据名下的有效会员数自动升级对应级别。</text></view><view v-for="item in levels" :key="item.name" class="level-row"><text>{{ item.name }}</text><text>{{ item.need }}</text><text>会员注册奖励：男会员0元/人　女会员0元/人</text><text>会员消费分成：{{ item.rate }}</text></view></view>
-				<view v-else-if="page == 'rewards'" class="section"><view class="summary"><view><text>0</text><text>待审人数</text></view><view><text>{{ rewards.length }}</text><text>通过人数</text></view><view><text>0</text><text>未过人数</text></view><text>资料审核通过后才可获得奖励哦</text></view><view class="search"><input placeholder="请输入会员昵称或编号" :value="keyword" @input="keyword = $event.detail.value"/><text @click="checkSearch">搜索</text></view><view v-if="filteredRewards.length == 0" class="empty"><text>什么都还没有哦</text></view><view v-for="item in filteredRewards" :key="item.id" class="record"><text>{{ item.createdAt }}</text><text>{{ item.memberName }}</text><text class="amount">+{{ money(item.amount) }}</text><text>已通过</text></view></view>
-				<view v-else-if="page == 'members'" class="section"><view class="summary"><view><text>{{ effectiveMembers.length }}</text><text>有效会员</text></view><view><text>{{ maleCount }}</text><text>男会员</text></view><view><text>{{ femaleCount }}</text><text>女会员</text></view><text>您发展来的会员在通过平台资料审核后会被纳入到您名下有效会员，您将获得注册奖励和消费分成。</text></view><view class="tabs"><text :class="{ active: memberTab == 'effective' }" @click="memberTab = 'effective'">有效会员</text><text :class="{ active: memberTab == 'incomplete' }" @click="memberTab = 'incomplete'">未完善资料</text></view><view class="search"><input placeholder="请输入会员昵称或ID" :value="keyword" @input="keyword = $event.detail.value"/><text @click="checkSearch">搜索</text></view><view v-if="memberRows.length == 0" class="empty"><text>{{ memberTab == 'effective' ? '暂无有效会员' : '什么都还没有哦' }}</text><text v-if="memberTab == 'incomplete'">向喜欢的新人发起牵线吧</text></view><view v-for="item in memberRows" :key="item.id" class="member"><text>{{ item.name }}　{{ item.gender }}</text><text>会员编号：{{ item.id }}</text><text>注册时间：{{ item.registerAt }}</text><text>审核通过</text></view></view>
-				<view v-else-if="page == 'leads'" class="section"><view class="summary"><view><text>{{ pendingCount }}</text><text>待审核</text></view><view><text>{{ leads.length }}</text><text>有效</text></view><view><text>0</text><text>无效</text></view><text>将您获取到的单身信息录入到系统中，待平台核实为有效客源后您将获得奖励。</text><text class="report-link" @click="open('report')">数据报表</text></view><view class="search"><input placeholder="请输入称呼/手机/微信" :value="keyword" @input="keyword = $event.detail.value"/><text @click="checkSearch">搜索</text></view><view v-if="filteredLeads.length == 0" class="empty"><text>还没有任何客源呢</text><view class="gradient-btn" @click="open('lead-form')"><text>立即添加</text></view></view><view v-for="item in filteredLeads" :key="item.id" class="member"><text>{{ item.nickname || item.realName || item.phone }}</text><text>{{ item.phone }}</text><text>{{ item.status }}</text></view><view class="float-add" @click="open('lead-form')"><text>添加</text></view></view>
-				<view v-else-if="page == 'lead-form'" class="section form-page"><view class="notice">须知：您录入的信息提交后将被平台进行核实</view><view v-for="field in leadFields" :key="field.key" class="field"><text>{{ field.label }}</text><input :placeholder="field.placeholder" :value="leadForm[field.key]" @input="updateLead(field.key, $event.detail.value)"/></view><view class="field"><text>性别</text><view class="gender"><text :class="{ active: leadForm.gender == '男' }" @click="leadForm.gender = '男'">男</text><text :class="{ active: leadForm.gender == '女' }" @click="leadForm.gender = '女'">女</text></view></view><view class="field column"><text>描述</text><textarea placeholder="尽可能的将了解到的信息进行一段描述，如职业、学历、身高、婚况、收入、择偶需求等" :value="leadForm.description" @input="leadForm.description = $event.detail.value"></textarea></view><view class="gradient-btn" @click="submitLead"><text>确定提交</text></view></view>
-				<view v-else-if="page == 'report'" class="section report"><view class="table-head"><text>月份</text><text>有效(男)</text><text>有效(女)</text><text>待审</text><text>无效</text></view><view class="empty"><text>还没有任何报表呢</text></view></view>
-				<view v-else-if="page == 'commission'" class="section"><view class="level-card"><text>{{ profile.nickname || '推广红娘' }}</text><text>您的分成级别：{{ profile.level }}</text><text @click="open('level')">分成标准</text><text>您可以获得您名下有效会员在平台中的消费分成。</text></view><view v-if="commissions.length == 0" class="empty"><text>什么都还没有哦</text></view><view v-for="item in commissions" :key="item.id" class="record"><text>{{ item.createdAt }}</text><text>{{ item.itemName }}</text><text class="amount">+{{ money(item.amount) }}</text></view></view>
-				<view v-else-if="page == 'merchant'" class="section merchant"><view class="merchant-tabs"><text class="active">在售商品</text><text>订单记录</text><text>核销记录</text></view><view class="empty"><text>同城商家异业联盟合作</text><text>我们推荐优质的商品或服务，您推广我们的婚恋交友服务。</text></view><view class="merchant-bottom"><text @click="open('mall')">商家首页</text><text @click="showToast('请完成商家身份认证后开通店铺')">我的店铺</text><text @click="showToast('请完成商家身份认证后核销订单')">订单核销</text><text @click="open('finance')">分成结算</text></view></view>
-				<view v-else-if="page == 'mall'" class="section merchant"><view class="mall-banner"></view><view class="merchant-tabs"><text class="active">全部</text><text>推荐餐饮</text><text>新奇体验</text><text>休闲玩乐</text></view><view class="empty"><text>什么都还没有哦</text></view></view>
-				<view v-else-if="page == 'offline'" class="section"><view class="summary"><text>线下签约会员明细</text><text>线下开单记录将在此显示。</text></view><view v-if="offlineOrders.length == 0" class="empty"><text>暂无线下开单记录</text><view class="gradient-btn" @click="showToast('线下开单需由平台完成签约后同步')"><text>申请开单</text></view></view></view>
+				<view v-if="page == 'withdraw'" class="section">
+					<view class="cash-card compact"><view><text>可提现额度（元）</text><text>{{ money(profile.balance) }}</text></view><view class="cash-button" @click="withdrawForm = !withdrawForm"><text>{{ withdrawForm ? '提现记录' : '申请提现' }}</text></view></view>
+					<view v-if="withdrawForm" class="form-card">
+						<view class="wd-balance-line"><text>可提现余额</text><text class="wd-balance-num">{{ money(profile.balance) }} 元</text></view>
+						<view class="wd-amount-line"><text class="wd-yuan">¥</text><input type="digit" placeholder="输入金额(1-1000元)" :value="withdrawAmount" @input="withdrawAmount = $event.detail.value"/></view>
+						<view class="method" v-for="item in methods" :key="item" @click="withdrawMethod = item"><text :class="{ checked: withdrawMethod == item }">{{ withdrawMethod == item ? '选中' : '选择' }}</text><text>提现到{{ item }}</text></view>
+						<input placeholder="输入收款账号" :value="withdrawAccount" @input="withdrawAccount = $event.detail.value"/>
+						<input placeholder="输入收款人姓名" :value="withdrawPayee" @input="withdrawPayee = $event.detail.value"/>
+						<view class="gradient-btn" @click="submitWithdraw"><text>确认提现</text></view>
+					</view>
+					<view v-else class="offline-list-card">
+						<view class="commission-empty">
+							<view class="commission-empty-art"><view class="commission-empty-doc"><view class="commission-empty-face"><text>人</text></view><view class="commission-empty-line"></view><view class="commission-empty-line short"></view></view><view class="commission-empty-lens"></view></view>
+							<text class="commission-empty-text">什么都没有哦</text>
+						</view>
+					</view>
+				</view>
+				<view v-else-if="page == 'level'" class="section level-section">
+					<view class="level-banner"></view>
+					<view class="level-hero">
+						<view class="level-hero-head">
+							<view class="level-hero-avatar"><text>{{ promoterInitial }}</text></view>
+							<view class="level-hero-copy">
+								<view class="level-hero-name"><text>{{ profile.nickname || '推广红娘' }}</text><view class="level-hero-badge"><text>{{ profile.level || '初级' }}</text></view></view>
+								<view class="level-hero-progress"><block v-if="nextLevelName != ''"><text>还差 </text><text class="level-hero-num">{{ nextLevelGap }}</text><text> 位有效会员可升级到 </text><text class="level-hero-next">{{ nextLevelName }}</text></block><block v-else><text>您已是最高级别，感谢您的持续贡献</text></block></view>
+							</view>
+						</view>
+						<view class="level-hero-tip"><text class="level-hero-tip-mark">ⓘ</text><view class="level-hero-tip-copy"><text class="level-hero-tip-title">温馨提示</text><text class="level-hero-tip-text">推广红娘设有4个级别，每个级别可享有不同的分成标准，根据名下的有效会员数自动升级对应级别。</text></view></view>
+					</view>
+					<view class="level-list">
+						<view v-for="item in promoterLevels" :key="item.name" class="level-item">
+							<view class="level-item-head"><view class="level-item-icon" :class="item.tone"><text>★</text></view><text class="level-item-name">{{ item.name }}</text><text v-if="item.need != ''" class="level-item-need">（{{ item.need }}）</text></view>
+							<text class="level-item-line">会员注册奖励：♂ 男会员0元/人　♀ 女会员0元/人</text>
+							<text class="level-item-line">会员消费分成：{{ item.rate }}</text>
+						</view>
+					</view>
+				</view>
+				<view v-else-if="page == 'rewards'" class="section">
+					<view class="reward-hero">
+						<view class="reward-stats"><view class="reward-stat"><text>0</text><text>待审人数</text></view><view class="reward-stat"><text>{{ rewards.length }}</text><text>通过人数</text></view><view class="reward-stat"><text>0</text><text>未过人数</text></view></view>
+						<view class="reward-standard"><view class="reward-standard-tag"><text>奖励标准</text></view><text>♂ 男会员0元/人</text><text>♀ 女会员0元/人</text></view>
+						<text class="reward-hero-note">资料审核通过后才可获得奖励哦</text>
+					</view>
+					<view class="search"><input placeholder="请输入会员昵称或编号" :value="keyword" @input="keyword = $event.detail.value"/><text @click="checkSearch">搜索</text></view>
+					<view v-if="filteredRewards.length == 0" class="empty"><text>什么都还没有哦</text></view>
+					<view v-else class="reward-timeline">
+						<view v-for="item in filteredRewards" :key="item.id" class="reward-item">
+							<text class="reward-item-time">{{ item.createdAt }}</text>
+							<view class="reward-item-card">
+								<view class="reward-member-row">
+									<view class="reward-member-avatar"><image v-if="item.avatar" :src="item.avatar" mode="aspectFill"/><text v-else>{{ promoterInitial }}</text></view>
+									<text class="reward-member-name">{{ item.memberName }}</text>
+									<text v-if="item.gender != ''" class="reward-member-gender" :class="item.gender == '女' ? 'female' : 'male'">{{ item.gender == '女' ? '♀' : '♂' }}</text>
+								</view>
+								<view class="reward-member-foot">
+									<view class="reward-passed"><text>已通过</text></view>
+									<view class="reward-link" @click="viewMemberHome(item)"><text>去看看</text><i></i></view>
+									<view class="reward-amount"><text class="reward-amount-num">+{{ money(item.amount) }}</text><text class="reward-amount-caption">奖励(元)</text></view>
+								</view>
+							</view>
+						</view>
+						<view class="member-list-end-row"><view></view><text>没有更多了</text><view></view></view>
+					</view>
+				</view>
+				<view v-else-if="page == 'members'" class="section">
+					<view class="member-hero">
+						<view class="member-stats"><view class="member-stat"><text>{{ effectiveMembers.length }}</text><text>有效会员</text></view><view class="member-stat"><text>{{ maleCount }}</text><text>男会员</text></view><view class="member-stat"><text>{{ femaleCount }}</text><text>女会员</text></view></view>
+						<view class="member-warmtip"><view class="member-warmtip-head"><text class="member-warmtip-heart">♥</text><text>温馨提示</text></view><text class="member-warmtip-text">您发展来的会员在通过平台资料审核后将被纳入到您名下有效会员，您将获得有效的注册奖励和消费分成</text></view>
+					</view>
+					<view class="tabs"><text :class="{ active: memberTab == 'effective' }" @click="memberTab = 'effective'">有效会员</text><text :class="{ active: memberTab == 'incomplete' }" @click="memberTab = 'incomplete'">未完善资料</text></view>
+					<view class="search"><input placeholder="请输入会员昵称或ID" :value="keyword" @input="keyword = $event.detail.value"/><text @click="checkSearch">搜索</text></view>
+					<view v-if="memberTab == 'effective' && memberRows.length > 0" class="member-recent" @click="recentOnly = !recentOnly"><view class="member-recent-box" :class="{ checked: recentOnly }"><text v-if="recentOnly">✓</text></view><text>7日内有新的跟进</text></view>
+					<view v-if="memberTab == 'incomplete'" class="member-incomplete-note"><text>ⓘ 以下是已进入平台进行了推广，但并未完善资料，推广者未确认您在名额中。</text></view>
+					<view v-if="memberRows.length == 0" class="empty member-empty">
+						<view class="member-empty-art"><text>会</text></view>
+						<text>{{ memberTab == 'effective' ? '什么都没有认领' : '什么都没有认领' }}</text>
+						<text v-if="memberTab == 'incomplete'" class="member-empty-link" @click="open('lead-form')">向有效的新人发起牵线吧 ></text>
+					</view>
+					<view v-for="item in memberRows" :key="item.id" class="member-card">
+						<view class="member-card-head"><text class="member-card-time">注册时间：{{ item.registerAt }}</text><text v-if="memberTab == 'effective'" class="member-card-status">审核通过</text><text v-else class="member-card-status pending">待完善</text></view>
+						<view class="member-card-body">
+							<view class="member-card-avatar"><image v-if="item.avatar" :src="item.avatar" mode="aspectFill"/><text v-else>{{ avatarChar(item.name) }}</text></view>
+							<view class="member-card-copy">
+								<view class="member-card-name"><text>{{ item.name }}</text><text v-if="item.gender != ''" class="member-card-gender" :class="item.gender == '女' ? 'female' : 'male'">{{ item.gender == '女' ? '♀' : '♂' }}</text></view>
+								<text class="member-card-code">会员编号：{{ item.memberCode != '' ? item.memberCode : item.id }}</text>
+							</view>
+							<view v-if="memberTab == 'effective' && isPositiveUserId(item.id)" class="member-card-link" @click="viewMemberHome(item)"><text>去看看</text><i></i></view>
+						</view>
+					</view>
+				</view>
+				<view v-else-if="page == 'leads'" class="section">
+					<view class="lead-hero">
+						<view class="lead-stats"><view class="lead-stat"><text>{{ pendingCount }}</text><text>待审核</text></view><view class="lead-stat"><text>{{ validLeadCount }}</text><text>有效</text></view><view class="lead-stat"><text>{{ invalidLeadCount }}</text><text>无效</text></view></view>
+						<view class="lead-warmtip"><view class="lead-warmtip-head"><text class="lead-warmtip-icon">ⓘ</text><text>温馨提示</text><text class="lead-warmtip-link" @click="open('report')">数据报表 ></text></view><text class="lead-warmtip-text">将您获取到的单身信息录入到系统中，待平台核实为有效客源后您将获得奖励</text></view>
+					</view>
+					<view class="search"><input placeholder="请输入称呼/手机/微信" :value="keyword" @input="keyword = $event.detail.value"/><text @click="checkSearch">搜索</text></view>
+					<view v-if="filteredLeads.length == 0" class="lead-empty">
+						<view class="lead-empty-art"><view class="lead-empty-layer"><text>客</text></view><view class="lead-empty-layer mid"><text>源</text></view><view class="lead-empty-layer"><text>库</text></view></view>
+						<text class="lead-empty-text">还没有任何客源呢</text>
+						<view class="lead-empty-btn" @click="open('lead-form')"><text>立即添加 ></text></view>
+					</view>
+					<view v-else class="lead-list">
+						<view v-for="item in filteredLeads" :key="item.id" class="lead-card">
+							<view class="lead-card-head"><text class="lead-card-name">{{ item.nickname || item.realName || item.name || '未称呼' }}</text><text class="lead-card-status" :class="item.status == '有效' ? 'ok' : (item.status == '无效' ? 'bad' : 'wait')">{{ item.status }}</text></view>
+							<view class="lead-card-body">
+								<text v-if="item.phone != null && String(item.phone) != ''" class="lead-card-line">手机：{{ item.phone }}</text>
+								<text v-if="item.wechat != null && String(item.wechat) != ''" class="lead-card-line">微信：{{ item.wechat }}</text>
+								<text class="lead-card-line">来源：{{ item.source }}</text>
+								<text class="lead-card-line muted">录入时间：{{ item.createdAt }}</text>
+							</view>
+						</view>
+						<view class="member-list-end-row"><view></view><text>没有更多了</text><view></view></view>
+					</view>
+					<view class="float-add lead-float-add" @click="open('lead-form')"><text class="lead-float-icon">⊞</text><text class="lead-float-label">添加</text></view>
+				</view>
+				<view v-else-if="page == 'lead-form'" class="section form-page">
+					<view class="lead-notice"><text class="lead-notice-icon">ⓘ</text><text>须知：您录入的信息提交后将被平台进行核实</text></view>
+					<view class="lead-form-card">
+						<view class="field"><text>来源</text><input :placeholder="leadFields[0].placeholder" :value="leadForm.source" @input="updateLead('source', $event.detail.value)"/></view>
+						<view class="field"><text>手机</text><input type="number" placeholder="请输入" :value="leadForm.phone" @input="updateLead('phone', $event.detail.value)"/></view>
+						<view class="field column-tight"><text>微信</text><input placeholder="请输入" :value="leadForm.wechat" @input="updateLead('wechat', $event.detail.value)"/><view class="field-check" @click="leadForm.wechatSameAsPhone = !leadForm.wechatSameAsPhone"><view class="field-check-box" :class="{ checked: leadForm.wechatSameAsPhone }"><text v-if="leadForm.wechatSameAsPhone">✓</text></view><text>同手机号</text></view></view>
+						<view class="field column-tight"><text>称呼</text><input placeholder="请输入" :value="leadForm.nickname" @input="updateLead('nickname', $event.detail.value)"/><view class="field-check" @click="leadForm.autoNickname = !leadForm.autoNickname"><view class="field-check-box" :class="{ checked: leadForm.autoNickname }"><text v-if="leadForm.autoNickname">✓</text></view><text>自动生成</text></view></view>
+						<view class="field"><text>姓名</text><input placeholder="请输入" :value="leadForm.realName" @input="updateLead('realName', $event.detail.value)"/></view>
+						<view class="field"><text>性别</text><view class="lead-field-picker" @click="pickGender"><text>{{ leadForm.gender }}</text><i></i></view></view>
+						<view class="field"><text>出生</text><view class="lead-field-picker" @click="pickBirth"><text>{{ leadForm.birth }}</text><i></i></view></view>
+						<view class="field"><text>体重</text><view class="lead-field-picker" @click="pickWeight"><text>{{ leadForm.weight != '' ? leadForm.weight + 'kg' : '未填写' }}</text><i></i></view></view>
+						<view class="field"><text>身高</text><view class="lead-field-picker" @click="pickHeight"><text>{{ leadForm.height != '' ? leadForm.height + 'cm' : '未填写' }}</text><i></i></view></view>
+						<view class="field column"><text>描述</text><textarea placeholder="尽可能的将了解到的信息进行一段描述，如：职业、学历、身高、婚况、收入、择偶需求等等" :value="leadForm.description" @input="leadForm.description = $event.detail.value"></textarea></view>
+						<view class="field column-tight"><text>照片</text><view class="lead-photo-add" @click="addLeadPhoto"><text class="lead-photo-plus">＋</text><text class="lead-photo-label">上传图片</text></view></view>
+					</view>
+					<view class="gradient-btn lead-submit" @click="submitLead"><text>确定提交</text></view>
+				</view>
+				<view v-else-if="page == 'report'" class="section report"><view class="table-head"><text>月份</text><text>有效(男)</text><text>有效(女)</text><text>待审</text><text>无效</text></view><view class="lead-empty report-empty"><view class="lead-empty-art"><view class="lead-empty-layer"><text>报</text></view><view class="lead-empty-layer mid"><text>表</text></view><view class="lead-empty-layer"><text>库</text></view></view><text class="lead-empty-text">还没有任何报表呢</text></view></view>
+				<view v-else-if="page == 'commission'" class="section commission-section">
+					<view class="commission-banner"></view>
+					<view class="commission-hero">
+						<view class="commission-hero-head">
+							<view class="commission-hero-avatar"><text>{{ promoterInitial }}</text></view>
+							<view class="commission-hero-copy">
+								<text class="commission-hero-name">{{ profile.nickname || '推广红娘' }}</text>
+								<view class="commission-hero-level"><text>您的分成级别：</text><view class="commission-hero-badge"><text>{{ profile.level || '初级' }}</text></view></view>
+							</view>
+							<view class="commission-hero-link" @click="open('level')"><text>分成标准</text><i></i></view>
+						</view>
+						<view class="commission-hero-tip"><text class="commission-hero-tip-mark">ⓘ</text><view class="commission-hero-tip-copy"><text class="commission-hero-tip-title">温馨提示</text><text class="commission-hero-tip-text">您可以获得您名下有效会员在平台中的消费分成。</text></view></view>
+					</view>
+					<view class="commission-list-card">
+						<view v-if="commissions.length == 0" class="commission-empty">
+							<view class="commission-empty-art"><view class="commission-empty-doc"><view class="commission-empty-face"><text>人</text></view><view class="commission-empty-line"></view><view class="commission-empty-line short"></view></view><view class="commission-empty-lens"></view></view>
+							<text class="commission-empty-text">什么都没有哦</text>
+						</view>
+						<view v-else class="commission-records">
+							<view v-for="item in commissions" :key="item.id" class="reward-item">
+								<text class="reward-item-time">{{ item.createdAt }}</text>
+								<view class="reward-item-card">
+									<view class="reward-member-row"><text class="reward-member-name">{{ item.itemName }}</text><text v-if="item.memberName != null && String(item.memberName) != ''" class="reward-member-sub">{{ item.memberName }}</text></view>
+									<view class="reward-amount"><text class="reward-amount-num">+{{ money(item.amount) }}</text><text class="reward-amount-caption">分成(元)</text></view>
+								</view>
+							</view>
+							<view class="member-list-end-row"><view></view><text>没有更多了</text><view></view></view>
+						</view>
+					</view>
+				</view>
+				<view v-else-if="page == 'merchant'" class="section merchant-page">
+					<view class="merchant-tabs-row">
+						<text v-for="tab in merchantTabs" :key="tab.key" :class="{ active: merchantTab == tab.key }" @click="merchantTab = tab.key">{{ tab.label }}</text>
+					</view>
+					<view class="merchant-coop-card">
+						<view class="merchant-coop-badge"><text>🤝</text></view>
+						<text class="merchant-coop-title">同城商家异业联盟合作</text>
+						<text class="merchant-coop-line">我们推广销售您的商品或服务</text>
+						<text class="merchant-coop-line">您推广我们的婚恋交友服务</text>
+						<view v-if="merchantTab != 'goods'" class="merchant-coop-empty"><text>{{ merchantTab == 'orders' ? '还没有任何订单呢' : '还没有任何核销记录呢' }}</text></view>
+						<view class="merchant-coop-foot" @click="merchantNegotiate"><text>🤝 详情洽谈</text></view>
+					</view>
+					<view class="merchant-tabbar">
+						<view v-for="bar in merchantBar" :key="bar.key" @click="merchantBarTap(bar)"><text class="merchant-bar-icon">{{ bar.icon }}</text><text>{{ bar.label }}</text></view>
+					</view>
+				</view>
+				<view v-else-if="page == 'mall'" class="section mall-page"><view class="mall-banner"></view><view class="merchant-tabs"><text class="active">全部</text><text>推荐餐饮</text><text>新奇体验</text><text>休闲玩乐</text></view><view class="empty"><text>什么都还没有哦</text></view></view>
+				<view v-else-if="page == 'offline'" class="section">
+					<view class="offline-notice"><text class="offline-notice-icon">ⓘ</text><view class="offline-notice-copy"><text class="offline-notice-title">须知</text><text class="offline-notice-text">以下是您名下客源成功做单成为我们平台旗下VIP服务客户的记录。数据信息若有误差，请与工作人员核对为准。</text></view></view>
+					<view class="offline-list-card">
+						<view v-if="offlineOrders.length == 0" class="commission-empty">
+							<view class="commission-empty-art"><view class="commission-empty-doc"><view class="commission-empty-face"><text>人</text></view><view class="commission-empty-line"></view><view class="commission-empty-line short"></view></view><view class="commission-empty-lens"></view></view>
+							<text class="commission-empty-text">什么都没有哦</text>
+						</view>
+						<view v-else class="offline-records">
+							<view v-for="item in offlineOrders" :key="item.id" class="reward-item">
+								<text class="reward-item-time">{{ item.createdAt }}</text>
+								<view class="reward-item-card">
+									<view class="reward-member-row"><text class="reward-member-name">{{ item.customer }}</text><view class="status-pill-small" :class="{ pending: item.status != '已结算' }"><text>{{ item.status }}</text></view></view>
+									<view class="reward-amount"><text class="reward-amount-num">{{ money(item.amount) }}</text><text class="reward-amount-caption">开单金额(元)</text></view>
+								</view>
+							</view>
+							<view class="member-list-end-row"><view></view><text>没有更多了</text><view></view></view>
+						</view>
+					</view>
+				</view>
 				<view v-else-if="page == 'finance'" class="section"><view class="funds"><view><text>余额（元）</text><text>{{ money(profile.balance) }}</text><text @click="open('withdraw')">提现</text></view><view><text>积分（金市）</text><text>{{ profile.points }}</text><text @click="showToast('充值功能待后端接入')">充值</text></view></view><view class="tabs"><text :class="{ active: financeTab == 'expense' }" @click="financeTab = 'expense'">支出明细</text><text :class="{ active: financeTab == 'balance' }" @click="financeTab = 'balance'">余额明细</text><text :class="{ active: financeTab == 'points' }" @click="financeTab = 'points'">积分明细</text></view><view class="empty"><text>什么都还没有哦</text></view></view>
-				<view v-else-if="page == 'account'" class="section"><view class="funds"><view><text>余额（元）</text><text>{{ money(profile.balance) }}</text><text @click="open('withdraw')">提现</text></view><view><text>积分（金市）</text><text>{{ profile.points }}</text><text @click="open('finance')">财务明细</text></view></view><view class="list-card"><view class="row" @click="accountEditVisible = true"><text>昵称</text><text>{{ profile.nickname || '未完善资料' }}</text><i></i></view><view class="row" @click="accountEditVisible = true"><text>手机</text><text>{{ profile.phone || '未绑定' }}</text><i></i></view><view class="row"><text>微信</text><text>{{ profile.wechatBound ? '已绑定' : '未绑定' }}</text></view><view class="row" @click="open('finance')"><text>财务明细</text><text>查看</text><i></i></view><view class="row" @click="deactivateVisible = true"><text>注销账号</text><text>不可恢复</text><i></i></view></view></view>
+				<view v-else-if="page == 'account'" class="section">
+					<view class="funds">
+						<view><text>余额（元）</text><text>{{ money(profile.balance) }}</text><view><text @click="open('withdraw')">提现</text><text @click="open('finance')">财务明细 ></text></view></view>
+						<view><text>积分（金币）</text><text>{{ profile.points != null ? profile.points : 0 }}</text><view><text @click="showToast('兑换礼物将在积分商城开放后可用')">兑换礼物 ></text></view></view>
+					</view>
+					<view class="list-card">
+						<view class="row"><text>头像</text><view class="account-avatar"><text>{{ promoterInitial }}</text></view></view>
+						<view class="row" @click="accountEditVisible = true"><text>昵称</text><text>{{ profile.nickname || '未完善资料' }}</text><i></i></view>
+						<view class="row" @click="accountEditVisible = true"><text>手机</text><text>{{ maskedPhone }}</text><i></i></view>
+						<view class="row"><text>微信</text><text>{{ profile.wechatBound ? '已绑定' : '未绑定' }}</text></view>
+						<view class="row" @click="showToast('密码修改需在账号安全页完成')"><text>密码</text><text>修改</text><i></i></view>
+						<view class="row"><text>注册</text><text>{{ profile.registerAt || '暂无记录' }}</text></view>
+						<view class="account-logout" @click="confirmLogout"><text>退出登录</text></view>
+						<view class="account-deactivate" @click="deactivateVisible = true"><text>注销账号</text></view>
+					</view>
+				</view>
 			</view>
 		</scroll-view>
 
-		<view v-if="teamPickerVisible" class="overlay" @click="teamPickerVisible = false"><view class="dialog bottom" @click.stop><view class="dialog-head"><text>选择合伙人团队</text><text @click="teamPickerVisible = false">关闭</text></view><view class="search"><input placeholder="请输入团队关键词" :value="teamSearch" @input="teamSearch = $event.detail.value"/><text>搜索</text></view><view v-if="teamOptions.length == 0" class="empty"><text>暂无可加入团队</text></view><view v-for="team in teamOptions" :key="team.id" class="team-option" @click="selectTeam(team)"><text>{{ team.name }}</text></view><view class="gradient-btn" @click="showToast('请从上方搜索并选择合伙人团队')"><text>立即加入</text></view></view></view>
-		<view v-if="contactVisible" class="overlay" @click="contactVisible = false"><view class="contact" @click.stop><text>联系客服</text><image src="/static/qrcodes/kefu-wechat.png" mode="aspectFit"></image><text>您有任何疑问请联系我们的工作人员</text><view @click="contactVisible = false"><text>关闭</text></view></view></view>
+		<view v-if="teamPickerVisible" class="overlay" @click="teamPickerVisible = false"><view class="team-picker" @click.stop><view class="team-picker-head"><text class="team-picker-title">选择合伙团队</text><view class="team-picker-close" @click="teamPickerVisible = false"><text>✕</text></view></view><view class="team-picker-search"><text class="team-picker-search-icon">⌕</text><input placeholder="请输入团队关键词" :value="teamSearch" @input="teamSearch = $event.detail.value"/><view class="team-picker-search-btn" @click="applyTeamSearch"><text>搜索</text></view></view><view v-if="filteredTeamOptions.length == 0" class="team-picker-empty"><text>{{ teamSearch.trim() == '' ? '暂无可加入的合伙团队' : '未找到匹配的团队' }}</text></view><view v-for="team in filteredTeamOptions" :key="team.id" class="team-option-card" :class="{ selected: selectedTeamId == team.id }" @click="selectTeam(team)"><text class="team-option-name">{{ team.name }}</text><view v-if="selectedTeamId == team.id" class="team-option-check"><text>✓</text></view></view><view class="team-picker-join" :class="{ disabled: selectedTeamId == null }" @click="joinSelectedTeam"><text>立即加入</text></view></view></view>
+		<view v-if="teamChangeTipVisible" class="overlay" @click="teamChangeTipVisible = false"><view class="team-change-dialog" @click.stop><view class="team-change-face"><text>☹</text></view><text class="team-change-title">抱歉</text><text class="team-change-copy">您想变更已加入的团队吗？请联系客服处理</text><view class="team-change-btn" @click="onTeamChangeAck"><text>知道了</text></view></view></view>
+		<view v-if="contactVisible" class="overlay" @click="contactVisible = false"><view class="contact-wrap" @click.stop><view class="contact-dialog"><view class="contact-hero"><view class="contact-badge"><text>客服</text></view><text class="contact-head-title">联系客服</text><view class="contact-hero-arc"></view></view><view class="contact-body"><view class="contact-qr-card"><image class="contact-qr" src="/static/qrcodes/kefu-wechat.png" mode="aspectFit"></image></view><view class="contact-quote"><text class="contact-quote-mark">“</text><text class="contact-copy">您有任何疑问请联系我们的工作人员</text><text class="contact-quote-mark">”</text></view></view></view><view class="contact-close" @click="contactVisible = false"><text>✕</text></view></view></view>
 		<view v-if="accountEditVisible" class="overlay" @click="accountEditVisible = false"><view class="dialog" @click.stop><view class="dialog-head"><text>修改账号资料</text><text @click="accountEditVisible = false">关闭</text></view><input placeholder="输入昵称" :value="accountNickname" @input="accountNickname = $event.detail.value"/><input type="number" placeholder="输入手机号" :value="accountPhone" @input="accountPhone = $event.detail.value"/><view class="gradient-btn" @click="saveAccount"><text>保存</text></view></view></view>
 		<view v-if="deactivateVisible" class="overlay"><view class="dialog" @click.stop><text>注销账号</text><text>注销后本机保存的推广红娘资料和业务记录将无法恢复。</text><view class="dialog-actions"><text @click="deactivateVisible = false">取消</text><text @click="showToast('账号注销需平台人工核验'); deactivateVisible = false">申请注销</text></view></view></view>
 		<XsaToast :visible="toastVisible" :message="toastMessage" @hide="toastVisible = false" />
@@ -47,20 +265,56 @@
 <script setup lang="uts">
 import XsaToast from '@/components/XsaToast.uvue'
 import { addPromoterLead, createPromoterPromotionCode, createPromoterWithdrawal, getPromoterCenterSnapshot, updatePromoterCenterProfile } from '@/api'
-const page = ref('home'), loading = ref(true), snapshot = ref<any>({ profile: {}, teamOptions: [], leads: [], effectiveMembers: [], incompleteMembers: [], rewards: [], commissions: [], offlineOrders: [] }), toastVisible = ref(false), toastMessage = ref(''), keyword = ref(''), memberTab = ref('effective'), financeTab = ref('balance'), teamPickerVisible = ref(false), contactVisible = ref(false), accountEditVisible = ref(false), deactivateVisible = ref(false), withdrawForm = ref(false), withdrawAmount = ref(''), withdrawAccount = ref(''), withdrawPayee = ref(''), withdrawMethod = ref('微信'), accountNickname = ref(''), accountPhone = ref(''), teamSearch = ref('')
+import { logout as logoutApi } from '@/api/auth'
+const page = ref('home'), loading = ref(true), snapshot = ref<any>({ profile: {}, teamOptions: [], leads: [], effectiveMembers: [], incompleteMembers: [], rewards: [], commissions: [], offlineOrders: [] }), toastVisible = ref(false), toastMessage = ref(''), keyword = ref(''), memberTab = ref('effective'), financeTab = ref('balance'), teamPickerVisible = ref(false), teamChangeTipVisible = ref(false), contactVisible = ref(false), accountEditVisible = ref(false), deactivateVisible = ref(false), withdrawForm = ref(false), withdrawAmount = ref(''), withdrawAccount = ref(''), withdrawPayee = ref(''), withdrawMethod = ref('微信'), accountNickname = ref(''), accountPhone = ref(''), teamSearch = ref(''), teamSearchApplied = ref(''), selectedTeamId = ref(null as string | null), recentOnly = ref(false), merchantTab = ref('goods')
 const methods = ['微信', '银行卡', '支付宝']
-const leadForm = ref<any>({ source: '', phone: '', wechat: '', nickname: '', realName: '', gender: '男', birth: '1990-01-01', height: '', weight: '', description: '' })
+const leadForm = ref<any>({ source: '', phone: '', wechat: '', wechatSameAsPhone: false, autoNickname: false, nickname: '', realName: '', gender: '男', birth: '1990-01-01', height: '', weight: '', description: '', photos: [] as any[] })
 const leadFields = [{ key: 'source', label: '来源', placeholder: '请输入来源' }, { key: 'phone', label: '手机', placeholder: '请输入' }, { key: 'wechat', label: '微信', placeholder: '请输入' }, { key: 'nickname', label: '称呼', placeholder: '请输入' }, { key: 'realName', label: '姓名', placeholder: '请输入' }, { key: 'birth', label: '出生', placeholder: '1990-01-01' }, { key: 'weight', label: '体重', placeholder: '未填写' }, { key: 'height', label: '身高', placeholder: '未填写' }]
-const levels: any[] = []
+const merchantTabs = [ { key: 'goods', label: '在售商品' }, { key: 'orders', label: '订单记录' }, { key: 'verify', label: '核销记录' } ]
+const merchantBar = [ { key: 'home', icon: '⌂', label: '商家首页' }, { key: 'shop', icon: '🏪', label: '我的店铺' }, { key: 'orders', icon: '📋', label: '订单核销' }, { key: 'settle', icon: '¥', label: '分成结算' } ]
+const merchantNegotiate=()=>{contactVisible.value=true}
+const goApplyPartner=()=>{uni.navigateTo({url:'/pagesSub/matchmaker/become-partner'})}
+const merchantBarTap=(bar:any)=>{if(bar.key=='settle'){showToast('分成结算将在商家联盟开通后开放');return};if(bar.key=='orders'){merchantTab.value='orders';return};if(bar.key=='shop'){showToast('店铺管理将在商家联盟开通后开放');return};merchantTab.value='goods'}
+const promoterLevels = [
+	{ name: '初级', need: '', threshold: 0, rate: '无分成', tone: 'teal' },
+	{ name: '推广大师', need: '有效会员数≥51人', threshold: 51, rate: '无分成', tone: 'orange' },
+	{ name: '推广大使', need: '有效会员数≥100人', threshold: 100, rate: '无分成', tone: 'rose' },
+	{ name: '推广天使', need: '有效会员数≥500人', threshold: 500, rate: '无分成', tone: 'violet' }
+]
 const profile = computed(() => snapshot.value.profile || {}), teamOptions = computed(() => snapshot.value.teamOptions || []), leads = computed(() => snapshot.value.leads || []), effectiveMembers = computed(() => snapshot.value.effectiveMembers || []), incompleteMembers = computed(() => snapshot.value.incompleteMembers || []), rewards = computed(() => snapshot.value.rewards || []), commissions = computed(() => snapshot.value.commissions || []), offlineOrders = computed(() => snapshot.value.offlineOrders || [])
 const title = computed(() => { const dict:any = { home: '推广红娘管理中心', withdraw: '余额提现', level: '分成级别', rewards: '会员注册奖励', members: '名下会员', leads: '客源线索', 'lead-form': '录入客源', report: '数据报表', commission: '消费分成', merchant: '商家联盟', mall: '优选合作商城', offline: '线下开单', finance: '财务明细', account: '我的账号' }; return dict[page.value] || '推广红娘管理中心' })
-const pendingCount = computed(() => leads.value.length), totalIncome = computed(() => null), maleCount = computed(() => effectiveMembers.value.filter((x:any)=>x.gender=='男').length), femaleCount = computed(() => effectiveMembers.value.length-maleCount.value)
-function listFilter(list:any[]) { const key=keyword.value.trim().toLowerCase(); return key==''?list:list.filter((x:any)=>(String(x.name||'')+String(x.id||'')+String(x.memberName||'')+String(x.phone||'')).toLowerCase().indexOf(key)>=0) }
-const filteredLeads = computed(()=>listFilter(leads.value)), filteredRewards = computed(()=>listFilter(rewards.value)), memberRows = computed(()=>listFilter(memberTab.value=='effective'?effectiveMembers.value:incompleteMembers.value))
-const money=(v:any)=>{if(v==null||v==='')return '--';const n=Number(v);return isNaN(n)?'--':n.toFixed(2)}, showToast=(v:string)=>{toastMessage.value=v;toastVisible.value=true}, open=(v:string)=>{if(v=='withdraw'||v=='level'||v=='rewards'||v=='commission'||v=='merchant'||v=='mall'||v=='offline'||v=='finance'){showToast('资金与商业结算能力不在本期范围内');return};page.value=v;keyword.value='';withdrawForm.value=false}, goBack=()=>{if(page.value=='home')uni.navigateBack();else page.value='home'}, checkSearch=()=>{if(keyword.value.trim()=='')showToast('请输入搜索关键词')}, updateLead=(key:string,value:string)=>{leadForm.value[key]=value}
+const pendingCount = computed(() => leads.value.filter((x:any)=>x.status=='待审核').length), validLeadCount = computed(() => leads.value.filter((x:any)=>x.status=='有效').length), invalidLeadCount = computed(() => leads.value.filter((x:any)=>x.status=='无效').length), maleCount = computed(() => effectiveMembers.value.filter((x:any)=>x.gender=='男').length), femaleCount = computed(() => effectiveMembers.value.length-maleCount.value)
+const pendingMemberCount = computed(() => incompleteMembers.value.length)
+const rejectedMemberCount = computed(() => 0)
+const totalPromoted = computed(() => effectiveMembers.value.length + incompleteMembers.value.length)
+const effectiveTotal = computed(() => effectiveMembers.value.length)
+const nextLevel = computed(() => { for (let i = 0; i < promoterLevels.length; i++) { if (effectiveTotal.value < promoterLevels[i].threshold) return promoterLevels[i] } return null })
+const nextLevelName = computed(() => nextLevel.value != null ? nextLevel.value.name : '')
+const nextLevelGap = computed(() => nextLevel.value != null ? String(nextLevel.value.threshold - effectiveTotal.value) : '0')
+const availableBalance = computed(() => { const amount = Number(profile.value.balance); return isNaN(amount) || amount < 0 ? '0.00' : amount.toFixed(2) })
+const promoterInitial = computed(() => { const name = profile.value.nickname == null ? '' : String(profile.value.nickname).trim(); return name.length > 0 ? name.substring(0, 1) : '推' })
+function listFilter(list:any[]) { const key=keyword.value.trim().toLowerCase(); return key==''?list:list.filter((x:any)=>(String(x.name||'')+String(x.id||'')+String(x.memberName||'')+String(x.memberCode||'')+String(x.phone||'')).toLowerCase().indexOf(key)>=0) }
+const pickGender=()=>{leadForm.value.gender=leadForm.value.gender=='男'?'女':'男'}
+const pickBirth=()=>{uni.showActionSheet({itemList:['1990-01-01','1992-06-15','1995-03-20','1998-11-08'],success:(r)=>{leadForm.value.birth=['1990-01-01','1992-06-15','1995-03-20','1998-11-08'][r.tapIndex]}})}
+const pickWeight=()=>{uni.showActionSheet({itemList:['45kg','50kg','55kg','60kg','65kg'],success:(r)=>{leadForm.value.weight=['45','50','55','60','65'][r.tapIndex]}})}
+const pickHeight=()=>{uni.showActionSheet({itemList:['155cm','160cm','165cm','170cm','175cm'],success:(r)=>{leadForm.value.height=['155','160','165','170','175'][r.tapIndex]}})}
+const addLeadPhoto=()=>{uni.chooseImage({count:3,sizeType:['compressed'],success:(r)=>{const paths:any[]=r.tempFilePaths as any[];leadForm.value.photos=leadForm.value.photos.concat(paths).slice(0,3);showToast('已添加'+paths.length+'张照片，仅随客源信息一并提交')}})}
+function isWithinDays(timeValue:any, days:number):boolean { const t = String(timeValue == null ? '' : timeValue).replace('T', ' ').replace('-', '/').replace('-', '/').replace('-', '/'); const parts = t.split(' '); const dateParts = parts.length > 0 ? parts[0].split('/') : [] as any[]; if (dateParts.length < 3) return false; const y = Number(dateParts[0]), m = Number(dateParts[1]), d = Number(dateParts[2]); if (isNaN(y) || isNaN(m) || isNaN(d)) return false; const registerMs = new Date(y, m - 1, d).getTime(); return Date.now() - registerMs <= days * 86400000 }
+function isPositiveUserId(idValue:any):boolean { const n = Number(idValue); return !isNaN(n) && n > 0 }
+const avatarChar=(name:any)=>{const v=name==null?'':String(name).trim();return v.length>0?v.substring(0,1):'会'}
+const viewMemberHome=(item:any)=>{const memberId = Number(item.id);if(isNaN(memberId)||memberId<=0){showToast('会员主页编号待服务端同步');return};uni.navigateTo({url:'/pagesSub/userExtra/user/detail?userId='+memberId})}
+const filteredLeads = computed(()=>listFilter(leads.value)), filteredRewards = computed(()=>listFilter(rewards.value)), memberRows = computed(()=>{let rows=listFilter(memberTab.value=='effective'?effectiveMembers.value:incompleteMembers.value);if(memberTab.value=='effective'&&recentOnly.value)rows=rows.filter((x:any)=>isWithinDays(x.registerAt,7));return rows})
+const money=(v:any)=>{if(v==null||v==='')return '--';const n=Number(v);return isNaN(n)?'--':n.toFixed(2)}, showToast=(v:string)=>{toastMessage.value=v;toastVisible.value=true}, open=(v:string)=>{if(v=='withdraw'||v=='mall'||v=='finance'){showToast('资金与商业结算能力不在本期范围内');return};page.value=v;keyword.value='';withdrawForm.value=false;recentOnly.value=false}, goBack=()=>{if(page.value=='home')uni.navigateBack();else page.value='home'}, checkSearch=()=>{if(keyword.value.trim()=='')showToast('请输入搜索关键词')}, updateLead=(key:string,value:string)=>{leadForm.value[key]=value}
 const copyLink=async()=>{if(profile.value.promotionCode){uni.setClipboardData({data:String(profile.value.promotionCode),success:()=>showToast('推广码已复制')});return};const r=await createPromoterPromotionCode();if(!r.success||r.data==null){showToast(r.message||'推广码生成失败');return};uni.setClipboardData({data:String(r.data.code),success:()=>showToast('推广码已复制')});await load()}, savePoster=()=>showToast('专属推广海报待平台配置后开放')
-const selectTeam=async(team:any)=>{teamPickerVisible.value=false;showToast('团队归属由平台审核后配置')}
-const submitLead=async()=>{const r=await addPromoterLead(leadForm.value);if(r.success){showToast(r.message);leadForm.value={source:'',phone:'',wechat:'',nickname:'',realName:'',gender:'男',birth:'1990-01-01',height:'',weight:'',description:''};await load();page.value='leads'}else showToast(r.message)}
+const selectTeam=async(team:any)=>{selectedTeamId.value=String(team.id)}
+const applyTeamSearch=()=>{if(teamSearch.value.trim()==''){showToast('请输入团队关键词');return};teamSearchApplied.value=teamSearch.value.trim()}
+const openTeamEntry=()=>{if(profile.value.teamName!=null&&String(profile.value.teamName)!=''){teamChangeTipVisible.value=true;return};teamSearch.value='';teamSearchApplied.value='';selectedTeamId.value=null;teamPickerVisible.value=true}
+const joinSelectedTeam=()=>{if(selectedTeamId.value==null){showToast('请先选择要加入的合伙团队');return};const picked=teamOptions.value.find((t:any)=>String(t.id)==selectedTeamId.value);teamPickerVisible.value=false;if(picked!=null)showToast('已提交加入「'+picked.name+'」，等待合伙人确认');else showToast('请重新选择团队')}
+const onTeamChangeAck=()=>{teamChangeTipVisible.value=false;contactVisible.value=true}
+const maskedPhone=computed(()=>{const p=String(profile.value.phone||'');if(p=='')return '未绑定';if(/^1[3-9]\d{9}$/.test(p))return p.substring(0,3)+'****'+p.substring(7);return p})
+const confirmLogout=async()=>{await logoutApi();try{uni.removeStorageSync('xsa_user_id')}catch(e){};showToast('已退出登录');setTimeout(()=>{uni.reLaunch({url:'/pages/auth/login'})},600)}
+const filteredTeamOptions=computed(()=>{const key=teamSearchApplied.value.trim().toLowerCase();if(key=='')return teamOptions.value;return teamOptions.value.filter((t:any)=>String(t.name).toLowerCase().indexOf(key)>=0)})
+const submitLead=async()=>{const form=leadForm.value;if(form.wechatSameAsPhone&&form.phone!=''&&form.wechat=='')form.wechat=form.phone;if(form.autoNickname&&form.nickname=='')form.nickname=(form.gender=='女'?'女会员':'男会员')+form.phone.slice(-4);const r=await addPromoterLead(form);if(r.success){showToast(r.message);leadForm.value={source:'',phone:'',wechat:'',wechatSameAsPhone:false,autoNickname:false,nickname:'',realName:'',gender:'男',birth:'1990-01-01',height:'',weight:'',description:'',photos:[] as any[]};await load();page.value='leads'}else showToast(r.message)}
 const submitWithdraw=async()=>{const r=await createPromoterWithdrawal({amount:withdrawAmount.value,method:withdrawMethod.value,account:withdrawAccount.value,payee:withdrawPayee.value});if(r.success){showToast(r.message);withdrawForm.value=false;await load()}else showToast(r.message)}
 const saveAccount=async()=>{const p=accountPhone.value.trim();if(p!=''&&!/^1[3-9]\d{9}$/.test(p)){showToast('请输入正确的11位手机号');return};const r=await updatePromoterCenterProfile({nickname:accountNickname.value.trim(),phone:p});if(r.success){snapshot.value=r.data;accountEditVisible.value=false;showToast('账号资料已保存')}else showToast(r.message)}
 const load=async()=>{loading.value=true;try{const r=await getPromoterCenterSnapshot();if(r.success&&r.data!=null){snapshot.value=r.data;accountNickname.value=String(profile.value.nickname||'');accountPhone.value=String(profile.value.phone||'')}else showToast(r.message)}catch(e){showToast('网络数据加载失败')}finally{loading.value=false}}
@@ -68,7 +322,7 @@ onMounted(()=>load())
 </script>
 
 <style scoped>
-.promoter-page{min-height:100vh;background:#F4F5FA;color:#282A30;display:flex;flex-direction:column}.promoter-nav{height:100rpx;background:#fff;display:flex;flex-direction:row;align-items:center;justify-content:center;font-size:34rpx;font-weight:800;flex-shrink:0}.back{position:absolute;left:22rpx;width:72rpx;height:72rpx;display:flex;align-items:center;justify-content:center}.back view{width:24rpx;height:24rpx;border-left:5rpx solid #272A30;border-bottom:5rpx solid #272A30;transform:rotate(45deg)}.menu{position:absolute;right:26rpx;width:48rpx;display:flex;flex-direction:column;gap:9rpx}.menu view{height:5rpx;border-radius:999rpx;background:#2b2d32}.scroll{flex:1;height:0}.content{padding:28rpx 28rpx calc(env(safe-area-inset-bottom) + 40rpx);display:flex;flex-direction:column;gap:26rpx}.cash-card{position:relative;min-height:210rpx;overflow:hidden;padding:34rpx 34rpx 26rpx;border-radius:32rpx;background:linear-gradient(135deg,#e3a9fc,#fac8f2);display:flex;flex-direction:row;justify-content:space-between}.cash-card:after{content:'';position:absolute;right:-45rpx;bottom:-128rpx;width:300rpx;height:300rpx;border:25rpx solid rgba(255,255,255,.17);border-radius:50%}.cash-card>view:first-child{z-index:1;display:flex;flex-direction:column;gap:10rpx;font-size:27rpx;font-weight:800}.cash-card>view:first-child text:last-child{font-size:63rpx;line-height:1}.cash-button{z-index:1;align-self:flex-start;min-width:174rpx;height:70rpx;border-radius:999rpx;background:#fff;display:flex;flex-direction:row;align-items:center;justify-content:center;color:#bb4bd0;font-size:27rpx;font-weight:800}.cash-bottom{position:absolute!important;z-index:1;left:34rpx;right:34rpx;bottom:20rpx;display:flex!important;flex-direction:row!important;justify-content:space-between;font-size:22rpx!important}.compact{min-height:170rpx}.data-card,.list-card,.summary,.level-card,.form-card{border-radius:32rpx;background:#fff;box-shadow:0 12rpx 28rpx rgba(70,70,105,.06)}.data-card{padding:28rpx}.metrics,.funds{display:flex;flex-direction:row}.metrics>view,.summary>view:not(:last-child){width:33.33%;display:flex;flex-direction:column;align-items:center;gap:8rpx}.metrics text:first-child,.summary>view:not(:last-child) text:first-child{font-size:48rpx;font-weight:900}.metrics text:last-child,.summary>view:not(:last-child) text:last-child{color:#989aa1;font-size:24rpx}.hint{margin-top:26rpx;padding:21rpx;border-radius:25rpx;background:#f6f6f7;display:flex;flex-direction:column;gap:10rpx;color:#787b84;font-size:23rpx;line-height:1.6}.hint text:first-child{color:#2d2f35;font-size:26rpx;font-weight:800}.promo-card{padding:27rpx;border-radius:30rpx;background:linear-gradient(135deg,#e9d8fa,#f4e4f3);display:flex;flex-direction:column;gap:22rpx;font-size:25rpx;font-weight:800}.promo-card>view{display:flex;flex-direction:row;gap:14rpx}.promo-card>view text,.gradient-btn{flex:1;min-height:62rpx;border-radius:999rpx;background:#fff;display:flex;flex-direction:row;align-items:center;justify-content:center;color:#b24fd4;font-size:22rpx}.list-card{padding:0 24rpx;overflow:hidden}.row{min-height:104rpx;border-bottom:1rpx solid #ececef;display:flex;flex-direction:row;align-items:center;gap:12rpx}.row>text:first-child{font-size:29rpx;font-weight:800}.row>text:nth-child(2){margin-left:auto;color:#a2a4aa;font-size:23rpx}.row i{width:13rpx;height:13rpx;border-top:3rpx solid #b5b7bd;border-right:3rpx solid #b5b7bd;transform:rotate(45deg)}.last{border-bottom:0}.sub-content{min-height:100%}.section{display:flex;flex-direction:column;gap:22rpx}.white{background:#fff;margin:-28rpx;padding:28rpx;min-height:100vh}.form-card{padding:24rpx;display:flex;flex-direction:column;gap:18rpx}.form-card input,.dialog input{height:78rpx;padding:0 22rpx;border-radius:18rpx;background:#f5f5f6;font-size:25rpx}.method{min-height:76rpx;border-bottom:1rpx solid #e7e8eb;display:flex;flex-direction:row;align-items:center;gap:18rpx;font-size:27rpx;font-weight:700}.method text:first-child{padding:7rpx 12rpx;border-radius:12rpx;background:#eeeef1;color:#898b92;font-size:20rpx}.method text.checked{background:#d673ea;color:#fff}.gradient-btn{min-height:82rpx;margin-top:8rpx;background:linear-gradient(90deg,#dea0f6,#f6bff1);color:#20212a;font-size:29rpx;font-weight:800}.empty{min-height:300rpx;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20rpx;color:#b5b7be;font-size:25rpx;text-align:center}.level-card{padding:25rpx;display:flex;flex-direction:column;gap:13rpx;color:#777a83;font-size:23rpx;line-height:1.55}.level-card text:first-child{color:#292b31;font-size:31rpx;font-weight:900}.level-card text:nth-child(3){align-self:flex-end;color:#b24fd4}.level-row{padding:22rpx 0;border-bottom:1rpx solid #e3e4e8;display:flex;flex-direction:column;gap:8rpx;color:#747781;font-size:22rpx}.level-row text:first-child{color:#2e3037;font-size:28rpx;font-weight:800}.summary{padding:26rpx;display:flex;flex-direction:row;flex-wrap:wrap;gap:18rpx}.summary>text{width:100%;padding:16rpx;border-radius:14rpx;background:#f3f5fc;color:#717585;font-size:22rpx;line-height:1.5}.tabs{display:flex;flex-direction:row;justify-content:space-around;min-height:70rpx;align-items:center;font-size:28rpx;font-weight:800}.tabs text{color:#737680}.tabs text.active{color:#24262c;border-bottom:7rpx solid #a946ea;padding-bottom:15rpx}.search{min-height:78rpx;padding:8rpx 10rpx 8rpx 22rpx;border-radius:999rpx;background:#fff;display:flex;flex-direction:row;align-items:center}.search input{flex:1;min-width:0;font-size:24rpx}.search>text{min-width:108rpx;height:60rpx;border-radius:999rpx;background:#e8b2f5;display:flex;flex-direction:row;align-items:center;justify-content:center;font-size:25rpx;font-weight:800}.record,.member{position:relative;padding:24rpx;border-radius:25rpx;background:#fff;display:flex;flex-direction:column;gap:9rpx;color:#666a74;font-size:23rpx}.record text:nth-child(2),.member text:first-child{font-size:28rpx;color:#292b32;font-weight:800}.amount{position:absolute;right:22rpx;top:50rpx;color:#ec4d7e!important;font-size:32rpx!important}.report-link{color:#b04acd!important}.notice{padding:18rpx;border:1rpx solid #c9d2ec;border-radius:15rpx;background:#f3f5fc;color:#555d70;font-size:24rpx}.field{min-height:104rpx;border-bottom:1rpx solid #e7e8eb;display:flex;flex-direction:row;align-items:center;justify-content:space-between;font-size:29rpx;font-weight:800}.field input{width:62%;text-align:right;font-size:25rpx;color:#70737b}.field.column{align-items:flex-start;flex-direction:column;padding:22rpx 0;gap:18rpx}.field textarea{width:100%;min-height:180rpx;font-size:23rpx;line-height:1.6}.gender{display:flex;flex-direction:row;gap:12rpx}.gender text{padding:9rpx 26rpx;border-radius:999rpx;background:#eeeef2;font-size:23rpx}.gender text.active{background:#e4b1f5;color:#7f31a7}.table-head{padding:22rpx;display:flex;flex-direction:row;justify-content:space-between;background:#ececf2;font-size:22rpx;font-weight:800}.merchant{min-height:calc(100vh - 100rpx)}.merchant-tabs{display:flex;flex-direction:row;justify-content:space-around;min-height:82rpx;align-items:center;font-size:23rpx}.merchant-tabs .active{color:#603df3;font-weight:800}.merchant-bottom{margin-top:auto;padding:20rpx;background:#fff;display:flex;flex-direction:row;justify-content:space-around;font-size:21rpx}.mall-banner{height:180rpx;border-radius:28rpx;background:#edeef1}.funds{gap:18rpx}.funds>view{width:50%;min-height:210rpx;padding:27rpx;border-radius:29rpx;background:linear-gradient(135deg,#e6b5f9,#edb8ee);display:flex;flex-direction:column;gap:13rpx;color:#fff;font-size:24rpx;font-weight:800}.funds>view:nth-child(2){background:linear-gradient(135deg,#a7e8f5,#8fd7e9)}.funds text:nth-child(2){font-size:50rpx}.funds text:last-child{align-self:flex-start;padding:10rpx 20rpx;border-radius:999rpx;background:#fff;color:#c257d4;font-size:23rpx}.float-add{position:fixed;right:28rpx;bottom:90rpx;width:84rpx;height:84rpx;border-radius:50%;background:#de91f4;display:flex;align-items:center;justify-content:center;font-size:21rpx;font-weight:800}.overlay{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.52);display:flex;flex-direction:row;align-items:center;justify-content:center;padding:32rpx}.dialog,.contact{width:100%;padding:30rpx;border-radius:30rpx;background:#fff;display:flex;flex-direction:column;gap:20rpx}.bottom{position:absolute;left:0;right:0;bottom:0;width:auto;border-radius:32rpx 32rpx 0 0}.dialog-head{display:flex;flex-direction:row;align-items:center;justify-content:space-between;font-size:32rpx;font-weight:800}.dialog-head text:last-child{color:#999ba3;font-size:21rpx}.team-option{padding:23rpx;text-align:center;border-radius:18rpx;background:#f6f6f7;font-size:27rpx}.contact{align-items:center;text-align:center;font-size:28rpx;font-weight:800}.contact image{width:310rpx;height:310rpx}.contact>text:nth-child(3){font-size:23rpx;color:#6d7078}.contact>view{padding:10rpx 28rpx;border-radius:999rpx;background:#eeeef0;color:#777;font-size:21rpx}.dialog-actions{display:flex;flex-direction:row;gap:16rpx}.dialog-actions text{flex:1;padding:18rpx;text-align:center;border-radius:16rpx;background:#f0f0f2}.dialog-actions text:last-child{background:#e7a9f3}.loading{padding:28rpx;display:flex;flex-direction:column;gap:22rpx}.loading view{height:180rpx;border-radius:28rpx;background:#e7e8eb}.loading view:first-child{height:240rpx}
+.promoter-page{min-height:100vh;background:#F4F5FA;color:#282A30;display:flex;flex-direction:column}.promoter-nav{height:100rpx;background:#fff;display:flex;flex-direction:row;align-items:center;justify-content:center;font-size:34rpx;font-weight:800;flex-shrink:0}.back{position:absolute;left:22rpx;width:72rpx;height:72rpx;display:flex;align-items:center;justify-content:center}.back view{width:24rpx;height:24rpx;border-left:5rpx solid #272A30;border-bottom:5rpx solid #272A30;transform:rotate(45deg)}.menu{position:absolute;right:26rpx;width:48rpx;display:flex;flex-direction:column;gap:9rpx}.menu view{height:5rpx;border-radius:999rpx;background:#2b2d32}.scroll{flex:1;height:0}.content{padding:28rpx 28rpx calc(env(safe-area-inset-bottom) + 40rpx);display:flex;flex-direction:column;gap:26rpx}.cash-card{position:relative;min-height:210rpx;overflow:hidden;padding:34rpx 34rpx 26rpx;border-radius:32rpx;background:linear-gradient(135deg,#e3a9fc,#fac8f2);display:flex;flex-direction:row;justify-content:space-between}.cash-card:after{content:'';position:absolute;right:-45rpx;bottom:-128rpx;width:300rpx;height:300rpx;border:25rpx solid rgba(255,255,255,.17);border-radius:50%}.cash-card>view:first-child{z-index:1;display:flex;flex-direction:column;gap:10rpx;font-size:27rpx;font-weight:800}.cash-card>view:first-child text:last-child{font-size:63rpx;line-height:1}.cash-button{z-index:1;align-self:flex-start;min-width:174rpx;height:70rpx;border-radius:999rpx;background:#fff;display:flex;flex-direction:row;align-items:center;justify-content:center;color:#bb4bd0;font-size:27rpx;font-weight:800}.cash-bottom{position:absolute!important;z-index:1;left:34rpx;right:34rpx;bottom:20rpx;display:flex!important;flex-direction:row!important;justify-content:space-between;font-size:22rpx!important}.compact{min-height:170rpx}.data-card,.list-card,.summary,.level-card,.form-card{border-radius:32rpx;background:#fff;box-shadow:0 12rpx 28rpx rgba(70,70,105,.06)}.data-card{padding:28rpx}.metrics,.funds{display:flex;flex-direction:row}.metrics>view,.summary>view:not(:last-child){width:33.33%;display:flex;flex-direction:column;align-items:center;gap:8rpx}.metrics text:first-child,.summary>view:not(:last-child) text:first-child{font-size:48rpx;font-weight:900}.metrics text:last-child,.summary>view:not(:last-child) text:last-child{color:#989aa1;font-size:24rpx}.hint{margin-top:26rpx;padding:21rpx;border-radius:25rpx;background:#f6f6f7;display:flex;flex-direction:column;gap:10rpx;color:#787b84;font-size:23rpx;line-height:1.6}.hint text:first-child{color:#2d2f35;font-size:26rpx;font-weight:800}.promo-card{padding:27rpx;border-radius:30rpx;background:linear-gradient(135deg,#e9d8fa,#f4e4f3);display:flex;flex-direction:column;gap:22rpx;font-size:25rpx;font-weight:800}.promo-card>view{display:flex;flex-direction:row;gap:14rpx}.promo-card>view text,.gradient-btn{flex:1;min-height:62rpx;border-radius:999rpx;background:#fff;display:flex;flex-direction:row;align-items:center;justify-content:center;color:#b24fd4;font-size:22rpx}.list-card{padding:0 24rpx;overflow:hidden}.row{min-height:104rpx;border-bottom:1rpx solid #ececef;display:flex;flex-direction:row;align-items:center;gap:12rpx}.row>text:first-child{font-size:29rpx;font-weight:800}.row>text:nth-child(2){margin-left:auto;color:#a2a4aa;font-size:23rpx}.row i{width:13rpx;height:13rpx;border-top:3rpx solid #b5b7bd;border-right:3rpx solid #b5b7bd;transform:rotate(45deg)}.last{border-bottom:0}.sub-content{min-height:100%}.section{display:flex;flex-direction:column;gap:22rpx}.white{background:#fff;margin:-28rpx;padding:28rpx;min-height:100vh}.form-card{padding:24rpx;display:flex;flex-direction:column;gap:18rpx}.form-card input,.dialog input{height:78rpx;padding:0 22rpx;border-radius:18rpx;background:#f5f5f6;font-size:25rpx}.method{min-height:76rpx;border-bottom:1rpx solid #e7e8eb;display:flex;flex-direction:row;align-items:center;gap:18rpx;font-size:27rpx;font-weight:700}.method text:first-child{padding:7rpx 12rpx;border-radius:12rpx;background:#eeeef1;color:#898b92;font-size:22rpx}.method text.checked{background:#d673ea;color:#fff}.gradient-btn{min-height:82rpx;margin-top:8rpx;background:linear-gradient(90deg,#dea0f6,#f6bff1);color:#20212a;font-size:29rpx;font-weight:800}.empty{min-height:300rpx;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20rpx;color:#b5b7be;font-size:25rpx;text-align:center}.level-card{padding:25rpx;display:flex;flex-direction:column;gap:13rpx;color:#777a83;font-size:23rpx;line-height:1.55}.level-card text:first-child{color:#292b31;font-size:31rpx;font-weight:900}.level-card text:nth-child(3){align-self:flex-end;color:#b24fd4}.level-row{padding:22rpx 0;border-bottom:1rpx solid #e3e4e8;display:flex;flex-direction:column;gap:8rpx;color:#747781;font-size:22rpx}.level-row text:first-child{color:#2e3037;font-size:28rpx;font-weight:800}.summary{padding:26rpx;display:flex;flex-direction:row;flex-wrap:wrap;gap:18rpx}.summary>text{width:100%;padding:16rpx;border-radius:14rpx;background:#f3f5fc;color:#717585;font-size:22rpx;line-height:1.5}.tabs{display:flex;flex-direction:row;justify-content:space-around;min-height:70rpx;align-items:center;font-size:28rpx;font-weight:800}.tabs text{color:#737680}.tabs text.active{color:#24262c;border-bottom:7rpx solid #a946ea;padding-bottom:15rpx}.search{min-height:78rpx;padding:8rpx 10rpx 8rpx 22rpx;border-radius:999rpx;background:#fff;display:flex;flex-direction:row;align-items:center}.search input{flex:1;min-width:0;font-size:24rpx}.search>text{min-width:108rpx;height:60rpx;border-radius:999rpx;background:#e8b2f5;display:flex;flex-direction:row;align-items:center;justify-content:center;font-size:25rpx;font-weight:800}.record,.member{position:relative;padding:24rpx;border-radius:25rpx;background:#fff;display:flex;flex-direction:column;gap:9rpx;color:#666a74;font-size:23rpx}.record text:nth-child(2),.member text:first-child{font-size:28rpx;color:#292b32;font-weight:800}.amount{position:absolute;right:22rpx;top:50rpx;color:#ec4d7e!important;font-size:32rpx!important}.report-link{color:#b04acd!important}.notice{padding:18rpx;border:1rpx solid #c9d2ec;border-radius:15rpx;background:#f3f5fc;color:#555d70;font-size:24rpx}.field{min-height:104rpx;border-bottom:1rpx solid #e7e8eb;display:flex;flex-direction:row;align-items:center;justify-content:space-between;font-size:29rpx;font-weight:800}.field input{width:62%;text-align:right;font-size:25rpx;color:#70737b}.field.column{align-items:flex-start;flex-direction:column;padding:22rpx 0;gap:18rpx}.field textarea{width:100%;min-height:180rpx;font-size:23rpx;line-height:1.6}.gender{display:flex;flex-direction:row;gap:12rpx}.gender text{padding:9rpx 26rpx;border-radius:999rpx;background:#eeeef2;font-size:23rpx}.gender text.active{background:#e4b1f5;color:#7f31a7}.table-head{padding:22rpx;display:flex;flex-direction:row;justify-content:space-between;background:#ececf2;font-size:22rpx;font-weight:800}.mall-page{min-height:calc(100vh - 100rpx)}.merchant-tabs{display:flex;flex-direction:row;justify-content:space-around;min-height:82rpx;align-items:center;font-size:23rpx}.merchant-tabs .active{color:#603df3;font-weight:800}.merchant-bottom{margin-top:auto;padding:20rpx;background:#fff;display:flex;flex-direction:row;justify-content:space-around;font-size:21rpx}.mall-banner{height:180rpx;border-radius:28rpx;background:#edeef1}.funds{gap:18rpx}.funds>view{width:50%;min-height:210rpx;padding:27rpx;border-radius:29rpx;background:linear-gradient(135deg,#e6b5f9,#edb8ee);display:flex;flex-direction:column;gap:13rpx;color:#fff;font-size:24rpx;font-weight:800}.funds>view:nth-child(2){background:linear-gradient(135deg,#a7e8f5,#8fd7e9)}.funds text:nth-child(2){font-size:50rpx}.funds text:last-child{align-self:flex-start;padding:10rpx 20rpx;border-radius:999rpx;background:#fff;color:#c257d4;font-size:23rpx}.float-add{position:fixed;right:28rpx;bottom:90rpx;width:84rpx;height:84rpx;border-radius:50%;background:#de91f4;display:flex;align-items:center;justify-content:center;font-size:21rpx;font-weight:800}.overlay{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.52);display:flex;flex-direction:row;align-items:center;justify-content:center;padding:32rpx}.dialog,.contact{width:100%;padding:30rpx;border-radius:30rpx;background:#fff;display:flex;flex-direction:column;gap:20rpx}.bottom{position:absolute;left:0;right:0;bottom:0;width:auto;border-radius:32rpx 32rpx 0 0}.dialog-head{display:flex;flex-direction:row;align-items:center;justify-content:space-between;font-size:32rpx;font-weight:800}.dialog-head text:last-child{color:#999ba3;font-size:22rpx}.team-option{padding:23rpx;text-align:center;border-radius:18rpx;background:#f6f6f7;font-size:27rpx}.contact{align-items:center;text-align:center;font-size:28rpx;font-weight:800}.contact image{width:310rpx;height:310rpx}.contact>text:nth-child(3){font-size:23rpx;color:#6d7078}.contact>view{padding:10rpx 28rpx;border-radius:999rpx;background:#eeeef0;color:#777;font-size:22rpx}.dialog-actions{display:flex;flex-direction:row;gap:16rpx}.dialog-actions text{flex:1;padding:18rpx;text-align:center;border-radius:16rpx;background:#f0f0f2}.dialog-actions text:last-child{background:#e7a9f3}.loading{padding:28rpx;display:flex;flex-direction:column;gap:22rpx}.loading view{height:180rpx;border-radius:28rpx;background:#e7e8eb}.loading view:first-child{height:240rpx}
 .promoter-nav {
 	height: calc(100rpx + var(--status-bar-height));
 	padding: var(--status-bar-height) 24rpx 0;
@@ -110,4 +364,352 @@ onMounted(()=>load())
 .contact > view, .dialog-actions text { background: var(--warm); color: var(--ink2); }
 .dialog-actions text:last-child { background: var(--accent); color: var(--paper); }
 .loading view { border-radius: 20rpx; background: var(--warm); }
+
+/* 推广红娘管理中心首页：收益概览、审核漏斗、推广工具和业务入口按工作优先级排列。 */
+.promoter-home { gap: 20rpx; padding-bottom: calc(env(safe-area-inset-bottom) + 44rpx); }
+.promoter-fund-card { position: relative; min-height: 216rpx; padding: 30rpx 30rpx 22rpx; overflow: hidden; border-radius: 20rpx; background: var(--match-mist); box-shadow: var(--shadow-sm); display: flex; flex-direction: row; justify-content: space-between; box-sizing: border-box; }
+.promoter-fund-card:after { content: ''; position: absolute; right: -70rpx; top: -86rpx; width: 270rpx; height: 270rpx; border: 26rpx solid var(--accent-bg); border-radius: 50%; opacity: .6; }
+.promoter-fund-main { z-index: 1; display: flex; flex-direction: column; gap: 10rpx; }
+.promoter-fund-main text:first-child { color: var(--ink2); font-size: 24rpx; font-weight: 700; }
+.promoter-fund-main text:last-child { color: var(--ink); font-size: 57rpx; line-height: 1; font-weight: 800; }
+.promoter-withdraw { z-index: 1; align-self: flex-start; min-width: 148rpx; height: 62rpx; border-radius: 14rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm); }
+.promoter-withdraw text { color: var(--accent2); font-size: 23rpx; font-weight: 800; }
+.promoter-fund-foot { position: absolute; z-index: 1; left: 30rpx; right: 30rpx; bottom: 20rpx; display: flex; flex-direction: row; align-items: center; gap: 9rpx; }
+.promoter-user-mark { width: 38rpx; height: 38rpx; border-radius: 50%; background: var(--surface); display: flex; align-items: center; justify-content: center; }
+.promoter-user-mark text { color: var(--accent2); font-size: 20rpx; font-weight: 800; }
+.promoter-fund-foot > text { color: var(--ink2); font-size: 22rpx; }
+.promoter-fund-foot > text:last-child { margin-left: auto; }
+.promoter-review-card { padding: 26rpx; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
+.promoter-review-metrics { display: flex; flex-direction: row; }
+.promoter-review-metrics > view { width: 33.333%; display: flex; flex-direction: column; align-items: center; gap: 8rpx; }
+.promoter-review-metrics > view + view { border-left: 1rpx solid var(--line); }
+.promoter-review-metrics text:first-child { color: var(--ink); font-size: 46rpx; line-height: 1; font-weight: 800; }
+.promoter-review-metrics text:last-child { color: var(--muted); font-size: 22rpx; }
+.promoter-notice { margin-top: 24rpx; padding: 18rpx; border-radius: 14rpx; background: var(--paper); display: flex; flex-direction: row; gap: 12rpx; }
+.promoter-notice-mark { width: 30rpx; height: 30rpx; margin-top: 2rpx; border-radius: 50%; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.promoter-notice-mark text { color: var(--accent2); font-size: 20rpx; font-weight: 800; }
+.promoter-notice > view:last-child { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6rpx; }
+.promoter-notice > view:last-child text:first-child { color: var(--ink); font-size: 23rpx; font-weight: 800; }
+.promoter-notice > view:last-child text:last-child { color: var(--ink2); font-size: 22rpx; line-height: 1.58; }
+.promoter-share-card { padding: 22rpx; border-radius: 20rpx; background: var(--accent-bg); display: flex; flex-direction: column; gap: 18rpx; }
+.promoter-share-head { display: flex; flex-direction: row; align-items: center; gap: 11rpx; }
+.promoter-share-icon { width: 38rpx; height: 38rpx; border-radius: 10rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; }
+.promoter-share-icon text { color: var(--accent2); font-size: 24rpx; font-weight: 800; }
+.promoter-share-head > text { color: var(--ink2); font-size: 22rpx; font-weight: 700; }
+.promoter-share-actions { display: flex; flex-direction: row; gap: 14rpx; }
+.promoter-share-actions > view { flex: 1; min-height: 58rpx; border-radius: 14rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; }
+.promoter-share-actions text { color: var(--accent2); font-size: 22rpx; font-weight: 800; }
+.promoter-menu-card { overflow: hidden; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
+.promoter-menu-row { min-height: 94rpx; margin: 0 24rpx; border-bottom: 1rpx solid var(--line); display: flex; flex-direction: row; align-items: center; gap: 14rpx; }
+.promoter-menu-row.last { border-bottom: 0; }
+.promoter-menu-icon { width: 34rpx; height: 34rpx; border-radius: 9rpx; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.promoter-menu-icon text { color: var(--accent2); font-size: 18rpx; font-weight: 800; }
+.promoter-menu-icon.level, .promoter-menu-icon.commission { background: var(--match-sky); }.promoter-menu-icon.reward, .promoter-menu-icon.partner { background: var(--match-blush); }.promoter-menu-icon.members, .promoter-menu-icon.withdraw { background: var(--sage-soft); }.promoter-menu-icon.leads, .promoter-menu-icon.offline { background: var(--warm); }
+.promoter-menu-row > text { color: var(--ink); font-size: 25rpx; font-weight: 700; }
+.promoter-menu-value { flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 12rpx; }
+.promoter-menu-value text { max-width: 260rpx; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 22rpx; }
+.promoter-menu-value i { width: 12rpx; height: 12rpx; border-top: 2rpx solid var(--muted); border-right: 2rpx solid var(--muted); transform: rotate(45deg); }
+.promoter-fund-card:active, .promoter-withdraw:active, .promoter-share-actions > view:active, .promoter-menu-row:active { opacity: .78; transform: scale(.99); }
+
+/* 商家联盟：三页签 + 异业合作介绍卡（详情洽谈直达客服）+ 页面级底部导航。 */
+.merchant-page { min-height: calc(100vh - 100rpx); gap: 20rpx; }
+.merchant-tabs-row { display: flex; flex-direction: row; justify-content: space-around; min-height: 70rpx; align-items: center; font-size: 28rpx; font-weight: 800; }
+.merchant-tabs-row text { color: var(--muted); padding-bottom: 14rpx; }
+.merchant-tabs-row text.active { color: var(--accent2); border-bottom: 6rpx solid var(--accent2); }
+.merchant-coop-card { flex: 1; min-height: 760rpx; padding: 40rpx 32rpx 30rpx; border-radius: 24rpx; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; align-items: center; }
+.merchant-coop-badge { width: 110rpx; height: 110rpx; border-radius: 24rpx; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; font-size: 52rpx; }
+.merchant-coop-title { margin-top: 26rpx; color: var(--ink); font-size: 32rpx; font-weight: 900; }
+.merchant-coop-line { margin-top: 10rpx; color: var(--ink2); font-size: 23rpx; line-height: 1.5; }
+.merchant-coop-empty { margin-top: 30rpx; padding: 20rpx 40rpx; border-radius: 14rpx; background: var(--match-mist); }
+.merchant-coop-empty text { color: var(--muted); font-size: 22rpx; }
+.merchant-coop-foot { margin-top: auto; padding: 14rpx 34rpx; border-radius: 999rpx; background: var(--paper); border: 1rpx solid var(--line); display: flex; flex-direction: row; align-items: center; gap: 8rpx; }
+.merchant-coop-foot text { color: var(--ink2); font-size: 24rpx; font-weight: 700; }
+.merchant-coop-foot:active { opacity: .75; transform: scale(.98); }
+.merchant-tabbar { display: flex; flex-direction: row; justify-content: space-around; padding: 18rpx 0 calc(env(safe-area-inset-bottom) + 14rpx); border-radius: 24rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
+.merchant-tabbar > view { display: flex; flex-direction: column; align-items: center; gap: 6rpx; }
+.merchant-tabbar .merchant-bar-icon { font-size: 34rpx; }
+.merchant-tabbar > view > text:last-child { color: var(--muted); font-size: 22rpx; }
+.merchant-tabbar > view:active { opacity: .7; }
+
+/* 隶属团队：选择小窗与变更提示，团队卡选中态与加入按钮联动。 */
+.team-picker { width: 100%; padding: 34rpx 30rpx calc(env(safe-area-inset-bottom) + 34rpx); border-radius: 28rpx; background: var(--surface); display: flex; flex-direction: column; gap: 24rpx; }
+.team-picker-head { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+.team-picker-title { color: var(--ink); font-size: 32rpx; font-weight: 800; }
+.team-picker-close { width: 52rpx; height: 52rpx; border-radius: 50%; background: var(--warm); display: flex; align-items: center; justify-content: center; }
+.team-picker-close text { color: var(--ink2); font-size: 24rpx; font-weight: 800; }
+.team-picker-search { min-height: 78rpx; padding: 8rpx 8rpx 8rpx 22rpx; border-radius: 999rpx; background: var(--paper); border: 1rpx solid var(--line); display: flex; flex-direction: row; align-items: center; gap: 10rpx; }
+.team-picker-search-icon { color: var(--muted); font-size: 30rpx; font-weight: 800; }
+.team-picker-search input { flex: 1; min-width: 0; height: 62rpx; color: var(--ink); font-size: 24rpx; }
+.team-picker-search-btn { min-width: 108rpx; height: 62rpx; border-radius: 999rpx; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; }
+.team-picker-search-btn text { color: var(--accent2); font-size: 25rpx; font-weight: 800; }
+.team-picker-empty { padding: 36rpx 0; display: flex; align-items: center; justify-content: center; }
+.team-picker-empty text { color: var(--muted); font-size: 24rpx; }
+.team-option-card { min-height: 88rpx; padding: 20rpx 26rpx; border-radius: 16rpx; background: var(--paper); border: 1rpx solid var(--line); display: flex; flex-direction: row; align-items: center; justify-content: center; }
+.team-option-card.selected { border-color: var(--accent2); background: var(--match-mist); }
+.team-option-name { color: var(--ink); font-size: 27rpx; font-weight: 700; }
+.team-option-check { margin-left: 12rpx; width: 36rpx; height: 36rpx; border-radius: 50%; background: var(--accent2); display: flex; align-items: center; justify-content: center; }
+.team-option-check text { color: var(--paper); font-size: 20rpx; font-weight: 900; }
+.team-picker-join { min-height: 84rpx; border-radius: 999rpx; background: linear-gradient(90deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; }
+.team-picker-join text { color: var(--paper); font-size: 29rpx; font-weight: 800; }
+.team-picker-join.disabled { opacity: .55; }
+.team-picker-join:active, .team-option-card:active { opacity: .8; transform: scale(.99); }
+
+/* 团队变更提示：情感化占位 + 知道了回执，确认后直达客服。 */
+.team-change-dialog { width: 100%; padding: 40rpx 32rpx 32rpx; border-radius: 28rpx; background: var(--surface); display: flex; flex-direction: column; align-items: center; gap: 14rpx; }
+.team-change-face { width: 96rpx; height: 96rpx; border-radius: 50%; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; }
+.team-change-face text { color: var(--accent2); font-size: 52rpx; }
+.team-change-title { color: var(--ink); font-size: 31rpx; font-weight: 800; }
+.team-change-copy { color: var(--muted); font-size: 23rpx; line-height: 1.6; text-align: center; }
+.team-change-btn { width: 100%; min-height: 80rpx; margin-top: 12rpx; border-radius: 999rpx; background: linear-gradient(90deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; }
+.team-change-btn text { color: var(--paper); font-size: 27rpx; font-weight: 800; }
+.team-change-btn:active { opacity: .8; transform: scale(.99); }
+
+/* 分成级别：渐变横幅衔接 hero 卡，四级阶梯清单逐级列示奖励与分成口径。 */
+.level-section { padding-bottom: 48rpx; }
+.level-banner { height: 150rpx; margin: -28rpx -28rpx 0; border-radius: 0 0 36rpx 36rpx; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.level-hero { position: relative; margin-top: -110rpx; padding: 28rpx; border-radius: 24rpx; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 22rpx; }
+.level-hero-head { display: flex; flex-direction: row; align-items: center; gap: 18rpx; }
+.level-hero-avatar { width: 84rpx; height: 84rpx; border-radius: 50%; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.level-hero-avatar text { color: var(--accent2); font-size: 32rpx; font-weight: 800; }
+.level-hero-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10rpx; }
+.level-hero-name { display: flex; flex-direction: row; align-items: center; gap: 12rpx; }
+.level-hero-name > text:first-child { color: var(--ink); font-size: 30rpx; font-weight: 800; }
+.level-hero-badge { padding: 4rpx 14rpx; border-radius: 10rpx; background: var(--match-mist); }
+.level-hero-badge text { color: var(--accent2); font-size: 21rpx; font-weight: 800; }
+.level-hero-progress { display: flex; flex-direction: row; flex-wrap: wrap; align-items: baseline; color: var(--muted); font-size: 22rpx; }
+.level-hero-num { color: var(--accent2); font-size: 26rpx; font-weight: 900; }
+.level-hero-next { color: var(--match-coral); font-size: 22rpx; font-weight: 700; }
+.level-hero-tip { padding: 20rpx; border-radius: 16rpx; background: var(--match-mist); display: flex; flex-direction: row; gap: 12rpx; }
+.level-hero-tip-mark { color: var(--accent2); font-size: 22rpx; font-weight: 800; }
+.level-hero-tip-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8rpx; }
+.level-hero-tip-title { color: var(--accent2); font-size: 24rpx; font-weight: 800; }
+.level-hero-tip-text { color: var(--ink2); font-size: 22rpx; line-height: 1.6; }
+.level-list { border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); padding: 8rpx 28rpx; }
+.level-item { padding: 26rpx 0; border-bottom: 1rpx solid var(--line); display: flex; flex-direction: column; gap: 10rpx; }
+.level-item:last-child { border-bottom: none; }
+.level-item-head { display: flex; flex-direction: row; align-items: center; gap: 12rpx; }
+.level-item-icon { width: 40rpx; height: 40rpx; border-radius: 10rpx; display: flex; align-items: center; justify-content: center; font-size: 20rpx; flex-shrink: 0; }
+.level-item-icon.teal { background: var(--match-mist); color: var(--accent2); }
+.level-item-icon.orange { background: var(--match-sky); color: var(--accent2); }
+.level-item-icon.rose { background: var(--match-blush); color: var(--match-coral); }
+.level-item-icon.violet { background: var(--accent-bg); color: var(--accent2); }
+.level-item-name { color: var(--ink); font-size: 28rpx; font-weight: 800; }
+.level-item-need { color: var(--muted); font-size: 22rpx; }
+.level-item-line { color: var(--ink2); font-size: 23rpx; line-height: 1.55; }
+
+/* 注册奖励：统计与标准构成概览，时间线卡片突出会员与奖励口径。 */
+.reward-hero { border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); padding: 26rpx; display: flex; flex-direction: column; gap: 18rpx; }
+.reward-stats { display: flex; flex-direction: row; }
+.reward-stat { width: 33.333%; display: flex; flex-direction: column; align-items: center; gap: 7rpx; }
+.reward-stat + .reward-stat { border-left: 1rpx solid var(--line); }
+.reward-stat text:first-child { color: var(--ink); font-size: 42rpx; font-weight: 900; }
+.reward-stat text:last-child { color: var(--muted); font-size: 22rpx; }
+.reward-standard { min-height: 62rpx; padding: 0 18rpx; border-radius: 12rpx; background: var(--match-mist); display: flex; flex-direction: row; align-items: center; gap: 16rpx; }
+.reward-standard-tag { padding: 5rpx 12rpx; border-radius: 8rpx; background: var(--accent2); }
+.reward-standard-tag text { color: var(--paper); font-size: 20rpx; font-weight: 800; }
+.reward-standard > text { color: var(--ink2); font-size: 22rpx; font-weight: 700; }
+.reward-hero-note { color: var(--muted); font-size: 22rpx; }
+.reward-timeline { display: flex; flex-direction: column; gap: 20rpx; }
+.reward-item { display: flex; flex-direction: column; gap: 12rpx; }
+.reward-item-time { color: var(--muted); font-size: 22rpx; }
+.reward-item-card { padding: 22rpx; border-radius: 18rpx; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 18rpx; }
+.reward-member-row { display: flex; flex-direction: row; align-items: center; gap: 14rpx; }
+.reward-member-avatar { width: 64rpx; height: 64rpx; border-radius: 50%; overflow: hidden; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.reward-member-avatar image { width: 64rpx; height: 64rpx; border-radius: 50%; }
+.reward-member-avatar text { color: var(--accent2); font-size: 26rpx; font-weight: 800; }
+.reward-member-name { color: var(--ink); font-size: 28rpx; font-weight: 800; }
+.reward-member-gender { padding: 2rpx 10rpx; border-radius: 999rpx; font-size: 20rpx; font-weight: 800; }
+.reward-member-gender.female { background: var(--match-blush); color: var(--match-coral); }
+.reward-member-gender.male { background: var(--match-sky); color: var(--accent2); }
+.reward-member-foot { display: flex; flex-direction: row; align-items: center; gap: 16rpx; }
+.reward-passed { padding: 6rpx 16rpx; border-radius: 999rpx; background: var(--sage-soft); }
+.reward-passed text { color: var(--sage); font-size: 20rpx; font-weight: 800; }
+.reward-link { display: flex; flex-direction: row; align-items: center; gap: 6rpx; }
+.reward-link text { color: var(--muted); font-size: 21rpx; }
+.reward-link i { width: 10rpx; height: 10rpx; border-top: 2rpx solid var(--muted); border-right: 2rpx solid var(--muted); transform: rotate(45deg); }
+.reward-amount { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2rpx; }
+.reward-amount-num { color: var(--match-coral); font-size: 32rpx; font-weight: 900; }
+.reward-amount-caption { color: var(--muted); font-size: 20rpx; }
+.member-list-end-row { padding: 20rpx 0 6rpx; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 14rpx; }
+.member-list-end-row view { width: 66rpx; height: 1rpx; background: var(--line); }
+.member-list-end-row text { color: var(--muted); font-size: 22rpx; }
+
+/* 名下会员：双 Tab + 跟进过滤 + 档案卡（时间头部、性别徽标、编号）。 */
+.member-hero { border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); padding: 26rpx; display: flex; flex-direction: column; gap: 18rpx; }
+.member-stats { display: flex; flex-direction: row; }
+.member-stat { width: 33.333%; display: flex; flex-direction: column; align-items: center; gap: 7rpx; }
+.member-stat + .member-stat { border-left: 1rpx solid var(--line); }
+.member-stat text:first-child { color: var(--ink); font-size: 42rpx; font-weight: 900; }
+.member-stat text:last-child { color: var(--muted); font-size: 22rpx; }
+.member-warmtip { padding: 18rpx; border-radius: 14rpx; background: var(--match-mist); display: flex; flex-direction: column; gap: 8rpx; }
+.member-warmtip-head { display: flex; flex-direction: row; align-items: center; gap: 8rpx; }
+.member-warmtip-heart { color: var(--match-coral); font-size: 22rpx; }
+.member-warmtip-head > text:last-child { color: var(--accent2); font-size: 23rpx; font-weight: 800; }
+.member-warmtip-text { color: var(--ink2); font-size: 22rpx; line-height: 1.6; }
+.member-recent { display: flex; flex-direction: row; align-items: center; gap: 10rpx; padding: 4rpx 4rpx 0; }
+.member-recent-box { width: 34rpx; height: 34rpx; border: 1rpx solid var(--line); border-radius: 8rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; }
+.member-recent-box.checked { background: var(--accent2); border-color: var(--accent2); }
+.member-recent-box text { color: var(--paper); font-size: 20rpx; font-weight: 900; }
+.member-recent > text:last-child { color: var(--ink2); font-size: 23rpx; }
+.member-incomplete-note { padding: 14rpx 18rpx; border-radius: 12rpx; background: var(--paper); border: 1rpx solid var(--line); }
+.member-incomplete-note text { color: var(--muted); font-size: 22rpx; line-height: 1.55; }
+.member-empty { gap: 18rpx; }
+.member-empty-art { width: 120rpx; height: 120rpx; border-radius: 28rpx; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; }
+.member-empty-art text { color: var(--accent2); font-size: 48rpx; font-weight: 900; }
+.member-empty-link { color: var(--accent2); font-size: 23rpx; font-weight: 700; }
+.member-card { border-radius: 18rpx; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; }
+.member-card-head { min-height: 66rpx; padding: 0 22rpx; border-bottom: 1rpx solid var(--line); display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+.member-card-time { color: var(--muted); font-size: 22rpx; }
+.member-card-status { color: var(--sage); font-size: 22rpx; font-weight: 800; }
+.member-card-status.pending { color: var(--match-coral); }
+.member-card-body { padding: 20rpx 22rpx; display: flex; flex-direction: row; align-items: center; gap: 16rpx; }
+.member-card-avatar { width: 84rpx; height: 84rpx; border-radius: 16rpx; overflow: hidden; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.member-card-avatar image { width: 84rpx; height: 84rpx; }
+.member-card-avatar text { color: var(--accent2); font-size: 30rpx; font-weight: 800; }
+.member-card-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8rpx; }
+.member-card-name { display: flex; flex-direction: row; align-items: center; gap: 10rpx; min-width: 0; }
+.member-card-name > text:first-child { max-width: 240rpx; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: 28rpx; font-weight: 800; }
+.member-card-gender { padding: 2rpx 10rpx; border-radius: 999rpx; font-size: 20rpx; font-weight: 800; flex-shrink: 0; }
+.member-card-gender.female { background: var(--match-blush); color: var(--match-coral); }
+.member-card-gender.male { background: var(--match-sky); color: var(--accent2); }
+.member-card-code { color: var(--muted); font-size: 22rpx; }
+.member-card-link { display: flex; flex-direction: row; align-items: center; gap: 6rpx; flex-shrink: 0; }
+.member-card-link text { color: var(--accent2); font-size: 22rpx; font-weight: 700; }
+.member-card-link i { width: 10rpx; height: 10rpx; border-top: 2rpx solid var(--accent2); border-right: 2rpx solid var(--accent2); transform: rotate(45deg); }
+.member-card:active, .reward-item-card:active { opacity: .85; transform: scale(.995); }
+
+/* 客源线索：统计与温馨提示、图层插画空态、档案卡与录入表单。 */
+.lead-hero { border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); padding: 26rpx; display: flex; flex-direction: column; gap: 18rpx; }
+.lead-stats { display: flex; flex-direction: row; }
+.lead-stat { width: 33.333%; display: flex; flex-direction: column; align-items: center; gap: 7rpx; }
+.lead-stat + .lead-stat { border-left: 1rpx solid var(--line); }
+.lead-stat text:first-child { color: var(--ink); font-size: 42rpx; font-weight: 900; }
+.lead-stat text:last-child { color: var(--muted); font-size: 22rpx; }
+.lead-warmtip { padding: 18rpx; border-radius: 14rpx; background: var(--match-mist); display: flex; flex-direction: column; gap: 8rpx; }
+.lead-warmtip-head { display: flex; flex-direction: row; align-items: center; gap: 8rpx; }
+.lead-warmtip-icon { color: var(--accent2); font-size: 22rpx; font-weight: 800; }
+.lead-warmtip-head > text:nth-child(2) { flex: 1; color: var(--accent2); font-size: 23rpx; font-weight: 800; }
+.lead-warmtip-link { color: var(--accent2); font-size: 22rpx; font-weight: 700; }
+.lead-warmtip-text { color: var(--ink2); font-size: 22rpx; line-height: 1.6; }
+.lead-empty { padding: 60rpx 0 40rpx; display: flex; flex-direction: column; align-items: center; gap: 20rpx; }
+.lead-empty-art { position: relative; width: 150rpx; height: 120rpx; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.lead-empty-layer { position: absolute; width: 110rpx; height: 64rpx; border-radius: 16rpx; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; transform: translateY(14rpx); }
+.lead-empty-layer.mid { background: var(--match-mist); transform: translateY(0); z-index: 1; }
+.lead-empty-layer text { color: var(--accent2); font-size: 22rpx; font-weight: 800; }
+.lead-empty-text { color: var(--muted); font-size: 25rpx; }
+.lead-empty-btn { min-width: 320rpx; min-height: 78rpx; border-radius: 999rpx; background: linear-gradient(90deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; }
+.lead-empty-btn text { color: var(--paper); font-size: 27rpx; font-weight: 800; }
+.lead-empty-btn:active { opacity: .8; transform: scale(.98); }
+.lead-list { display: flex; flex-direction: column; gap: 16rpx; }
+.lead-card { border-radius: 18rpx; background: var(--surface); box-shadow: var(--shadow-sm); padding: 22rpx; display: flex; flex-direction: column; gap: 12rpx; }
+.lead-card-head { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+.lead-card-name { color: var(--ink); font-size: 28rpx; font-weight: 800; }
+.lead-card-status { font-size: 22rpx; font-weight: 800; }
+.lead-card-status.ok { color: var(--sage); }
+.lead-card-status.bad { color: var(--match-coral); }
+.lead-card-status.wait { color: var(--accent2); }
+.lead-card-body { display: flex; flex-direction: column; gap: 8rpx; }
+.lead-card-line { color: var(--ink2); font-size: 22rpx; }
+.lead-card-line.muted { color: var(--muted); font-size: 22rpx; }
+.lead-float-add { width: 92rpx; height: 92rpx; }
+.lead-float-icon { font-size: 30rpx; font-weight: 900; }
+.lead-float-label { font-size: 20rpx; font-weight: 700; }
+
+/* 录入表单：须知条、行内勾选、选择器行与照片占位。 */
+.lead-notice { padding: 14rpx 18rpx; border-radius: 12rpx; background: var(--paper); border: 1rpx solid var(--line); display: flex; flex-direction: row; align-items: center; gap: 8rpx; }
+.lead-notice-icon { color: var(--accent2); font-size: 20rpx; font-weight: 800; }
+.lead-notice text:last-child { color: var(--muted); font-size: 22rpx; }
+.lead-form-card { border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); padding: 0 26rpx; }
+.field.column-tight { align-items: flex-start; flex-direction: column; padding: 20rpx 0; gap: 12rpx; border-bottom: 1rpx solid #E7E8EB; }
+.field.column-tight input { width: 100%; text-align: right; }
+.field-check { display: flex; flex-direction: row; align-items: center; gap: 8rpx; }
+.field-check-box { width: 32rpx; height: 32rpx; border: 1rpx solid var(--line); border-radius: 6rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; }
+.field-check-box.checked { background: var(--accent2); border-color: var(--accent2); }
+.field-check-box.checked text { color: var(--paper); font-size: 19rpx; font-weight: 900; }
+.field-check > text:last-child { color: var(--muted); font-size: 22rpx; }
+.lead-field-picker { flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 10rpx; }
+.lead-field-picker text { color: var(--ink2); font-size: 25rpx; }
+.lead-field-picker i { width: 12rpx; height: 12rpx; border-top: 2rpx solid var(--muted); border-right: 2rpx solid var(--muted); transform: rotate(45deg); }
+.lead-photo-add { width: 132rpx; height: 132rpx; border-radius: 16rpx; background: var(--paper); border: 1rpx dashed var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6rpx; }
+.lead-photo-plus { color: var(--muted); font-size: 36rpx; font-weight: 700; }
+.lead-photo-label { color: var(--muted); font-size: 20rpx; }
+.lead-photo-add:active { opacity: .7; }
+.lead-submit { margin-top: 6rpx; }
+
+/* 消费分成：渐变横幅衔接 hero 卡（级别徽章+分成标准入口），空态为档案插画。 */
+.commission-section { padding-bottom: 48rpx; }
+.commission-banner { height: 150rpx; margin: -28rpx -28rpx 0; border-radius: 0 0 36rpx 36rpx; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.commission-hero { position: relative; margin-top: -110rpx; padding: 28rpx; border-radius: 24rpx; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 20rpx; }
+.commission-hero-head { display: flex; flex-direction: row; align-items: center; gap: 16rpx; }
+.commission-hero-avatar { width: 84rpx; height: 84rpx; border-radius: 50%; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.commission-hero-avatar text { color: var(--accent2); font-size: 32rpx; font-weight: 800; }
+.commission-hero-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10rpx; }
+.commission-hero-name { color: var(--ink); font-size: 30rpx; font-weight: 800; }
+.commission-hero-level { display: flex; flex-direction: row; align-items: center; gap: 8rpx; }
+.commission-hero-level > text:first-child { color: var(--muted); font-size: 22rpx; }
+.commission-hero-badge { padding: 4rpx 14rpx; border-radius: 10rpx; background: var(--match-mist); }
+.commission-hero-badge text { color: var(--accent2); font-size: 21rpx; font-weight: 800; }
+.commission-hero-link { display: flex; flex-direction: row; align-items: center; gap: 6rpx; padding: 10rpx 18rpx; border-radius: 999rpx; background: var(--accent-bg); flex-shrink: 0; }
+.commission-hero-link text { color: var(--accent2); font-size: 22rpx; font-weight: 800; }
+.commission-hero-link i { width: 10rpx; height: 10rpx; border-top: 2rpx solid var(--accent2); border-right: 2rpx solid var(--accent2); transform: rotate(45deg); }
+.commission-hero-tip { padding: 18rpx; border-radius: 14rpx; background: var(--match-mist); display: flex; flex-direction: row; gap: 12rpx; }
+.commission-hero-tip-mark { color: var(--accent2); font-size: 22rpx; font-weight: 800; }
+.commission-hero-tip-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6rpx; }
+.commission-hero-tip-title { color: var(--accent2); font-size: 23rpx; font-weight: 800; }
+.commission-hero-tip-text { color: var(--ink2); font-size: 22rpx; line-height: 1.6; }
+.commission-list-card { border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); padding: 26rpx; }
+.commission-empty { padding: 60rpx 0; display: flex; flex-direction: column; align-items: center; gap: 22rpx; }
+.commission-empty-art { position: relative; width: 150rpx; height: 130rpx; }
+.commission-empty-doc { position: absolute; left: 22rpx; top: 0; width: 106rpx; height: 128rpx; border-radius: 16rpx; background: var(--accent-bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10rpx; }
+.commission-empty-face { width: 44rpx; height: 44rpx; border-radius: 50%; background: var(--surface); display: flex; align-items: center; justify-content: center; }
+.commission-empty-face text { color: var(--muted); font-size: 20rpx; font-weight: 800; }
+.commission-empty-line { width: 62rpx; height: 8rpx; border-radius: 999rpx; background: var(--surface); }
+.commission-empty-line.short { width: 40rpx; }
+.commission-empty-lens { position: absolute; right: 18rpx; bottom: 0; width: 44rpx; height: 44rpx; border-radius: 50%; background: var(--surface); border: 8rpx solid var(--match-mist); box-sizing: border-box; }
+.commission-empty-text { color: var(--muted); font-size: 24rpx; }
+.commission-records { display: flex; flex-direction: column; gap: 20rpx; }
+.reward-member-sub { color: var(--muted); font-size: 22rpx; }
+
+/* 线下开单：须知卡 + 签约开单记录（空态为档案插画）。 */
+.offline-notice { padding: 18rpx; border-radius: 14rpx; background: var(--match-mist); display: flex; flex-direction: row; gap: 12rpx; }
+.offline-notice-icon { color: var(--accent2); font-size: 22rpx; font-weight: 800; }
+.offline-notice-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8rpx; }
+.offline-notice-title { color: var(--accent2); font-size: 23rpx; font-weight: 800; }
+.offline-notice-text { color: var(--ink2); font-size: 22rpx; line-height: 1.6; }
+.offline-list-card { border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); padding: 26rpx; }
+.offline-records { display: flex; flex-direction: column; gap: 20rpx; }
+
+/* 申请提现：余额行与金额区间输入（与合伙人中心表单语言一致）。 */
+.wd-balance-line { display: flex; flex-direction: row; align-items: baseline; gap: 10rpx; color: var(--muted); font-size: 24rpx; }
+.wd-balance-num { color: var(--accent2); font-size: 32rpx; font-weight: 900; }
+.wd-amount-line { min-height: 100rpx; border-bottom: 1rpx solid #E7E8EB; display: flex; flex-direction: row; align-items: center; gap: 18rpx; }
+.wd-yuan { color: var(--accent2); font-size: 42rpx; font-weight: 800; }
+.wd-amount-line input { flex: 1; min-width: 0; height: 100rpx; color: var(--ink); font-size: 29rpx; }
+
+/* 联系客服：渐变 hero 凹弧过渡 + 白卡真实二维码 + 卡外悬浮 ✕（与合伙人中心同构）。 */
+.contact-wrap { width: 100%; display: flex; flex-direction: column; align-items: center; }
+.contact-dialog { width: 100%; overflow: hidden; border-radius: 24rpx; background: var(--surface); display: flex; flex-direction: column; align-items: center; }
+.contact-hero { width: 100%; padding: 44rpx 0 76rpx; background: linear-gradient(180deg, var(--accent-bg), var(--match-mist)); display: flex; flex-direction: column; align-items: center; position: relative; overflow: hidden; }
+.contact-badge { position: relative; z-index: 1; width: 84rpx; height: 84rpx; border-radius: 50%; background: var(--surface); display: flex; align-items: center; justify-content: center; }
+.contact-badge text { color: var(--accent2); font-size: 24rpx; font-weight: 800; }
+.contact-head-title { position: relative; z-index: 1; margin-top: 14rpx; color: var(--accent2); font-size: 34rpx; font-weight: 900; }
+.contact-hero-arc { position: absolute; left: 50%; bottom: -110rpx; width: 760rpx; height: 220rpx; margin-left: -380rpx; border-radius: 50%; background: var(--surface); }
+.contact-body { width: 100%; display: flex; flex-direction: column; align-items: center; padding: 8rpx 40rpx 36rpx; }
+.contact-qr-card { padding: 20rpx; border-radius: 20rpx; background: var(--paper); border: 1rpx solid var(--line); box-shadow: var(--shadow-sm); }
+.contact-qr { width: 320rpx; height: 320rpx; display: block; }
+.contact-quote { margin-top: 26rpx; display: flex; flex-direction: row; align-items: flex-start; gap: 8rpx; }
+.contact-quote-mark { color: var(--accent2); font-size: 30rpx; font-weight: 900; line-height: 1.2; }
+.contact-copy { flex: 1; color: var(--ink2); font-size: 24rpx; font-weight: 700; line-height: 1.6; text-align: center; }
+.contact-close { margin-top: 28rpx; width: 76rpx; height: 76rpx; border-radius: 50%; background: var(--surface); border: 1rpx solid var(--line); box-shadow: var(--shadow-sm); display: flex; align-items: center; justify-content: center; }
+.contact-close text { color: var(--ink2); font-size: 30rpx; font-weight: 800; }
+
+/* 我的账号：资金双卡、档案行（脱敏手机）、退出登录与注销。 */
+.account-avatar { margin-left: auto; width: 68rpx; height: 68rpx; border-radius: 50%; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; }
+.account-avatar text { color: var(--accent2); font-size: 28rpx; font-weight: 800; }
+.account-logout { margin: 26rpx auto 0; min-width: 360rpx; min-height: 80rpx; border-radius: 999rpx; background: var(--paper); border: 1rpx solid var(--line); display: flex; align-items: center; justify-content: center; }
+.account-logout text { color: var(--ink2); font-size: 26rpx; font-weight: 700; }
+.account-logout:active { opacity: .75; }
+.account-deactivate { margin: 20rpx auto 8rpx; display: flex; justify-content: center; }
+.account-deactivate text { color: var(--muted); font-size: 23rpx; }
+.account-deactivate:active { opacity: .7; }
 </style>

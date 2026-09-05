@@ -19,7 +19,7 @@
 
 		<MatchmakerPendingReview
 			v-if="pendingReviewVisible"
-			@action="handleManagementCenterAction"
+			:initial-tab="pendingReviewInitialTab"
 		/>
 		<scroll-view v-else-if="workspaceVisible" scroll-y class="workspace-scroller" :show-scrollbar="false">
 			<view class="workspace-content">
@@ -30,7 +30,7 @@
 				<view class="workspace-tabs">
 					<view v-for="item in workspaceTabs" :key="item" class="workspace-tab" :class="{ active: workspaceActiveTab == item }" @click="selectWorkspaceTab(item)"><text>{{ item }}</text></view>
 				</view>
-				<view class="workspace-search"><text>搜</text><input :placeholder="workspaceSearchPlaceholder" :value="workspaceKeyword" @input="onWorkspaceKeywordInput"/><view @click="runWorkspaceSearch"><text>搜索</text></view></view>
+				<view class="workspace-search"><text class="workspace-search-glyph">⌕</text><input :placeholder="workspaceSearchPlaceholder" :value="workspaceKeyword" @input="onWorkspaceKeywordInput"/><view class="workspace-search-submit" @click="runWorkspaceSearch"><text class="workspace-search-glyph">⌕</text></view></view>
 
 				<view v-if="workspaceKind == 'commission'">
 					<view class="workspace-cash"><text>资金结算</text><text class="workspace-cash-value">--</text><text>分成、账本和提现不在本期范围内。</text></view>
@@ -39,19 +39,107 @@
 				</view>
 
 				<view v-else-if="workspaceKind == 'lead'">
+					<view v-if="leadFollowPanelVisible" class="workspace-lead-follow-panel">
+						<view class="workspace-follow-head">
+							<text class="workspace-follow-back" @click="closeLeadFollowPanel">‹ 返回</text>
+							<text class="workspace-follow-title">{{ leadFollowLeadName }} 的跟进记录</text>
+						</view>
+						<view v-if="leadFollowLoading" class="workspace-state"><text>正在加载跟进记录…</text></view>
+						<view v-else-if="leadFollowError.length > 0" class="workspace-state"><text>{{ leadFollowError }}</text><text class="workspace-state-action" @click="loadLeadFollowRecords">重新加载</text></view>
+						<view v-else-if="leadFollowRecords.length == 0" class="workspace-state"><text>暂时没有跟进记录，添加第一条跟进吧</text></view>
+						<view v-else class="workspace-follow-list">
+							<view v-for="rec in leadFollowRecords" :key="rec.id" class="workspace-follow-item">
+								<view class="workspace-follow-item-top"><text class="workspace-follow-method">{{ rec.methodLabel }}</text><text class="workspace-follow-time">{{ rec.time }}</text></view>
+								<text class="workspace-follow-content">{{ rec.content }}</text>
+								<text v-if="rec.intentionLabel.length > 0" class="workspace-follow-intention">意向：{{ rec.intentionLabel }}</text>
+							</view>
+						</view>
+						<view class="workspace-follow-form">
+							<text class="workspace-follow-form-title">添加跟进</text>
+							<view class="workspace-follow-methods">
+								<view v-for="m in leadFollowMethods" :key="m.value" class="workspace-follow-method-chip" :class="{ active: leadFollowMethod == m.value }" @click="leadFollowMethod = m.value"><text>{{ m.label }}</text></view>
+							</view>
+							<textarea class="workspace-follow-textarea" :value="leadFollowContent" @input="leadFollowContent = $event.detail.value" placeholder="记录本次沟通内容（必填）" :maxlength="500" auto-height/>
+							<view class="workspace-follow-submit" @click="submitLeadFollowUp"><text>提交跟进</text></view>
+						</view>
+					</view>
+					<view v-else>
+					<view class="workspace-lead-toolbar">
+						<view class="workspace-lead-tool" :class="{ active: leadExceptionOnly }" @click="toggleLeadException"><text>{{ leadExceptionOnly ? '返回全部' : '异常线索' }}</text></view>
+						<view class="workspace-lead-tool" :class="{ active: leadFilterStatus.length > 0 || leadFilterIntention > 0 }" @click="openLeadFilterSheet"><text>筛选</text></view>
+						<view class="workspace-lead-tool primary" @click="openLeadAddSheet"><text>+ 添加线索</text></view>
+					</view>
 					<view class="workspace-notice"><text>超级红娘可查看全部客源线索，普通红娘仅查看已分派的客源。</text></view>
-					<view v-for="row in workspaceLeads" :key="row.id" class="workspace-info-card"><text>{{ row.name }} · {{ row.gender }}</text><text class="workspace-muted">录入时间：{{ row.time }}</text><view><text>电话</text><text>{{ row.phone }}</text></view><view><text>微信</text><text>{{ row.wechat }}</text></view><view><text>来源</text><text>{{ row.source }}</text></view><view><text>分派跟进</text><text>{{ row.owner }}</text></view><view class="workspace-actions"><text @click="showToast('已打开编辑资料')">编辑</text><text @click="copyWorkspaceText(row.phone)">复制资料</text><text @click="showToast('已放入弃海')">放入弃海</text><text @click="showToast('已一键入库，进入资料待审')">一键入库</text></view></view>
+					<view v-if="workspaceLeadsLoading" class="workspace-state"><text>正在加载客源数据…</text></view>
+					<view v-else-if="workspaceLeadsError.length > 0" class="workspace-state"><text>{{ workspaceLeadsError }}</text><text class="workspace-state-action" @click="loadWorkspaceLeads">重新加载</text></view>
+					<view v-else-if="workspaceVisibleLeads.length == 0" class="workspace-state"><text>没有符合条件的客源</text></view>
+					<view v-else>
+						<view v-for="row in workspaceVisibleLeads" :key="row.id" class="workspace-lead-card">
+							<view class="workspace-lead-top">
+								<view class="workspace-lead-name">
+									<text class="workspace-lead-title">{{ row.name }}</text>
+									<text class="workspace-lead-age">{{ row.genderAge }}</text>
+								</view>
+								<text class="workspace-lead-time">{{ row.time }}</text>
+							</view>
+								<view class="workspace-lead-rows">
+									<view><text>电话</text><text>{{ row.phone }}</text></view>
+									<view><text>微信</text><text>{{ row.wechat }}</text></view>
+									<view><text>来源</text><text>{{ row.source }}</text></view>
+									<view><text>备注</text><text>{{ row.remark || '暂无备注' }}</text></view>
+								<view class="workspace-lead-status-row" @click="openLeadStatusSheet(row)">
+									<text>状态</text>
+									<text :class="'workspace-lead-status-' + row.statusTone">{{ row.statusLabel }} ›</text>
+								</view>
+								<view @click="openLeadAssignSheet(row)">
+									<text>分派跟进</text>
+									<text>{{ row.owner }} ›</text>
+								</view>
+								<view @click="openLeadFollowPanel(row)">
+									<text>跟进</text>
+									<text :class="{ 'workspace-lead-stale': row.isStale }">{{ row.followSummary }} ›</text>
+								</view>
+								<view class="workspace-lead-click-row" @click="openLeadIntentionSheet(row)"><text>意向</text><text class="workspace-lead-intention">{{ row.intentionLabel }} ›</text></view>
+							</view>
+							<view class="workspace-actions">
+								<text @click="openLeadEditSheet(row)">编辑</text>
+								<text @click="copyLeadProfile(row)">复制资料</text>
+								<text v-if="row.status != 'LOST'" @click="confirmAbandonLead(row)">放入弃海</text>
+								<text v-else @click="confirmRestoreLead(row)">恢复客源</text>
+													<text v-if="row.status != 'CONVERTED' && row.status != 'CLOSED' && row.status != 'LOST'" @click="confirmConvertLead(row)">一键入库</text>
+													<text v-else-if="row.status == 'LOST'" @click="confirmRestoreLead(row)">先恢复客源</text>
+													<text v-else @click="showToast('已入库，编号 ' + row.convertedUserId)">已入库</text>
+							</view>
+						</view>
+					</view>
+					</view>
 				</view>
 
 				<view v-else-if="workspaceKind == 'match'">
-					<view class="workspace-filter-note"><text>已选：优先显示我服务的</text></view>
-					<view v-for="row in workspaceMatches" :key="row.id" class="workspace-match-card"><view><text>申请时间：{{ row.time }}</text><text>{{ row.status }}</text></view><view class="workspace-match-person"><image :src="row.a.avatar" mode="aspectFill"/><view><text>{{ row.a.name }} · {{ row.a.gender }}</text><text>编号：{{ row.a.id }}</text></view><text @click="showToast('联系信息已打开')">联系 Ta</text></view><view class="workspace-match-person"><image :src="row.b.avatar" mode="aspectFill"/><view><text>{{ row.b.name }} · {{ row.b.gender }}</text><text>编号：{{ row.b.id }}</text></view><text @click="showToast('联系信息已打开')">联系 Ta</text></view><text>服务红娘：芷希老师</text></view>
+					<view class="workspace-filter-note"><text>仅显示当前服务范围；此列表不展示双方联系方式。</text></view>
+					<view v-if="workspaceMatchesUsingDemoData" class="workspace-demo-notice"><text>当前显示本地测试数据；服务端产生记录后将自动切换为真实数据。</text></view>
+					<view v-if="workspaceMatchesLoading" class="workspace-state"><text>正在加载牵线记录…</text></view>
+					<view v-else-if="workspaceMatchesError.length > 0" class="workspace-state"><text>{{ workspaceMatchesError }}</text><text class="workspace-state-action" @click="loadWorkspaceMatches">重新加载</text></view>
+					<view v-else-if="workspaceVisibleMatches.length == 0" class="workspace-state"><text>没有符合条件的牵线记录</text></view>
+					<view v-else><view v-for="row in workspaceVisibleMatches" :key="row.id" class="workspace-match-card"><view class="workspace-match-card-top"><text>创建时间：{{ row.time }}</text><text class="workspace-match-status" :class="'workspace-match-status-' + row.statusTone">{{ row.statusLabel }}</text></view><view class="workspace-match-person"><image :src="row.fromUser.avatar" mode="aspectFill"/><view><text>{{ row.fromUser.name }} · {{ row.fromUser.gender }}</text><text>会员编号：{{ row.fromUser.id }}</text></view></view><view class="workspace-match-person"><image :src="row.toUser.avatar" mode="aspectFill"/><view><text>{{ row.toUser.name }} · {{ row.toUser.gender }}</text><text>会员编号：{{ row.toUser.id }}</text></view></view><text v-if="row.failureReason.length > 0" class="workspace-match-reason">结束说明：{{ row.failureReason }}</text><text class="workspace-match-owner">服务红娘：{{ row.owner }}</text></view></view>
+				</view>
+
+				<view v-else-if="workspaceKind == 'meeting'">
+					<view class="workspace-meeting-overview"><view><text class="workspace-meeting-overview-value">{{ workspaceVisibleMeetings.length }}</text><text class="workspace-meeting-overview-label">当前筛选约见</text></view><text>仅展示当前服务范围内的公开资料与安排状态</text></view>
+					<view v-if="workspaceMeetingsUsingDemoData" class="workspace-demo-notice"><text>当前显示本地测试数据；服务端产生记录后将自动切换为真实数据。</text></view>
+					<view v-if="workspaceMeetingsLoading" class="workspace-state"><text>正在加载约见申请…</text></view>
+					<view v-else-if="workspaceMeetingsError.length > 0" class="workspace-state"><text>{{ workspaceMeetingsError }}</text><text class="workspace-state-action" @click="loadWorkspaceMeetings">重新加载</text></view>
+					<view v-else-if="workspaceVisibleMeetings.length == 0" class="workspace-state"><text>没有符合条件的约见申请</text></view>
+					<view v-else><view v-for="row in workspaceVisibleMeetings" :key="row.id" class="workspace-meeting-card"><view class="workspace-meeting-card-top"><text>申请编号：{{ row.id }}</text><text class="workspace-meeting-status" :class="'workspace-meeting-status-' + row.statusTone">{{ row.statusLabel }}</text></view><view class="workspace-meeting-pair"><view class="workspace-meeting-person"><image :src="row.applicant.avatar" mode="aspectFill"/><view><text>{{ row.applicant.name }}</text><text>{{ row.applicant.gender }} · {{ row.applicant.id }}</text></view></view><view class="workspace-meeting-link"><text>约见</text></view><view class="workspace-meeting-person"><image :src="row.target.avatar" mode="aspectFill"/><view><text>{{ row.target.name }}</text><text>{{ row.target.gender }} · {{ row.target.id }}</text></view></view></view><view v-if="row.meeting != null" class="workspace-meeting-arrangement"><text>约见安排</text><view><text>{{ row.meeting.scheduledAt }}</text><text>{{ row.meeting.location }}</text></view></view><text v-else class="workspace-meeting-detail">{{ row.detail }}</text><text v-if="row.meeting != null" class="workspace-meeting-detail">{{ row.detail }}</text><text class="workspace-meeting-time">提交于 {{ row.createdAt }}</text></view></view>
 				</view>
 
 				<view v-else-if="workspaceKind == 'entry'" class="workspace-entry-card"><text>{{ workspaceTitle }}</text><text class="workspace-muted">录入会员、牵线和约见需等待对应服务端流程开放；当前不会保存本地模拟记录。</text></view>
 
 				<view v-else-if="workspaceKind == 'member'">
-					<view v-for="member in workspaceMembers" :key="member.id" class="workspace-info-card"><view class="workspace-member-header"><image :src="member.avatar" mode="aspectFill"/><view><text>{{ member.name }} · {{ member.gender }}</text><text>编号：{{ member.id }} · {{ member.type }}</text></view></view><view><text>服务红娘</text><text>{{ member.owner }}</text></view><view><text>资料状态</text><text>{{ member.status }}</text></view><view class="workspace-actions"><text @click="showToast('已打开会员资料')">详细资料</text><text @click="showToast('已打开服务跟进')">服务跟进</text><text @click="showToast('已打开牵线记录')">牵线记录</text></view></view>
+					<view v-if="workspaceMembersLoading" class="workspace-state"><text>正在加载会员数据…</text></view>
+					<view v-else-if="workspaceMembersError.length > 0" class="workspace-state"><text>{{ workspaceMembersError }}</text><text class="workspace-state-action" @click="loadWorkspaceMembers">重新加载</text></view>
+					<view v-else-if="workspaceVisibleMembers.length == 0" class="workspace-state"><text>没有符合条件的会员</text></view>
+					<view v-else><view v-for="member in workspaceVisibleMembers" :key="member.id" class="workspace-info-card"><view class="workspace-member-header"><image :src="member.avatar" mode="aspectFill"/><view><text>{{ member.name }} · {{ member.gender }}</text><text>编号：{{ member.id }} · {{ member.type }}</text></view></view><view><text>服务红娘</text><text>{{ member.owner }}</text></view><view><text>资料状态</text><text>{{ member.status }}</text></view><view class="workspace-actions"><text @click="showToast('已打开会员资料')">详细资料</text><text @click="showToast('已打开服务跟进')">服务跟进</text><text @click="showToast('已打开牵线记录')">牵线记录</text></view></view></view>
 				</view>
 
 				<view v-else-if="workspaceKind == 'activity'">
@@ -64,7 +152,7 @@
 
 				<view v-else><view v-for="row in workspaceGenericRows" :key="row.title" class="workspace-generic-card"><view><text>{{ row.icon }}</text></view><view><text>{{ row.title }}</text><text>{{ row.desc }}</text></view><text @click="showToast(row.action)">{{ row.action }} ></text></view></view>
 			</view>
-			<view class="workspace-add" @click="showToast('新增记录表单已打开')"><text>+</text><text>添加</text></view>
+			<view v-if="workspaceKind != 'match' && workspaceKind != 'meeting'" class="workspace-add" @click="workspaceKind == 'lead' ? openLeadAddSheet() : showToast('新增记录表单已打开')"><text>+</text><text>添加</text></view>
 		</scroll-view>
 		<MatchmakerManagementCenter
 			v-else-if="managementCenterVisible && managementCenterSnapshot != null"
@@ -356,17 +444,119 @@
 			</view>
 		</view>
 
+		<!-- 线索：状态选择 -->
+		<XsaSheet :visible="leadStatusSheetVisible" title="状态" @close="leadStatusSheetVisible = false">
+			<view class="workspace-option-list">
+				<view v-for="opt in leadStatusOptions" :key="opt.value" class="workspace-option" :class="{ disabled: opt.disabled, selected: leadStatusCurrent == opt.value }" @click="opt.disabled ? showToast('已入库的客源不可回退') : selectLeadStatus(opt.value)">
+					<text>{{ opt.label }}</text>
+					<text v-if="leadStatusCurrent == opt.value" class="workspace-option-check">✓</text>
+				</view>
+			</view>
+		</XsaSheet>
+
+		<!-- 线索：意向选择 -->
+		<XsaSheet :visible="leadIntentionSheetVisible" title="意向" @close="leadIntentionSheetVisible = false">
+			<view class="workspace-option-list">
+				<view v-for="opt in leadIntentionOptions" :key="opt.value" class="workspace-option" :class="{ selected: leadIntentionCurrent == opt.value }" @click="selectLeadIntention(opt.value)">
+					<text>{{ opt.label }}</text>
+					<text v-if="leadIntentionCurrent == opt.value" class="workspace-option-check">✓</text>
+				</view>
+			</view>
+		</XsaSheet>
+
+		<!-- 线索：分派跟进 -->
+		<XsaSheet :visible="leadAssignSheetVisible" title="分派跟进" @close="leadAssignSheetVisible = false">
+			<view v-if="leadFollowersLoading" class="workspace-state"><text>正在加载红娘列表…</text></view>
+			<view v-else class="workspace-option-list">
+				<view v-for="f in leadFollowers" :key="f.userId" class="workspace-option" :class="{ selected: leadAssignCurrent == f.userId }" @click="selectLeadAssign(f)">
+					<text>{{ f.displayName }}{{ f.isSelf ? '（我）' : '' }}</text>
+					<text v-if="leadAssignCurrent == f.userId" class="workspace-option-check">✓</text>
+				</view>
+			</view>
+		</XsaSheet>
+
+		<!-- 线索：筛选 -->
+		<XsaSheet :visible="leadFilterSheetVisible" title="筛选客源" @close="leadFilterSheetVisible = false">
+			<view class="workspace-filter-group">
+				<text class="workspace-filter-label">状态</text>
+				<view class="workspace-filter-chips">
+					<view class="workspace-filter-chip" :class="{ active: leadFilterStatus.length == 0 }" @click="leadFilterStatus = []"><text>全部</text></view>
+					<view v-for="opt in leadStatusOptions" :key="opt.value" class="workspace-filter-chip" :class="{ active: leadFilterStatus.indexOf(opt.value) >= 0 }" @click="toggleLeadFilterStatus(opt.value)"><text>{{ opt.label }}</text></view>
+				</view>
+			</view>
+			<view class="workspace-filter-group">
+				<text class="workspace-filter-label">意向级别</text>
+				<view class="workspace-filter-chips">
+					<view class="workspace-filter-chip" :class="{ active: leadFilterIntention == 0 }" @click="leadFilterIntention = 0"><text>全部</text></view>
+					<view v-for="opt in leadIntentionOptions" :key="opt.value" class="workspace-filter-chip intention-filter-chip" :class="{ active: leadFilterIntention == opt.value }" @click="leadFilterIntention = opt.value"><text>{{ opt.label }}</text></view>
+				</view>
+			</view>
+			<view class="workspace-sheet-actions">
+				<view class="workspace-sheet-btn ghost" @click="resetLeadFilter"><text>重置</text></view>
+				<view class="workspace-sheet-btn" @click="applyLeadFilter"><text>确认</text></view>
+			</view>
+		</XsaSheet>
+
+		<!-- 线索：添加 / 编辑 -->
+		<XsaSheet :visible="leadFormSheetVisible" :title="leadFormIsEdit ? '编辑线索' : '添加线索'" @close="leadFormSheetVisible = false">
+			<view class="workspace-lead-form">
+				<view class="workspace-form-row"><text>称呼</text><input :value="leadFormName" @input="leadFormName = $event.detail.value" placeholder="客户称呼（必填）"/></view>
+				<view class="workspace-form-row"><text>电话</text><input :value="leadFormPhone" @input="leadFormPhone = $event.detail.value" placeholder="手机号" type="number"/></view>
+				<view class="workspace-form-row"><text>微信</text><input :value="leadFormWechat" @input="leadFormWechat = $event.detail.value" placeholder="微信号"/></view>
+				<view class="workspace-form-row"><text>来源</text><input :value="leadFormSource" @input="leadFormSource = $event.detail.value" placeholder="如：朋友推荐" :disabled="leadFormIsEdit"/></view>
+				<view class="workspace-form-row"><text>备注</text><input :value="leadFormRemark" @input="leadFormRemark = $event.detail.value" placeholder="补充说明"/></view>
+				<view v-if="leadFormError.length > 0" class="workspace-form-error"><text>{{ leadFormError }}</text></view>
+				<view class="workspace-sheet-actions">
+					<view class="workspace-sheet-btn ghost" @click="leadFormSheetVisible = false"><text>取消</text></view>
+					<view class="workspace-sheet-btn" :class="{ disabled: leadFormSubmitting }" @click="submitLeadForm"><text>{{ leadFormSubmitting ? '保存中…' : '保存' }}</text></view>
+				</view>
+			</view>
+		</XsaSheet>
+
+		<!-- 线索：弃海 / 入库确认 -->
+		<XsaSheet :visible="leadConfirmSheetVisible" :title="leadConfirmKind == 'abandon' ? '放入弃海' : (leadConfirmKind == 'restore' ? '恢复客源' : '一键入库')" @close="leadConfirmSheetVisible = false">
+			<view class="workspace-lead-confirm">
+				<text class="workspace-confirm-tip">{{ leadConfirmTip }}</text>
+				<view v-if="leadConfirmKind == 'convert'" class="workspace-confirm-gender">
+					<text>客户性别（入库建档用）</text>
+					<view class="workspace-filter-chips">
+						<view class="workspace-filter-chip" :class="{ active: leadConvertGender == 2 }" @click="leadConvertGender = 2"><text>女</text></view>
+						<view class="workspace-filter-chip" :class="{ active: leadConvertGender == 1 }" @click="leadConvertGender = 1"><text>男</text></view>
+					</view>
+				</view>
+				<textarea v-if="leadConfirmKind != 'convert'" class="workspace-follow-textarea" :value="leadConfirmReason" @input="leadConfirmReason = $event.detail.value" :placeholder="leadConfirmKind == 'abandon' ? '请填写弃海原因（必填）' : '恢复原因（选填）'" :maxlength="200"/>
+				<view class="workspace-sheet-actions">
+					<view class="workspace-sheet-btn ghost" @click="leadConfirmSheetVisible = false"><text>取消</text></view>
+					<view class="workspace-sheet-btn" :class="{ disabled: leadConfirmSubmitting }" @click="submitLeadConfirm"><text>{{ leadConfirmSubmitting ? '处理中…' : '确认' }}</text></view>
+				</view>
+			</view>
+		</XsaSheet>
+
 		<XsaToast :visible="toastVisible" :message="toastMessage" @hide="toastVisible = false" />
 	</view>
 </template>
 
 <script setup lang="uts">
 import XsaToast from '@/components/XsaToast.uvue'
+import XsaSheet from '@/components/XsaSheet.uvue'
 import MatchmakerManagementCenter from '@/components/MatchmakerManagementCenter.uvue'
 import MatchmakerPendingReview from '@/components/MatchmakerPendingReview.uvue'
 import {
 	getMatchmakerManagementCenterAccess,
 	getMatchmakerManagementCenterSnapshot,
+	getMatchmakerReviewMembers,
+	getMatchmakerWorkspaceLeads,
+	getWorkspaceLeadFollowUps,
+	addWorkspaceLeadFollowUp,
+	getWorkspaceLeadFollowers,
+	assignWorkspaceLead,
+	abandonWorkspaceLead,
+	restoreWorkspaceLead,
+	convertWorkspaceLead,
+	updateWorkspaceLead,
+	createWorkspaceLead,
+	getMatchmakerWorkspaceIntroductions,
+	getMatchmakerWorkspaceMeetingRequests,
 	submitMatchmakerApplication
 } from '@/api'
 
@@ -400,32 +590,145 @@ const managementAccessLoading = ref(true)
 const managementCenterLoading = ref(false)
 const managementCenterVisible = ref(false)
 const pendingReviewVisible = ref(false)
+const pendingReviewInitialTab = ref('PENDING')
 const workspaceVisible = ref(false)
 const workspaceTitle = ref('')
 const workspaceKind = ref('general')
 const workspaceActiveTab = ref('全部')
 const workspaceKeyword = ref('')
+const workspaceMembersLoading = ref(false)
+const workspaceMembersError = ref('')
+const workspaceLeadsLoading = ref(false)
+const workspaceLeadsError = ref('')
+const workspaceMatchesLoading = ref(false)
+const workspaceMatchesError = ref('')
+const workspaceMeetingsLoading = ref(false)
+const workspaceMeetingsError = ref('')
 const workspaceDefaultTabs = ['全部', '进行中', '已完成']
 const workspaceCommissionTabs = ['分成明细', '分成标准']
 const workspaceLeadTabs = ['客源线索', '弃海客源']
 const workspaceMatchTabs = ['全部', '待牵线', '牵线中', '成功', '失败']
+const workspaceMeetingTabs = ['全部', '处理中', '待见面', '已完成', '已结束']
 const workspaceTabs = computed(() => {
 	if (workspaceKind.value == 'commission') return workspaceCommissionTabs
 	if (workspaceKind.value == 'lead') return workspaceLeadTabs
 	if (workspaceKind.value == 'match') return workspaceMatchTabs
+	if (workspaceKind.value == 'meeting') return workspaceMeetingTabs
 	return workspaceDefaultTabs
 })
 const workspaceSearchPlaceholder = computed(() => {
 	if (workspaceKind.value == 'lead') return '请输入昵称、手机或微信'
 	if (workspaceKind.value == 'match') return '请输入申请人昵称、姓名或编号'
+	if (workspaceKind.value == 'meeting') return '请输入申请人、邀约对象或编号'
 	return '请输入关键词'
 })
 const workspaceCommissionRows: any[] = []
-const workspaceLeads: any[] = []
-const workspaceMatches: any[] = []
-const workspaceMembers: any[] = []
+const workspaceLeads = ref<any[]>([])
+// 九级意向独立保存，便于按 A-J 完整筛选与回显。
+const leadIntentionDetails = ref<any>({})
+const workspaceMatches = ref<any[]>([])
+const workspaceMeetings = ref<any[]>([])
+const workspaceMatchesLoaded = ref(false)
+const workspaceMeetingsLoaded = ref(false)
+const workspaceMatchesUsingDemoData = ref(false)
+const workspaceMeetingsUsingDemoData = ref(false)
+
+const applyBusinessMetricCounts = (pendingIntroduction: number, introductionSucceeded: number, meetingRequests: number, pendingMeeting: number) => {
+	if (managementCenterSnapshot.value == null || !Array.isArray(managementCenterSnapshot.value.storeMetrics)) return
+	const metricValues: any = {
+		pending_introduction: String(pendingIntroduction),
+		introduction_succeeded: String(introductionSucceeded),
+		meeting_requests: String(meetingRequests),
+		pending_meeting: String(pendingMeeting)
+	}
+	managementCenterSnapshot.value = {
+		...managementCenterSnapshot.value,
+		storeMetrics: managementCenterSnapshot.value.storeMetrics.map((item: any) => metricValues[item.key] != null
+			? { ...item, value: metricValues[item.key] }
+			: item)
+	}
+}
+
+const syncBusinessMetricCountsFromWorkspace = () => {
+	if (!workspaceMatchesLoaded.value || !workspaceMeetingsLoaded.value) return
+	const pendingIntroduction = workspaceMatches.value.filter((item: any): boolean => item.status == 'PENDING').length
+	const introductionSucceeded = workspaceMatches.value.filter((item: any): boolean => item.status == 'SUCCEEDED').length
+	const meetingRequests = workspaceMeetings.value.filter((item: any): boolean => item.phase == 'PROCESSING').length
+	const pendingMeeting = workspaceMeetings.value.filter((item: any): boolean => item.phase == 'UPCOMING').length
+	applyBusinessMetricCounts(pendingIntroduction, introductionSucceeded, meetingRequests, pendingMeeting)
+}
+
+const refreshBusinessMetricCounts = async () => {
+	try {
+		const results = await Promise.all([getMatchmakerWorkspaceIntroductions(), getMatchmakerWorkspaceMeetingRequests()])
+		const introductionsResult = results[0]
+		const meetingsResult = results[1]
+		if (!introductionsResult.success || introductionsResult.data == null || !meetingsResult.success || meetingsResult.data == null) return
+		const introductions = Array.isArray(introductionsResult.data.items) ? introductionsResult.data.items : []
+		const meetings = Array.isArray(meetingsResult.data.items) ? meetingsResult.data.items : []
+		const pendingIntroduction = introductions.filter((item: any): boolean => item.status == 'PENDING').length
+		const introductionSucceeded = introductions.filter((item: any): boolean => item.status == 'SUCCEEDED').length
+		const meetingRequests = meetings.filter((item: any): boolean => getWorkspaceMeetingPresentation(String(item.status), item.meeting).phase == 'PROCESSING').length
+		const pendingMeeting = meetings.filter((item: any): boolean => getWorkspaceMeetingPresentation(String(item.status), item.meeting).phase == 'UPCOMING').length
+		applyBusinessMetricCounts(pendingIntroduction, introductionSucceeded, meetingRequests, pendingMeeting)
+	} catch (e) {
+		// 统计接口失败时保留聚合快照，避免用空数据覆盖上一次有效统计。
+	}
+}
+const workspaceMembers = ref<any[]>([])
 const workspaceActivities: any[] = []
 const workspaceGenericRows: any[] = []
+const workspaceVisibleMembers = computed(() => {
+	let rows = workspaceMembers.value
+	if (workspaceActiveTab.value == '进行中') rows = rows.filter((item: any) => item.reviewStatus == 'PENDING')
+	if (workspaceActiveTab.value == '已完成') rows = rows.filter((item: any) => item.reviewStatus != 'PENDING')
+	const keyword = workspaceKeyword.value.trim().toLowerCase()
+	if (keyword.length == 0) return rows
+	return rows.filter((item: any) => {
+		const content = (String(item.name) + String(item.id) + String(item.status) + String(item.gender)).toLowerCase()
+		return content.indexOf(keyword) >= 0
+	})
+})
+const workspaceVisibleLeads = computed(() => {
+	let rows = workspaceLeads.value
+	if (workspaceActiveTab.value == '弃海客源') rows = rows.filter((item: any) => item.status == 'LOST')
+	if (workspaceActiveTab.value == '客源线索') rows = rows.filter((item: any) => item.status != 'LOST')
+	if (leadExceptionOnly.value) rows = rows.filter((item: any) => item.isStale == true)
+	if (leadFilterStatus.value.length > 0) rows = rows.filter((item: any) => leadFilterStatus.value.indexOf(item.status) >= 0)
+	if (leadFilterIntention.value > 0) rows = rows.filter((item: any) => Number(item.intentionValue) == leadFilterIntention.value)
+	const keyword = workspaceKeyword.value.trim().toLowerCase()
+	if (keyword.length == 0) return rows
+	return rows.filter((item: any) => {
+		const content = (String(item.name) + String(item.phone) + String(item.wechat) + String(item.source)).toLowerCase()
+		return content.indexOf(keyword) >= 0
+	})
+})
+const workspaceVisibleMatches = computed(() => {
+	let rows = workspaceMatches.value
+	if (workspaceActiveTab.value == '待牵线') rows = rows.filter((item: any) => item.status == 'PENDING')
+	if (workspaceActiveTab.value == '牵线中') rows = rows.filter((item: any) => item.status == 'IN_PROGRESS')
+	if (workspaceActiveTab.value == '成功') rows = rows.filter((item: any) => item.status == 'SUCCEEDED')
+	if (workspaceActiveTab.value == '失败') rows = rows.filter((item: any) => item.status == 'FAILED')
+	const keyword = workspaceKeyword.value.trim().toLowerCase()
+	if (keyword.length == 0) return rows
+	return rows.filter((item: any) => {
+		const content = (String(item.id) + String(item.statusLabel) + String(item.fromUser.name) + String(item.toUser.name)).toLowerCase()
+		return content.indexOf(keyword) >= 0
+	})
+})
+const workspaceVisibleMeetings = computed(() => {
+	let rows = workspaceMeetings.value
+	if (workspaceActiveTab.value == '处理中') rows = rows.filter((item: any) => item.phase == 'PROCESSING')
+	if (workspaceActiveTab.value == '待见面') rows = rows.filter((item: any) => item.phase == 'UPCOMING')
+	if (workspaceActiveTab.value == '已完成') rows = rows.filter((item: any) => item.phase == 'COMPLETED')
+	if (workspaceActiveTab.value == '已结束') rows = rows.filter((item: any) => item.phase == 'ENDED')
+	const keyword = workspaceKeyword.value.trim().toLowerCase()
+	if (keyword.length == 0) return rows
+	return rows.filter((item: any) => {
+		const content = (String(item.id) + String(item.applicant.name) + String(item.target.name) + String(item.statusLabel)).toLowerCase()
+		return content.indexOf(keyword) >= 0
+	})
+})
 
 const specialtyOptions = [
 	'高知青年', '同城牵线', '离异再婚', '大龄脱单',
@@ -493,6 +796,22 @@ const onWorkspaceKeywordInput = (event: any) => {
 }
 
 const runWorkspaceSearch = () => {
+	if (workspaceKind.value == 'member') {
+		showToast('已筛选 ' + String(workspaceVisibleMembers.value.length) + ' 位会员')
+		return
+	}
+	if (workspaceKind.value == 'lead') {
+		showToast('已筛选 ' + String(workspaceVisibleLeads.value.length) + ' 条客源')
+		return
+	}
+	if (workspaceKind.value == 'match') {
+		showToast('已筛选 ' + String(workspaceVisibleMatches.value.length) + ' 条牵线记录')
+		return
+	}
+	if (workspaceKind.value == 'meeting') {
+		showToast('已筛选 ' + String(workspaceVisibleMeetings.value.length) + ' 条约见申请')
+		return
+	}
 	if (workspaceKeyword.value.trim().length == 0) {
 		showToast('请输入搜索关键词')
 		return
@@ -536,6 +855,7 @@ const openManagementCenter = async () => {
 		const result = await getMatchmakerManagementCenterSnapshot()
 		if (result.success && result.data != null) {
 			managementCenterSnapshot.value = result.data
+			await refreshBusinessMetricCounts()
 			managementCenterVisible.value = true
 		} else {
 			showToast(result.message != null ? String(result.message) : '工作台加载失败，请稍后重试')
@@ -553,8 +873,9 @@ const exitManagementCenter = () => {
 	managementCenterVisible.value = false
 }
 
-const openPendingReview = () => {
+const openPendingReview = (initialTab: string = 'PENDING') => {
 	if (!managementCenterVisible.value) return
+	pendingReviewInitialTab.value = initialTab
 	pendingReviewVisible.value = true
 }
 
@@ -570,12 +891,697 @@ const closeWorkspace = () => {
 	workspaceVisible.value = false
 }
 
-const openWorkspace = (title: string, kind: string) => {
+const loadWorkspaceMembers = async () => {
+	workspaceMembersLoading.value = true
+	workspaceMembersError.value = ''
+	try {
+		const result = await getMatchmakerReviewMembers()
+		if (!result.success || result.data == null) {
+			workspaceMembers.value = []
+			workspaceMembersError.value = result.message != null ? String(result.message) : '会员数据加载失败'
+			return
+		}
+		const source = result.data
+		const items = Array.isArray(source.items) ? source.items : []
+		const owner = managementCenterSnapshot.value != null && managementCenterSnapshot.value.identity != null
+			? String(managementCenterSnapshot.value.identity.name || '服务红娘')
+			: '服务红娘'
+		workspaceMembers.value = items.map((item: any) => {
+			const gender = Number(item.gender) == 1 ? '男' : (Number(item.gender) == 2 ? '女' : '未填写')
+			const reviewStatus = item.review_status != null ? String(item.review_status) : 'PENDING'
+			return {
+				id: String(item.user_id),
+				avatar: item.avatar != null && String(item.avatar).length > 0
+					? String(item.avatar)
+					: (Number(item.gender) == 1 ? '/static/portraits/profile-man-light.jpg' : '/static/portraits/profile-woman-main.jpg'),
+				name: item.nickname != null ? String(item.nickname) : '未命名会员',
+				gender: gender,
+				type: Number(item.profile_completion_score) >= 90 ? '资料完善' : '待完善',
+				owner: owner,
+				status: reviewStatus == 'PASSED' ? '已通过' : (reviewStatus == 'REJECTED' ? '需补充资料' : '资料待审'),
+				reviewStatus: reviewStatus
+			}
+		})
+	} catch (e) {
+		workspaceMembers.value = []
+		workspaceMembersError.value = '网络数据加载失败，请检查本地服务后重试'
+	} finally {
+		workspaceMembersLoading.value = false
+	}
+}
+
+const leadStatusMeta: any[] = [
+	{ value: 'NEW', label: '找对象中' },
+	{ value: 'CONTACTED', label: '接触中' },
+	{ value: 'INTENDED', label: '恋爱中' },
+	{ value: 'CLOSED', label: '已结婚' },
+	{ value: 'CONVERTED', label: '已到门店' },
+	{ value: 'LOST', label: '弃海', disabled: true }
+]
+const leadStatusTones: any = { NEW: 'new', CONTACTED: 'ok', INTENDED: 'warn', CONVERTED: 'ok', CLOSED: 'muted', LOST: 'muted' }
+const leadStatusOptions = leadStatusMeta.filter((item: any): boolean => item.value != 'LOST')
+const intentionLabels: any = { 1: '低', 2: '中', 3: '高' }
+const leadIntentionOptions = [
+	{ value: 1, label: 'A类 未接', level: 1 },
+	{ value: 2, label: 'B类 初步沟通', level: 2 },
+	{ value: 3, label: 'C类 深入沟通未缔结', level: 2 },
+	{ value: 4, label: 'D类 待确定到店时间', level: 3 },
+	{ value: 5, label: 'E类 已确定到店', level: 3 },
+	{ value: 6, label: 'F类 毁约需二邀', level: 2 },
+	{ value: 7, label: 'G类 已到店未签约', level: 2 },
+	{ value: 8, label: 'I类 已签单', level: 3 },
+	{ value: 9, label: 'J类 放弃资源', level: 1 }
+]
+const followUpMethodLabels: any = { PHONE: '电话', WECHAT: '微信', VISIT: '到店', OTHER: '其他' }
+
+const leadStatusLabel = (status: string): string => {
+	for (let i = 0; i < leadStatusMeta.length; i++) {
+		if (leadStatusMeta[i].value == status) return leadStatusMeta[i].label as string
+	}
+	return '找对象中'
+}
+
+const formatLeadTime = (value: any): string => {
+	if (value == null) return ''
+	return String(value).replace('T', ' ').substring(0, 16)
+}
+
+const daysBetweenNow = (timeText: string): number => {
+	if (timeText.length == 0) return 0
+	const past = new Date(timeText.replace(' ', 'T') + ':00').getTime()
+	if (isNaN(past)) return 0
+	return Math.floor((Date.now() - past) / 86400000)
+}
+
+const loadWorkspaceLeads = async () => {
+	workspaceLeadsLoading.value = true
+	workspaceLeadsError.value = ''
+	try {
+		const result = await getMatchmakerWorkspaceLeads()
+		if (!result.success || result.data == null) {
+			workspaceLeads.value = []
+			workspaceLeadsError.value = result.message != null ? String(result.message) : '客源数据加载失败'
+			return
+		}
+		const source = result.data
+		const items = Array.isArray(source.items) ? source.items : []
+		workspaceLeads.value = items.map((item: any) => {
+			const status = item.status != null ? String(item.status) : 'NEW'
+			const intentionLevel = item.intention_level != null ? Number(item.intention_level) : 1
+			const sourceIntentionValue = item.intention_value != null ? Number(item.intention_value) : (item.intentionValue != null ? Number(item.intentionValue) : 0)
+			const knownIntention = leadIntentionDetails.value[String(item.id)] != null ? Number(leadIntentionDetails.value[String(item.id)]) : (sourceIntentionValue >= 1 && sourceIntentionValue <= 9 ? sourceIntentionValue : leadIntentionDefaultValue(intentionLevel))
+			const lastFollowAt = item.last_follow_up_at != null ? formatLeadTime(item.last_follow_up_at) : ''
+			const staleDays = lastFollowAt.length > 0 ? daysBetweenNow(lastFollowAt) : daysBetweenNow(formatLeadTime(item.created_at))
+			return {
+				id: String(item.id),
+				name: item.name != null ? String(item.name) : '未命名客源',
+				phone: item.phone != null && String(item.phone).length > 0 ? String(item.phone) : '未提供',
+				wechat: item.wechat != null && String(item.wechat).length > 0 ? String(item.wechat) : '未提供',
+				source: item.source != null ? String(item.source) : '未知来源',
+				status: status,
+				statusLabel: leadStatusLabel(status),
+				statusTone: leadStatusTones[status] != null ? leadStatusTones[status] as string : 'new',
+				time: formatLeadTime(item.created_at),
+				owner: item.matchmaker_name != null && String(item.matchmaker_name).length > 0 ? String(item.matchmaker_name) : '未分派',
+				matchmakerId: item.matchmaker_id != null ? Number(item.matchmaker_id) : 0,
+				remark: item.remark != null ? String(item.remark) : '',
+				intentionLevel: intentionLevel,
+				intentionValue: knownIntention,
+				intentionLabel: leadIntentionOption(knownIntention).label as string,
+				lastFollowAt: lastFollowAt,
+				isStale: status != 'LOST' && status != 'CLOSED' && status != 'CONVERTED' && staleDays >= 10,
+				followSummary: lastFollowAt.length > 0 ? '最近跟进 ' + lastFollowAt.substring(5, 10) : '暂无跟进记录',
+				convertedUserId: item.converted_user_id != null ? String(item.converted_user_id) : '',
+				genderAge: ''
+			}
+		})
+	} catch (e) {
+		workspaceLeads.value = []
+		workspaceLeadsError.value = '网络数据加载失败，请检查本地服务后重试'
+	} finally {
+		workspaceLeadsLoading.value = false
+	}
+}
+
+// ===== 客源线索：工具栏与筛选 =====
+const leadExceptionOnly = ref(false)
+const leadFilterStatus = ref<string[]>([])
+const leadFilterIntention = ref(0)
+
+const toggleLeadException = () => {
+	leadExceptionOnly.value = !leadExceptionOnly.value
+	leadFilterStatus.value = []
+	leadFilterIntention.value = 0
+}
+
+const leadFilterSheetVisible = ref(false)
+const openLeadFilterSheet = () => { leadFilterSheetVisible.value = true }
+const toggleLeadFilterStatus = (value: string) => {
+	const idx = leadFilterStatus.value.indexOf(value)
+	if (idx >= 0) {
+		leadFilterStatus.value = leadFilterStatus.value.filter((item: string): boolean => item != value)
+	} else {
+		leadFilterStatus.value = leadFilterStatus.value.concat([value])
+	}
+}
+const resetLeadFilter = () => {
+	leadFilterStatus.value = []
+	leadFilterIntention.value = 0
+}
+const applyLeadFilter = () => {
+	leadFilterSheetVisible.value = false
+	showToast('已按条件筛选 ' + String(workspaceVisibleLeads.value.length) + ' 条客源')
+}
+
+// ===== 客源线索：状态选择 =====
+const leadStatusSheetVisible = ref(false)
+const leadStatusCurrent = ref('')
+const leadStatusLeadId = ref('')
+const openLeadStatusSheet = (row: any) => {
+	leadStatusLeadId.value = String(row.id)
+	leadStatusCurrent.value = String(row.status)
+	leadStatusSheetVisible.value = true
+}
+const selectLeadStatus = async (value: string) => {
+	if (value == leadStatusCurrent.value) {
+		leadStatusSheetVisible.value = false
+		return
+	}
+	try {
+		const result = await updateWorkspaceLead(leadStatusLeadId.value, { status: value })
+		if (!result.success) {
+			showToast(result.message != null ? String(result.message) : '状态修改失败')
+			return
+		}
+		leadStatusSheetVisible.value = false
+		showToast('状态已更新为「' + leadStatusLabel(value) + '」')
+		await loadWorkspaceLeads()
+	} catch (e) {
+		showToast('网络异常，请稍后重试')
+	}
+}
+
+const leadIntentionOption = (value: number): any => {
+	for (let i = 0; i < leadIntentionOptions.length; i++) {
+		if (leadIntentionOptions[i].value == value) return leadIntentionOptions[i]
+	}
+	return leadIntentionOptions[0]
+}
+
+const leadIntentionDefaultValue = (level: number): number => {
+	if (level == 2) return 2
+	if (level == 3) return 4
+	return 1
+}
+
+// ===== 客源线索：意向选择 =====
+const leadIntentionSheetVisible = ref(false)
+const leadIntentionCurrent = ref(1)
+const leadIntentionLeadId = ref('')
+const openLeadIntentionSheet = (row: any) => {
+	leadIntentionLeadId.value = String(row.id)
+	leadIntentionCurrent.value = Number(row.intentionValue) >= 1 && Number(row.intentionValue) <= 9 ? Number(row.intentionValue) : leadIntentionDefaultValue(Number(row.intentionLevel))
+	leadIntentionSheetVisible.value = true
+}
+const selectLeadIntention = async (value: number) => {
+	if (value == leadIntentionCurrent.value) {
+		leadIntentionSheetVisible.value = false
+		return
+	}
+	try {
+		const option = leadIntentionOption(value)
+		const result = await updateWorkspaceLead(leadIntentionLeadId.value, { intentionLevel: option.level, intentionValue: value })
+		if (!result.success) {
+			showToast(result.message != null ? String(result.message) : '意向更新失败')
+			return
+		}
+		leadIntentionDetails.value[leadIntentionLeadId.value] = value
+		leadIntentionSheetVisible.value = false
+		showToast('意向已更新')
+		await loadWorkspaceLeads()
+	} catch (e) {
+		showToast('网络异常，请稍后重试')
+	}
+}
+
+// ===== 客源线索：分派跟进 =====
+const leadAssignSheetVisible = ref(false)
+const leadAssignCurrent = ref(0)
+const leadAssignLeadId = ref('')
+const leadFollowers = ref<any[]>([])
+const leadFollowersLoading = ref(false)
+const leadFollowersLoaded = ref(false)
+const openLeadAssignSheet = async (row: any) => {
+	leadAssignLeadId.value = String(row.id)
+	leadAssignCurrent.value = Number(row.matchmakerId)
+	leadAssignSheetVisible.value = true
+	if (!leadFollowersLoaded.value) {
+		leadFollowersLoading.value = true
+		try {
+			const result = await getWorkspaceLeadFollowers()
+			if (result.success && result.data != null) {
+				const list = Array.isArray(result.data) ? result.data : []
+				leadFollowers.value = list.map((item: any) => ({
+					userId: Number(item.user_id),
+					displayName: item.display_name != null ? String(item.display_name) : '服务红娘',
+					isSelf: item.is_self == true
+				}))
+				leadFollowersLoaded.value = true
+			} else {
+				showToast(result.message != null ? String(result.message) : '红娘列表加载失败')
+			}
+		} catch (e) {
+			showToast('网络异常，请稍后重试')
+		} finally {
+			leadFollowersLoading.value = false
+		}
+	}
+}
+const selectLeadAssign = async (follower: any) => {
+	if (follower.userId == leadAssignCurrent.value) {
+		leadAssignSheetVisible.value = false
+		return
+	}
+	try {
+		const result = await assignWorkspaceLead(leadAssignLeadId.value, follower.userId)
+		if (!result.success) {
+			showToast(result.message != null ? String(result.message) : '分派失败')
+			return
+		}
+		leadAssignSheetVisible.value = false
+		showToast('已分派给 ' + follower.displayName + ' 跟进')
+		await loadWorkspaceLeads()
+	} catch (e) {
+		showToast('网络异常，请稍后重试')
+	}
+}
+
+// ===== 客源线索：跟进记录面板 =====
+const leadFollowPanelVisible = ref(false)
+const leadFollowLeadId = ref('')
+const leadFollowLeadName = ref('')
+const leadFollowLoading = ref(false)
+const leadFollowError = ref('')
+const leadFollowRecords = ref<any[]>([])
+const leadFollowMethods = [
+	{ value: 'PHONE', label: '电话' },
+	{ value: 'WECHAT', label: '微信' },
+	{ value: 'VISIT', label: '到店' },
+	{ value: 'OTHER', label: '其他' }
+]
+const leadFollowMethod = ref('PHONE')
+const leadFollowContent = ref('')
+const openLeadFollowPanel = (row: any) => {
+	leadFollowLeadId.value = String(row.id)
+	leadFollowLeadName.value = String(row.name)
+	leadFollowPanelVisible.value = true
+	loadLeadFollowRecords()
+}
+const closeLeadFollowPanel = () => {
+	leadFollowPanelVisible.value = false
+	leadFollowContent.value = ''
+}
+const loadLeadFollowRecords = async () => {
+	leadFollowLoading.value = true
+	leadFollowError.value = ''
+	try {
+		const result = await getWorkspaceLeadFollowUps(leadFollowLeadId.value)
+		if (!result.success || result.data == null) {
+			leadFollowRecords.value = []
+			leadFollowError.value = result.message != null ? String(result.message) : '跟进记录加载失败'
+			return
+		}
+		const items = Array.isArray(result.data.items) ? result.data.items : []
+		leadFollowRecords.value = items.map((item: any) => ({
+			id: String(item.id),
+			methodLabel: followUpMethodLabels[item.method] != null ? followUpMethodLabels[item.method] as string : '其他',
+			content: item.content != null ? String(item.content) : '',
+			time: formatLeadTime(item.created_at),
+			intentionLabel: item.intention_level != null ? (intentionLabels[Number(item.intention_level)] as string) : ''
+		}))
+	} catch (e) {
+		leadFollowRecords.value = []
+		leadFollowError.value = '网络数据加载失败，请检查本地服务后重试'
+	} finally {
+		leadFollowLoading.value = false
+	}
+}
+const submitLeadFollowUp = async () => {
+	const content = leadFollowContent.value.trim()
+	if (content.length == 0) {
+		showToast('请填写跟进内容')
+		return
+	}
+	try {
+		const result = await addWorkspaceLeadFollowUp(leadFollowLeadId.value, { method: leadFollowMethod.value, content: content })
+		if (!result.success) {
+			showToast(result.message != null ? String(result.message) : '跟进保存失败')
+			return
+		}
+		leadFollowContent.value = ''
+		showToast('跟进已记录')
+		await loadLeadFollowRecords()
+		await loadWorkspaceLeads()
+	} catch (e) {
+		showToast('网络异常，请稍后重试')
+	}
+}
+
+// ===== 客源线索：添加 / 编辑 =====
+const leadFormSheetVisible = ref(false)
+const leadFormIsEdit = ref(false)
+const leadFormLeadId = ref('')
+const leadFormName = ref('')
+const leadFormPhone = ref('')
+const leadFormWechat = ref('')
+const leadFormSource = ref('')
+const leadFormRemark = ref('')
+const leadFormError = ref('')
+const leadFormSubmitting = ref(false)
+const openLeadAddSheet = () => {
+	leadFormIsEdit.value = false
+	leadFormLeadId.value = ''
+	leadFormName.value = ''
+	leadFormPhone.value = ''
+	leadFormWechat.value = ''
+	leadFormSource.value = ''
+	leadFormRemark.value = ''
+	leadFormError.value = ''
+	leadFormSheetVisible.value = true
+}
+const openLeadEditSheet = (row: any) => {
+	leadFormIsEdit.value = true
+	leadFormLeadId.value = String(row.id)
+	leadFormName.value = String(row.name)
+	leadFormPhone.value = row.phone == '未提供' ? '' : String(row.phone)
+	leadFormWechat.value = row.wechat == '未提供' ? '' : String(row.wechat)
+	leadFormSource.value = String(row.source)
+	leadFormRemark.value = String(row.remark)
+	leadFormError.value = ''
+	leadFormSheetVisible.value = true
+}
+// 联系方式唯一性：服务端做全局唯一校验（409），这里用已加载线索做即时预检。
+const findLeadContactConflict = (phone: string, wechat: string, excludeLeadId: string): string => {
+	for (let i = 0; i < workspaceLeads.value.length; i++) {
+		const row = workspaceLeads.value[i]
+		if (excludeLeadId.length > 0 && String(row.id) == excludeLeadId) continue
+		const rowPhone = row.phone == '未提供' ? '' : String(row.phone).trim()
+		const rowWechat = row.wechat == '未提供' ? '' : String(row.wechat).trim()
+		if ((phone.length > 0 && rowPhone.length > 0 && rowPhone == phone) || (wechat.length > 0 && rowWechat.length > 0 && rowWechat == wechat)) {
+			return String(row.name)
+		}
+	}
+	return ''
+}
+const submitLeadForm = async () => {
+	const name = leadFormName.value.trim()
+	if (name.length == 0) {
+		leadFormError.value = '请填写客户称呼'
+		return
+	}
+	const phone = leadFormPhone.value.trim()
+	const wechat = leadFormWechat.value.trim()
+	if (phone.length == 0 && wechat.length == 0) {
+		leadFormError.value = '电话与微信至少填写一项'
+		return
+	}
+	const conflictLeadName = findLeadContactConflict(phone, wechat, leadFormIsEdit.value ? leadFormLeadId.value : '')
+	if (conflictLeadName.length > 0) {
+		leadFormError.value = '该联系方式已存在于线索「' + conflictLeadName + '」，请勿重复录入'
+		return
+	}
+	leadFormSubmitting.value = true
+	leadFormError.value = ''
+	try {
+		const payload = { name: name, phone: phone, wechat: wechat, source: leadFormSource.value.trim(), remark: leadFormRemark.value.trim() }
+		const result = leadFormIsEdit.value
+			? await updateWorkspaceLead(leadFormLeadId.value, payload)
+			: await createWorkspaceLead(payload)
+		if (!result.success) {
+			leadFormError.value = result.message != null && String(result.message).length > 0 ? String(result.message) : '保存失败，请稍后重试'
+			return
+		}
+		leadFormSheetVisible.value = false
+		showToast(leadFormIsEdit.value ? '线索已更新' : '线索已添加，等待跟进')
+		await loadWorkspaceLeads()
+	} catch (e) {
+		leadFormError.value = '网络异常，请稍后重试'
+	} finally {
+		leadFormSubmitting.value = false
+	}
+}
+
+// ===== 客源线索：弃海 / 恢复 / 入库确认 =====
+const leadConfirmSheetVisible = ref(false)
+const leadConfirmKind = ref('abandon')
+const leadConfirmLeadId = ref('')
+const leadConfirmReason = ref('')
+const leadConfirmSubmitting = ref(false)
+const leadConvertGender = ref(2)
+const leadConfirmTip = computed(() => {
+	if (leadConfirmKind.value == 'abandon') return '弃海后该客源将进入「弃海客源」列表，可随时恢复。'
+	if (leadConfirmKind.value == 'restore') return '恢复后客源将回到「客源线索」列表并分派给您跟进。'
+	return '入库后将创建正式用户并进入公开资料审核阶段，请确认信息真实有效。'
+})
+const confirmAbandonLead = (row: any) => {
+	leadConfirmKind.value = 'abandon'
+	leadConfirmLeadId.value = String(row.id)
+	leadConfirmReason.value = ''
+	leadConfirmSheetVisible.value = true
+}
+const confirmRestoreLead = (row: any) => {
+	leadConfirmKind.value = 'restore'
+	leadConfirmLeadId.value = String(row.id)
+	leadConfirmReason.value = ''
+	leadConfirmSheetVisible.value = true
+}
+const confirmConvertLead = (row: any) => {
+	if (row.phone == '未提供') {
+		showToast('该线索未登记电话，无法入库建档，请先编辑补充')
+		return
+	}
+	leadConfirmKind.value = 'convert'
+	leadConfirmLeadId.value = String(row.id)
+	leadConvertGender.value = 2
+	leadConfirmSheetVisible.value = true
+}
+const submitLeadConfirm = async () => {
+	if (leadConfirmSubmitting.value) return
+	leadConfirmSubmitting.value = true
+	try {
+		let result: any = null
+		if (leadConfirmKind.value == 'abandon') {
+			if (leadConfirmReason.value.trim().length == 0) {
+				showToast('请填写弃海原因')
+				return
+			}
+			result = await abandonWorkspaceLead(leadConfirmLeadId.value, leadConfirmReason.value.trim())
+		} else if (leadConfirmKind.value == 'restore') {
+			result = await restoreWorkspaceLead(leadConfirmLeadId.value, leadConfirmReason.value.trim().length > 0 ? leadConfirmReason.value.trim() : '重新跟进')
+		} else {
+			result = await convertWorkspaceLead(leadConfirmLeadId.value, leadConvertGender.value)
+		}
+		if (!result.success) {
+			showToast(result.message != null ? String(result.message) : '操作失败，请稍后重试')
+			return
+		}
+		leadConfirmSheetVisible.value = false
+		if (leadConfirmKind.value == 'convert') {
+			showToast('已入库，该用户已进入资料待审')
+		} else if (leadConfirmKind.value == 'abandon') {
+			showToast('已放入弃海')
+		} else {
+			showToast('客源已恢复')
+		}
+		await loadWorkspaceLeads()
+	} catch (e) {
+		showToast('网络异常，请稍后重试')
+	} finally {
+		leadConfirmSubmitting.value = false
+	}
+}
+
+const copyLeadProfile = (row: any) => {
+	const lines = [
+		'客户称呼：' + String(row.name),
+		'电话：' + String(row.phone),
+		'微信：' + String(row.wechat),
+		'来源：' + String(row.source),
+		'状态：' + String(row.statusLabel),
+		'意向：' + String(row.intentionLabel)
+	]
+	uni.setClipboardData({
+		data: lines.join('\n'),
+		success: () => showToast('资料已复制')
+	})
+}
+
+let introductionFallbackUsed: string[] = []
+const getIntroductionFallbackAvatar = (memberId: any, gender: string, memberName: string = ''): string => {
+	// 真实头像优先；兜底头像按 ID/姓名稳定分配，避免牵线嘉宾全部使用同一张图。
+	const seedText = String(memberId || '') + ':' + String(memberName || '')
+	let seed = 0
+	for (let i = 0; i < seedText.length; i++) seed = (seed * 31 + seedText.charCodeAt(i)) >>> 0
+	const maleAvatars = ['/static/portraits/profile-man-light.jpg', '/static/portraits/profile-man-sea.jpg', '/static/portraits/profile-man-alt.jpg']
+	const femaleAvatars = ['/static/portraits/profile-woman-main.jpg', '/static/portraits/profile-woman-community.jpg', '/static/portraits/profile-woman-alt.jpg', '/static/portraits/custom-matchmaker-hero.jpg']
+	const neutralAvatars = maleAvatars.concat(femaleAvatars)
+	const normalizedGender = String(gender || '')
+	const avatars = normalizedGender == '男' || normalizedGender == 'MALE' ? maleAvatars : (normalizedGender == '女' || normalizedGender == 'FEMALE' ? femaleAvatars : neutralAvatars)
+	let index = seed % avatars.length
+	for (let offset = 0; offset < avatars.length; offset++) {
+		const candidate = avatars[(index + offset) % avatars.length]
+		if (introductionFallbackUsed.indexOf(candidate) < 0) {
+			introductionFallbackUsed.push(candidate)
+			return candidate
+		}
+	}
+	const candidate = avatars[index]
+	introductionFallbackUsed.push(candidate)
+	return candidate
+}
+
+const loadWorkspaceMatches = async () => {
+	workspaceMatchesLoading.value = true
+	workspaceMatchesError.value = ''
+	workspaceMatchesLoaded.value = false
+	workspaceMatchesUsingDemoData.value = false
+	try {
+		const result = await getMatchmakerWorkspaceIntroductions()
+		if (!result.success || result.data == null) {
+			workspaceMatches.value = []
+			workspaceMatchesError.value = result.message != null ? String(result.message) : '牵线记录加载失败'
+			return
+		}
+		const statusLabels: any = { PENDING: '待我牵线', IN_PROGRESS: '牵线中', SUCCEEDED: '牵线成功', FAILED: '牵线失败' }
+		const statusTones: any = { PENDING: 'pending', IN_PROGRESS: 'progress', SUCCEEDED: 'succeeded', FAILED: 'failed' }
+		const owner = managementCenterSnapshot.value != null && managementCenterSnapshot.value.identity != null
+			? String(managementCenterSnapshot.value.identity.name || '服务红娘')
+			: '服务红娘'
+		const source = result.data
+		const items = Array.isArray(source.items) ? source.items : []
+		workspaceMatchesUsingDemoData.value = source.isDemo == true
+		introductionFallbackUsed = []
+		workspaceMatches.value = items.map((item: any) => {
+			const fromUser = item.fromUser != null ? item.fromUser : {}
+			const toUser = item.toUser != null ? item.toUser : {}
+			return {
+				id: item.id != null ? String(item.id) : '',
+				status: item.status != null ? String(item.status) : 'PENDING',
+				statusLabel: statusLabels[item.status] != null ? String(statusLabels[item.status]) : '待我牵线',
+				statusTone: statusTones[item.status] != null ? String(statusTones[item.status]) : 'pending',
+				time: item.createdAt != null ? String(item.createdAt).substring(0, 16) : '',
+				failureReason: item.failureReason != null ? String(item.failureReason) : '',
+				fromUser: {
+					id: fromUser.id != null ? String(fromUser.id) : '',
+					name: fromUser.name != null ? String(fromUser.name) : '未命名会员',
+					gender: fromUser.gender != null ? String(fromUser.gender) : '未填写',
+					avatar: fromUser.avatar != null && String(fromUser.avatar).length > 0 ? String(fromUser.avatar) : getIntroductionFallbackAvatar(fromUser.id, String(fromUser.gender), String(fromUser.name))
+				},
+				toUser: {
+					id: toUser.id != null ? String(toUser.id) : '',
+					name: toUser.name != null ? String(toUser.name) : '未命名会员',
+					gender: toUser.gender != null ? String(toUser.gender) : '未填写',
+					avatar: toUser.avatar != null && String(toUser.avatar).length > 0 ? String(toUser.avatar) : getIntroductionFallbackAvatar(toUser.id, String(toUser.gender), String(toUser.name))
+				},
+				owner: owner
+			}
+		})
+		workspaceMatchesLoaded.value = true
+		syncBusinessMetricCountsFromWorkspace()
+	} catch (e) {
+		workspaceMatches.value = []
+		workspaceMatchesUsingDemoData.value = false
+		workspaceMatchesError.value = '网络数据加载失败，请检查本地服务后重试'
+	} finally {
+		workspaceMatchesLoading.value = false
+	}
+}
+
+const getWorkspaceMeetingPresentation = (requestStatus: string, meeting: any) => {
+	if (meeting != null) {
+		const meetingStatus = meeting.status != null ? String(meeting.status) : ''
+		if (meetingStatus == 'SCHEDULED' || meetingStatus == 'REMINDED' || meetingStatus == 'CHECKED_IN') {
+			return { phase: 'UPCOMING', statusLabel: '待见面', statusTone: 'upcoming', detail: '已安排约见，请按计划完成服务跟进' }
+		}
+		if (meetingStatus == 'COMPLETED') {
+			return { phase: 'COMPLETED', statusLabel: '已完成', statusTone: 'completed', detail: '本次约见已完成，可继续记录后续服务进展' }
+		}
+		return { phase: 'ENDED', statusLabel: meetingStatus == 'NO_SHOW' ? '未按约到场' : '已结束', statusTone: 'ended', detail: meeting.cancelReason != null && String(meeting.cancelReason).length > 0 ? String(meeting.cancelReason) : '本次约见已结束' }
+	}
+	if (requestStatus == 'SUBMITTED') return { phase: 'PROCESSING', statusLabel: '待处理', statusTone: 'submitted', detail: '已收到约见申请，等待服务红娘跟进' }
+	if (requestStatus == 'CONTACTED') return { phase: 'PROCESSING', statusLabel: '跟进中', statusTone: 'processing', detail: '正在协调双方可约见时间' }
+	if (requestStatus == 'ACCEPTED') return { phase: 'PROCESSING', statusLabel: '待安排', statusTone: 'processing', detail: '双方已同意，等待安排具体约见' }
+	return { phase: 'ENDED', statusLabel: requestStatus == 'DECLINED' ? '未达成约见' : '已关闭', statusTone: 'ended', detail: '本次约见申请已结束' }
+}
+
+const loadWorkspaceMeetings = async () => {
+	workspaceMeetingsLoading.value = true
+	workspaceMeetingsError.value = ''
+	workspaceMeetingsLoaded.value = false
+	workspaceMeetingsUsingDemoData.value = false
+	try {
+		const result = await getMatchmakerWorkspaceMeetingRequests()
+		if (!result.success || result.data == null) {
+			workspaceMeetings.value = []
+			workspaceMeetingsError.value = result.message != null ? String(result.message) : '约见申请加载失败'
+			return
+		}
+		const source = result.data
+		const items = Array.isArray(source.items) ? source.items : []
+		workspaceMeetingsUsingDemoData.value = source.isDemo == true
+		introductionFallbackUsed = []
+		workspaceMeetings.value = items.map((item: any) => {
+			const applicant = item.applicant != null ? item.applicant : {}
+			const target = item.target != null ? item.target : {}
+			const meeting = item.meeting != null ? item.meeting : null
+			const presentation = getWorkspaceMeetingPresentation(item.status != null ? String(item.status) : 'SUBMITTED', meeting)
+			return {
+				id: item.id != null ? String(item.id) : '',
+				phase: presentation.phase,
+				statusLabel: presentation.statusLabel,
+				statusTone: presentation.statusTone,
+				detail: presentation.detail,
+				createdAt: item.createdAt != null ? String(item.createdAt).substring(0, 16) : '',
+				meeting: meeting != null ? {
+					status: meeting.status != null ? String(meeting.status) : '',
+					scheduledAt: meeting.scheduledAt != null ? String(meeting.scheduledAt).substring(0, 16) : '',
+					location: meeting.location != null ? String(meeting.location) : ''
+				} : null,
+				applicant: {
+					id: applicant.id != null ? String(applicant.id) : '',
+					name: applicant.name != null ? String(applicant.name) : '未命名会员',
+					gender: applicant.gender != null ? String(applicant.gender) : '未填写',
+					avatar: applicant.avatar != null && String(applicant.avatar).length > 0 ? String(applicant.avatar) : getIntroductionFallbackAvatar(applicant.id, String(applicant.gender), String(applicant.name))
+				},
+				target: {
+					id: target.id != null ? String(target.id) : '',
+					name: target.name != null ? String(target.name) : '未命名会员',
+					gender: target.gender != null ? String(target.gender) : '未填写',
+					avatar: target.avatar != null && String(target.avatar).length > 0 ? String(target.avatar) : getIntroductionFallbackAvatar(target.id, String(target.gender), String(target.name))
+				}
+			}
+		})
+		workspaceMeetingsLoaded.value = true
+		syncBusinessMetricCountsFromWorkspace()
+	} catch (e) {
+		workspaceMeetings.value = []
+		workspaceMeetingsUsingDemoData.value = false
+		workspaceMeetingsError.value = '网络数据加载失败，请检查本地服务后重试'
+	} finally {
+		workspaceMeetingsLoading.value = false
+	}
+}
+
+const openWorkspace = async (title: string, kind: string, initialTab: string = '') => {
 	workspaceTitle.value = title
 	workspaceKind.value = kind
-	workspaceActiveTab.value = kind == 'commission' ? '分成明细' : (kind == 'lead' ? '客源线索' : '全部')
+	workspaceActiveTab.value = initialTab.length > 0 ? initialTab : (kind == 'commission' ? '分成明细' : (kind == 'lead' ? '客源线索' : '全部'))
 	workspaceKeyword.value = ''
 	workspaceVisible.value = true
+	if (kind == 'member') await loadWorkspaceMembers()
+	if (kind == 'lead') await loadWorkspaceLeads()
+	if (kind == 'match') await loadWorkspaceMatches()
+	if (kind == 'meeting') await loadWorkspaceMeetings()
 }
 
 const refreshManagementCenter = async () => {
@@ -589,6 +1595,7 @@ const refreshManagementCenter = async () => {
 		const result = await getMatchmakerManagementCenterSnapshot()
 		if (result.success && result.data != null) {
 			managementCenterSnapshot.value = result.data
+			await refreshBusinessMetricCounts()
 			showToast('工作台已刷新')
 		} else {
 			showToast(result.message != null ? String(result.message) : '工作台刷新失败')
@@ -599,8 +1606,32 @@ const refreshManagementCenter = async () => {
 }
 
 const handleManagementCenterAction = (name: string) => {
+	if (name == 'metric:pending_introduction') {
+		openWorkspace('待我牵线', 'match', '待牵线')
+		return
+	}
+	if (name == 'metric:introduction_succeeded') {
+		openWorkspace('牵线成功', 'match', '成功')
+		return
+	}
+	if (name == 'metric:meeting_requests') {
+		openWorkspace('约见申请', 'meeting', '处理中')
+		return
+	}
+	if (name == 'metric:pending_meeting') {
+		openWorkspace('待见面', 'meeting', '待见面')
+		return
+	}
 	if (name == '资料待审') {
-		openPendingReview()
+		openPendingReview('PENDING')
+		return
+	}
+	if (name == '查看全部会员') {
+		openPendingReview('')
+		return
+	}
+	if (name == '查看我服务的' || name == '我服务的') {
+		openPendingReview('mine')
 		return
 	}
 	if (name == '分成明细' || name == '查看分成明细' || name == '财务明细' || name == '查看财务明细') {
@@ -615,7 +1646,11 @@ const handleManagementCenterAction = (name: string) => {
 		openWorkspace('客源线索', 'lead')
 		return
 	}
-	if (name.indexOf('牵线') >= 0 || name.indexOf('约见') >= 0 || name.indexOf('约会') >= 0 || name == '添加牵线' || name == '安排约见') {
+	if (name.indexOf('约见') >= 0 || name.indexOf('约会') >= 0 || name == '安排约见') {
+		openWorkspace(name.indexOf('约会') >= 0 ? '待见面' : '约见申请', 'meeting', name.indexOf('约会') >= 0 ? '待见面' : '')
+		return
+	}
+	if (name.indexOf('牵线') >= 0 || name == '添加牵线') {
 		openWorkspace(name == '查看牵线记录' ? '牵线管理' : name, 'match')
 		return
 	}
@@ -964,25 +1999,27 @@ const submitApplication = async () => {
 }
 
 /* ===== 滚动区域 ===== */
-.workspace-scroller { flex: 1; height: 0; background: var(--review-canvas); }
-.workspace-content { min-height: 100%; padding: 20rpx 22rpx 130rpx; background: var(--review-canvas); }
+.workspace-scroller { flex: 1; height: 0; background: var(--canvas); }
+.workspace-content { min-height: 100%; padding: 20rpx 22rpx 130rpx; background: var(--canvas); }
 .workspace-heading { padding: 8rpx 4rpx 18rpx; display: flex; flex-direction: column; gap: 5rpx; }
 .workspace-title { font-size: 32rpx; font-weight: 800; color: var(--ink); }.workspace-copy,.workspace-muted { font-size: 20rpx; color: var(--muted); }
-.workspace-tabs { height: 74rpx; display: flex; background: var(--surface); border-radius: 18rpx 18rpx 0 0; }.workspace-tab { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; font-size: 21rpx; white-space: nowrap; }.workspace-tab.active { color: var(--review-deep); font-weight: 800; }.workspace-tab.active:after { content: ''; position: absolute; bottom: 0; width: 42rpx; height: 6rpx; border-radius: 99rpx; background: var(--review-purple); }
-.workspace-search { height: 70rpx; margin: 18rpx 0; padding: 0 7rpx 0 18rpx; background: var(--surface); border-radius: 18rpx; display: flex; align-items: center; gap: 10rpx; font-size: 30rpx; color: var(--muted); }.workspace-search input { flex: 1; min-width: 0; font-size: 22rpx; color: var(--ink); }.workspace-search > view { width: 92rpx; height: 56rpx; border-radius: 14rpx; background: var(--review-purple); color: var(--surface); display: flex; align-items: center; justify-content: center; font-size: 21rpx; }
-.workspace-cash { min-height: 254rpx; padding: 30rpx; position: relative; border-radius: 28rpx; background: var(--review-pink); display: flex; flex-direction: column; gap: 12rpx; color: var(--ink2); font-size: 23rpx; }.workspace-cash-value { font-size: 56rpx; color: var(--ink); font-weight: 800; }.workspace-cash > view { position: absolute; top: 40rpx; right: 26rpx; padding: 14rpx 24rpx; border-radius: 999rpx; background: var(--surface); color: var(--review-deep); font-size: 21rpx; font-weight: 800; }
-.workspace-notice,.workspace-promotion { margin-top: 20rpx; padding: 22rpx; border-radius: 24rpx; background: var(--surface); display: flex; flex-direction: column; gap: 10rpx; color: var(--ink2); font-size: 21rpx; line-height: 1.55; }.workspace-notice-title { font-size: 25rpx; color: var(--ink); font-weight: 800; }.workspace-promotion { background: var(--review-lilac); color: var(--review-deep); font-weight: 800; }.workspace-promotion > view { display: flex; gap: 12rpx; }.workspace-promotion > view text { flex: 1; padding: 12rpx 8rpx; border-radius: 999rpx; background: var(--surface); text-align: center; font-size: 19rpx; }
-.workspace-commission-row { margin-top: 18rpx; color: var(--muted); font-size: 20rpx; }.workspace-commission-row > view { margin-top: 8rpx; padding: 20rpx; border-radius: 22rpx; background: var(--surface); display: flex; align-items: center; gap: 16rpx; }.workspace-commission-row image,.workspace-member-header image,.workspace-match-person image { width: 60rpx; height: 60rpx; border-radius: 50%; }.workspace-commission-row > view > view { flex: 1; display: flex; flex-direction: column; gap: 4rpx; color: var(--ink); font-size: 21rpx; }.workspace-commission-row > view > view text:last-child { color: var(--muted); font-size: 19rpx; }.workspace-commission-row > view > text:last-child { color: var(--review-danger); font-size: 27rpx; font-weight: 800; }
-.workspace-info-card,.workspace-match-card { margin-top: 18rpx; padding: 22rpx; border-radius: 25rpx; background: var(--surface); display: flex; flex-direction: column; gap: 16rpx; color: var(--ink); font-size: 28rpx; font-weight: 800; }.workspace-info-card > view:not(.workspace-actions):not(.workspace-member-header) { padding-bottom: 13rpx; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; color: var(--ink2); font-size: 21rpx; font-weight: 400; }.workspace-info-card > view:not(.workspace-actions):not(.workspace-member-header) text:last-child { color: var(--ink); }.workspace-actions { display: flex; gap: 9rpx; }.workspace-actions text { flex: 1; padding: 12rpx 4rpx; border-radius: 10rpx; background: var(--review-soft); color: var(--review-deep); text-align: center; font-size: 18rpx; font-weight: 400; }
-.workspace-filter-note { padding: 12rpx; color: var(--review-deep); font-size: 22rpx; }.workspace-match-card { font-size: 21rpx; font-weight: 400; }.workspace-match-card > view:first-child { display: flex; justify-content: space-between; color: var(--muted); }.workspace-match-card > view:first-child text:last-child { color: var(--review-orange); }.workspace-match-person { min-height: 64rpx; display: flex; align-items: center; gap: 14rpx; }.workspace-match-person > view { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }.workspace-match-person > view text:last-child { color: var(--muted); font-size: 19rpx; }.workspace-match-person > text { padding: 10rpx; border-radius: 9rpx; background: var(--review-lilac); color: var(--review-deep); font-size: 18rpx; }
+.workspace-tabs { height: 74rpx; display: flex; background: var(--surface); border-radius: 20rpx 20rpx 0 0; }.workspace-tab { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; font-size: 21rpx; white-space: nowrap; }.workspace-tab.active { color: var(--accent2); font-weight: 800; }.workspace-tab.active:after { content: ''; position: absolute; bottom: 0; width: 42rpx; height: 6rpx; border-radius: 99rpx; background: var(--accent); }
+.workspace-search { height: 70rpx; margin: 18rpx 0; padding: 0 7rpx 0 18rpx; border: 1rpx solid var(--line); background: var(--surface); border-radius: 14rpx; display: flex; align-items: center; gap: 10rpx; font-size: 30rpx; color: var(--muted); box-shadow: var(--shadow-sm); }.workspace-search input { flex: 1; min-width: 0; font-size: 22rpx; color: var(--ink); }.workspace-search-submit { width: 92rpx; height: 56rpx; border-radius: 14rpx; background: var(--accent); color: var(--paper); display: flex; align-items: center; justify-content: center; }.workspace-search-glyph { font-size: 34rpx; line-height: 1; font-weight: 700; color: inherit; }
+.workspace-cash { min-height: 254rpx; padding: 30rpx; position: relative; border-radius: 20rpx; background: var(--accent-bg); display: flex; flex-direction: column; gap: 12rpx; color: var(--ink2); font-size: 23rpx; }.workspace-cash-value { font-size: 56rpx; color: var(--ink); font-weight: 800; }.workspace-cash > view { position: absolute; top: 40rpx; right: 26rpx; padding: 14rpx 24rpx; border-radius: 999rpx; background: var(--surface); color: var(--accent2); font-size: 21rpx; font-weight: 800; }
+.workspace-notice,.workspace-promotion { margin-top: 20rpx; padding: 22rpx; border-radius: 20rpx; background: var(--surface); display: flex; flex-direction: column; gap: 10rpx; color: var(--ink2); font-size: 21rpx; line-height: 1.55; box-shadow: var(--shadow-sm); }.workspace-notice-title { font-size: 25rpx; color: var(--ink); font-weight: 800; }.workspace-promotion { background: var(--sage-soft); color: var(--accent2); font-weight: 800; }.workspace-promotion > view { display: flex; gap: 12rpx; }.workspace-promotion > view text { flex: 1; padding: 12rpx 8rpx; border-radius: 999rpx; background: var(--surface); text-align: center; font-size: 19rpx; }
+.workspace-commission-row { margin-top: 18rpx; color: var(--muted); font-size: 20rpx; }.workspace-commission-row > view { margin-top: 8rpx; padding: 20rpx; border-radius: 20rpx; background: var(--surface); display: flex; align-items: center; gap: 16rpx; box-shadow: var(--shadow-sm); }.workspace-commission-row image,.workspace-member-header image,.workspace-match-person image { width: 60rpx; height: 60rpx; border-radius: 50%; }.workspace-commission-row > view > view { flex: 1; display: flex; flex-direction: column; gap: 4rpx; color: var(--ink); font-size: 21rpx; }.workspace-commission-row > view > view text:last-child { color: var(--muted); font-size: 19rpx; }.workspace-commission-row > view > text:last-child { color: var(--accent2); font-size: 27rpx; font-weight: 800; }
+.workspace-info-card,.workspace-match-card { margin-top: 18rpx; padding: 22rpx; border-radius: 20rpx; background: var(--surface); display: flex; flex-direction: column; gap: 16rpx; color: var(--ink); font-size: 28rpx; font-weight: 800; box-shadow: var(--shadow-sm); }.workspace-info-card > view:not(.workspace-actions):not(.workspace-member-header) { padding-bottom: 13rpx; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; color: var(--ink2); font-size: 21rpx; font-weight: 400; }.workspace-info-card > view:not(.workspace-actions):not(.workspace-member-header) text:last-child { color: var(--ink); }.workspace-actions { display: flex; gap: 9rpx; }.workspace-actions text { flex: 1; padding: 12rpx 4rpx; border-radius: 14rpx; background: var(--warm); color: var(--accent2); text-align: center; font-size: 18rpx; font-weight: 700; }
+.workspace-state { margin-top: 18rpx; min-height: 180rpx; padding: 28rpx; border-radius: 20rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 18rpx; color: var(--muted); font-size: 22rpx; box-shadow: var(--shadow-sm); }.workspace-state-action { padding: 12rpx 24rpx; border-radius: 999rpx; background: var(--sage-soft); color: var(--accent2); font-size: 21rpx; font-weight: 700; }
+.workspace-filter-note { padding: 12rpx; color: var(--accent2); font-size: 22rpx; line-height: 1.5; }.workspace-demo-notice { margin: 4rpx 12rpx 12rpx; padding: 12rpx 14rpx; border-radius: 14rpx; background: var(--accent-bg); color: var(--accent2); font-size: 19rpx; line-height: 1.45; }.workspace-match-card { font-size: 21rpx; font-weight: 400; }.workspace-match-card-top { display: flex; justify-content: space-between; align-items: center; color: var(--muted); }.workspace-match-status { padding: 7rpx 13rpx; border-radius: 999rpx; font-size: 18rpx; font-weight: 800; line-height: 1.2; }.workspace-match-status-pending { background: var(--accent-bg); color: var(--accent2); }.workspace-match-status-progress { background: var(--match-sky); color: var(--match-deep); }.workspace-match-status-succeeded { background: var(--sage-soft); color: var(--sage); }.workspace-match-status-failed { background: var(--match-blush); color: var(--match-coral); }.workspace-match-person { min-height: 64rpx; display: flex; align-items: center; gap: 14rpx; }.workspace-match-person > view { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }.workspace-match-person > view text:first-child { color: var(--ink); font-size: 23rpx; font-weight: 700; }.workspace-match-person > view text:last-child { color: var(--muted); font-size: 19rpx; }.workspace-match-reason { padding: 14rpx; border-radius: 14rpx; background: var(--match-blush); color: var(--ink2); font-size: 20rpx; line-height: 1.5; }.workspace-match-owner { color: var(--muted); font-size: 19rpx; }
+.workspace-meeting-overview { margin-top: 4rpx; padding: 21rpx 22rpx; border-radius: 20rpx; background: var(--match-mist); display: flex; flex-direction: column; gap: 8rpx; color: var(--accent2); font-size: 20rpx; line-height: 1.45; }.workspace-meeting-overview > view { display: flex; align-items: baseline; gap: 12rpx; }.workspace-meeting-overview-value { color: var(--match-deep); font-family: var(--serif); font-size: 48rpx; line-height: 1; font-weight: 700; }.workspace-meeting-overview-label { color: var(--ink2); font-size: 22rpx; font-weight: 700; }.workspace-meeting-card { margin-top: 18rpx; padding: 22rpx; border-radius: 20rpx; background: var(--match-paper); display: flex; flex-direction: column; gap: 18rpx; box-shadow: var(--match-shadow); }.workspace-meeting-card-top { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 19rpx; }.workspace-meeting-status { padding: 7rpx 13rpx; border-radius: 999rpx; font-size: 18rpx; font-weight: 800; line-height: 1.2; }.workspace-meeting-status-submitted { background: var(--accent-bg); color: var(--accent2); }.workspace-meeting-status-processing { background: var(--match-sky); color: var(--match-deep); }.workspace-meeting-status-upcoming { background: var(--sage-soft); color: var(--sage); }.workspace-meeting-status-completed { background: var(--match-mist); color: var(--accent2); }.workspace-meeting-status-ended { background: var(--match-blush); color: var(--match-coral); }.workspace-meeting-pair { padding: 18rpx 0; border-top: 1rpx solid var(--match-line); border-bottom: 1rpx solid var(--match-line); display: flex; align-items: center; gap: 10rpx; }.workspace-meeting-person { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10rpx; }.workspace-meeting-person image { width: 58rpx; height: 58rpx; border-radius: 50%; flex-shrink: 0; }.workspace-meeting-person > view { min-width: 0; display: flex; flex-direction: column; gap: 3rpx; }.workspace-meeting-person > view text:first-child { color: var(--ink); font-size: 22rpx; font-weight: 800; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }.workspace-meeting-person > view text:last-child { color: var(--muted); font-size: 18rpx; }.workspace-meeting-link { width: 58rpx; height: 38rpx; border-radius: 999rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; color: var(--accent2); font-size: 17rpx; font-weight: 800; flex-shrink: 0; }.workspace-meeting-arrangement { padding: 16rpx; border-radius: 14rpx; background: var(--surface); display: flex; flex-direction: column; gap: 8rpx; }.workspace-meeting-arrangement > text { color: var(--accent2); font-size: 19rpx; font-weight: 800; }.workspace-meeting-arrangement > view { display: flex; justify-content: space-between; gap: 14rpx; color: var(--ink2); font-size: 20rpx; }.workspace-meeting-arrangement > view text:last-child { flex: 1; min-width: 0; text-align: right; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }.workspace-meeting-detail { color: var(--ink2); font-size: 20rpx; line-height: 1.5; }.workspace-meeting-time { color: var(--muted); font-size: 18rpx; }
 .workspace-member-header { display: flex; align-items: center; gap: 15rpx; }.workspace-member-header > view { display: flex; flex-direction: column; gap: 6rpx; color: var(--muted); font-size: 20rpx; font-weight: 400; }.workspace-member-header > view text:first-child { color: var(--ink); font-size: 28rpx; font-weight: 800; }
-.workspace-entry-card { margin-top: 18rpx; padding: 26rpx; border-radius: 25rpx; background: var(--surface); display: flex; flex-direction: column; gap: 18rpx; color: var(--ink); font-size: 28rpx; font-weight: 800; }.workspace-entry-card > view:not(.workspace-entry-submit) { min-height: 72rpx; padding-bottom: 12rpx; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 20rpx; color: var(--ink2); font-size: 22rpx; font-weight: 400; }.workspace-entry-card input { flex: 1; text-align: right; font-size: 22rpx; color: var(--ink); }.workspace-entry-submit { height: 72rpx; border-radius: 999rpx; background: var(--review-pink); display: flex; align-items: center; justify-content: center; color: var(--ink); font-size: 24rpx; font-weight: 800; }
-.workspace-generic-card { margin-top: 18rpx; padding: 24rpx; border-radius: 22rpx; background: var(--surface); display: flex; align-items: center; gap: 16rpx; }.workspace-generic-card > view:first-child { width: 58rpx; height: 58rpx; border-radius: 16rpx; background: var(--review-lilac); color: var(--review-deep); display: flex; align-items: center; justify-content: center; font-size: 25rpx; }.workspace-generic-card > view:nth-child(2) { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }.workspace-generic-card > view:nth-child(2) text:first-child { font-size: 24rpx; font-weight: 800; }.workspace-generic-card > view:nth-child(2) text:last-child { color: var(--muted); font-size: 18rpx; }.workspace-generic-card > text:last-child { color: var(--review-deep); font-size: 20rpx; }
-.workspace-add { position: fixed; right: 22rpx; bottom: 38rpx; width: 84rpx; height: 84rpx; border-radius: 50%; background: var(--review-pink); display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--ink); font-size: 17rpx; font-weight: 800; box-shadow: var(--shadow-sm); }.workspace-add text:first-child { font-size: 30rpx; line-height: 28rpx; }
+.workspace-entry-card { margin-top: 18rpx; padding: 26rpx; border-radius: 20rpx; background: var(--surface); display: flex; flex-direction: column; gap: 18rpx; color: var(--ink); font-size: 28rpx; font-weight: 800; box-shadow: var(--shadow-sm); }.workspace-entry-card > view:not(.workspace-entry-submit) { min-height: 72rpx; padding-bottom: 12rpx; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 20rpx; color: var(--ink2); font-size: 22rpx; font-weight: 400; }.workspace-entry-card input { flex: 1; text-align: right; font-size: 22rpx; color: var(--ink); }.workspace-entry-submit { height: 72rpx; border-radius: 999rpx; background: var(--accent); display: flex; align-items: center; justify-content: center; color: var(--paper); font-size: 24rpx; font-weight: 800; }
+.workspace-generic-card { margin-top: 18rpx; padding: 24rpx; border-radius: 20rpx; background: var(--surface); display: flex; align-items: center; gap: 16rpx; box-shadow: var(--shadow-sm); }.workspace-generic-card > view:first-child { width: 58rpx; height: 58rpx; border-radius: 14rpx; background: var(--accent-bg); color: var(--accent2); display: flex; align-items: center; justify-content: center; font-size: 25rpx; }.workspace-generic-card > view:nth-child(2) { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }.workspace-generic-card > view:nth-child(2) text:first-child { font-size: 24rpx; font-weight: 800; }.workspace-generic-card > view:nth-child(2) text:last-child { color: var(--muted); font-size: 18rpx; }.workspace-generic-card > text:last-child { color: var(--accent2); font-size: 20rpx; }
+.workspace-add { position: fixed; right: 22rpx; bottom: 38rpx; width: 84rpx; height: 84rpx; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; color: var(--paper); font-size: 17rpx; font-weight: 800; box-shadow: var(--shadow-sm); }.workspace-add text:first-child { font-size: 30rpx; line-height: 28rpx; }
 
 /* 微信小程序 uvue 必须显式标记横向 flex，避免文字与操作按钮纵向叠压。 */
-.workspace-tabs, .workspace-search, .workspace-promotion > view, .workspace-commission-row > view, .workspace-info-card > view:not(.workspace-actions):not(.workspace-member-header), .workspace-actions, .workspace-match-card > view:first-child, .workspace-match-person, .workspace-member-header, .workspace-entry-card > view:not(.workspace-entry-submit), .workspace-generic-card { flex-direction: row; }
-.workspace-tabs, .workspace-search, .workspace-actions, .workspace-match-person, .workspace-member-header, .workspace-generic-card { min-width: 0; }
+.workspace-tabs, .workspace-search, .workspace-promotion > view, .workspace-commission-row > view, .workspace-info-card > view:not(.workspace-actions):not(.workspace-member-header), .workspace-actions, .workspace-match-card-top, .workspace-match-person, .workspace-meeting-card-top, .workspace-meeting-pair, .workspace-meeting-person, .workspace-meeting-arrangement > view, .workspace-member-header, .workspace-entry-card > view:not(.workspace-entry-submit), .workspace-generic-card { flex-direction: row; }
+.workspace-tabs, .workspace-search, .workspace-actions, .workspace-match-person, .workspace-meeting-pair, .workspace-meeting-person, .workspace-member-header, .workspace-generic-card { min-width: 0; }
 .workspace-info-card > view, .workspace-match-person > view, .workspace-member-header > view, .workspace-generic-card > view { min-width: 0; }
 
 .page-scroller {
@@ -1751,5 +2788,438 @@ const submitApplication = async () => {
 
 .submit-button.disabled {
 	opacity: 0.56;
+}
+
+/* ===== 客源线索工作台 ===== */
+.workspace-lead-toolbar {
+	margin-top: 14rpx;
+	display: flex;
+	flex-direction: row;
+	gap: 10rpx;
+}
+
+.workspace-lead-tool {
+	flex: 1;
+	min-height: 66rpx;
+	padding: 0 8rpx;
+	border: 1px solid var(--match-line);
+	border-radius: 12rpx;
+	background: var(--surface);
+	color: var(--ink2);
+	text-align: center;
+	font-size: 22rpx;
+	font-weight: 700;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.workspace-lead-tool.active {
+	background: var(--match-mist);
+	border-color: var(--accent);
+	color: var(--accent2);
+}
+
+.workspace-lead-tool.primary {
+	background: var(--match-deep);
+	border-color: var(--match-deep);
+	color: var(--paper);
+}
+
+.workspace-lead-card {
+	margin-top: 14rpx;
+	padding: 22rpx 20rpx 16rpx;
+	border: 1px solid var(--match-line);
+	border-radius: 16rpx;
+	background: var(--match-paper);
+	display: flex;
+	flex-direction: column;
+	gap: 12rpx;
+	box-shadow: var(--match-shadow);
+}
+
+.workspace-lead-card .workspace-actions {
+	padding-top: 12rpx;
+	border-top: 1px solid var(--match-line);
+	flex-wrap: wrap;
+}
+
+.workspace-lead-card .workspace-actions text {
+	flex: 1 1 30%;
+	min-width: 29%;
+	padding: 12rpx 6rpx;
+	border-radius: 10rpx;
+	background: var(--match-mist);
+	color: var(--accent2);
+	font-size: 19rpx;
+	font-weight: 700;
+	text-align: center;
+}
+
+.workspace-lead-top {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: flex-start;
+	min-width: 0;
+}
+
+.workspace-lead-name {
+	display: flex;
+	flex-direction: row;
+	align-items: baseline;
+	gap: 10rpx;
+	min-width: 0;
+}
+
+.workspace-lead-title {
+	color: var(--ink);
+	font-size: 32rpx;
+	font-weight: 800;
+}
+
+.workspace-lead-age {
+	color: var(--muted);
+	font-size: 21rpx;
+}
+
+.workspace-lead-time {
+	color: var(--muted);
+	font-size: 19rpx;
+}
+
+.workspace-lead-rows {
+	display: flex;
+	flex-direction: column;
+}
+
+.workspace-lead-rows > view {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	padding: 11rpx 0;
+	border-bottom: 1px solid var(--match-line);
+	color: var(--ink2);
+	font-size: 22rpx;
+	min-width: 0;
+}
+
+.workspace-lead-rows > view:last-child {
+	border-bottom: none;
+}
+
+.workspace-lead-rows > view text:last-child {
+	color: var(--ink);
+	font-weight: 600;
+	text-align: right;
+	max-width: 72%;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.workspace-lead-status-new {
+	color: var(--accent2) !important;
+}
+
+.workspace-lead-status-ok {
+	color: var(--accent2) !important;
+}
+
+.workspace-lead-status-warn {
+	color: var(--match-coral) !important;
+}
+
+.workspace-lead-status-muted {
+	color: var(--muted) !important;
+}
+
+.workspace-lead-stale {
+	color: var(--match-coral) !important;
+	font-weight: 700 !important;
+}
+
+.workspace-lead-click-row {
+	min-height: 48rpx;
+}
+
+.workspace-lead-intention {
+	color: var(--accent2) !important;
+}
+
+/* 跟进记录面板 */
+.workspace-follow-head {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 14rpx;
+	padding: 2rpx 0 16rpx;
+}
+
+.workspace-follow-back {
+	color: var(--accent2);
+	font-size: 24rpx;
+	font-weight: 700;
+}
+
+.workspace-follow-title {
+	color: var(--ink);
+	font-size: 28rpx;
+	font-weight: 800;
+}
+
+.workspace-follow-list {
+	display: flex;
+	flex-direction: column;
+	gap: 14rpx;
+}
+
+.workspace-follow-item {
+	padding: 20rpx;
+	border-radius: 16rpx;
+	background: var(--match-mist);
+	border: 1px solid var(--match-line);
+	display: flex;
+	flex-direction: column;
+	gap: 10rpx;
+}
+
+.workspace-follow-item-top {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+}
+
+.workspace-follow-method {
+	color: var(--accent2);
+	font-size: 21rpx;
+	font-weight: 800;
+}
+
+.workspace-follow-time {
+	color: var(--muted);
+	font-size: 20rpx;
+}
+
+.workspace-follow-content {
+	color: var(--ink);
+	font-size: 24rpx;
+	line-height: 1.5;
+}
+
+.workspace-follow-intention {
+	color: var(--muted);
+	font-size: 20rpx;
+}
+
+.workspace-follow-form {
+	margin-top: 20rpx;
+	padding: 22rpx;
+	border-radius: 16rpx;
+	background: var(--match-paper);
+	border: 1px solid var(--match-line);
+	display: flex;
+	flex-direction: column;
+	gap: 14rpx;
+	box-shadow: var(--shadow-sm);
+}
+
+.workspace-follow-form-title {
+	color: var(--ink);
+	font-size: 24rpx;
+	font-weight: 800;
+}
+
+.workspace-follow-methods {
+	display: flex;
+	flex-direction: row;
+	gap: 10rpx;
+	flex-wrap: wrap;
+}
+
+.workspace-follow-method-chip {
+	padding: 10rpx 24rpx;
+	border-radius: 999rpx;
+	background: var(--surface);
+	border: 1px solid var(--match-line);
+	color: var(--ink2);
+	font-size: 21rpx;
+	font-weight: 700;
+}
+
+.workspace-follow-method-chip.active {
+	background: var(--match-deep);
+	border-color: var(--match-deep);
+	color: var(--paper);
+}
+
+.workspace-follow-textarea {
+	width: 100%;
+	min-height: 110rpx;
+	padding: 16rpx;
+	border-radius: 12rpx;
+	background: var(--surface);
+	border: 1px solid var(--match-line);
+	color: var(--ink);
+	font-size: 23rpx;
+	box-sizing: border-box;
+}
+
+.workspace-follow-submit {
+	padding: 16rpx 0;
+	border-radius: 14rpx;
+	background: var(--match-deep);
+	color: var(--paper);
+	text-align: center;
+	font-size: 24rpx;
+	font-weight: 800;
+}
+
+/* 底部弹层内容 */
+.workspace-option-list {
+	display: flex;
+	flex-direction: column;
+}
+
+.workspace-option {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 24rpx 8rpx;
+	border-bottom: 1px solid var(--line);
+	color: var(--ink);
+	font-size: 26rpx;
+	font-weight: 600;
+}
+
+.workspace-option.selected {
+	color: var(--accent2);
+}
+
+.workspace-option-check {
+	color: var(--accent2);
+	font-weight: 800;
+}
+
+.workspace-filter-group {
+	margin-bottom: 20rpx;
+}
+
+.workspace-filter-label {
+	display: block;
+	color: var(--muted);
+	font-size: 21rpx;
+	margin-bottom: 12rpx;
+}
+
+.workspace-filter-chips {
+	display: flex;
+	flex-direction: row;
+	gap: 10rpx;
+	flex-wrap: wrap;
+}
+
+.workspace-filter-chip {
+	padding: 10rpx 26rpx;
+	border-radius: 999rpx;
+	background: var(--surface);
+	border: 1px solid var(--match-line);
+	color: var(--ink2);
+	font-size: 21rpx;
+	font-weight: 700;
+}
+
+.workspace-filter-chip.active {
+	background: var(--match-mist);
+	border-color: var(--accent);
+	color: var(--accent2);
+}
+
+.intention-filter-chip {
+	max-width: 100%;
+	padding-left: 16rpx;
+	padding-right: 16rpx;
+	font-size: 19rpx;
+}
+
+.workspace-sheet-actions {
+	display: flex;
+	flex-direction: row;
+	gap: 12rpx;
+	margin-top: 10rpx;
+}
+
+.workspace-sheet-btn {
+	flex: 1;
+	padding: 16rpx 0;
+	border-radius: 14rpx;
+	background: var(--match-deep);
+	color: var(--paper);
+	text-align: center;
+	font-size: 24rpx;
+	font-weight: 800;
+}
+
+.workspace-sheet-btn.ghost {
+	background: var(--surface);
+	border: 1px solid var(--match-line);
+	color: var(--accent2);
+}
+
+.workspace-sheet-btn.disabled {
+	opacity: 0.56;
+}
+
+/* 线索表单与确认 */
+.workspace-lead-form,
+.workspace-lead-confirm {
+	display: flex;
+	flex-direction: column;
+	gap: 16rpx;
+}
+
+.workspace-form-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 14rpx;
+	padding: 14rpx 0;
+	border-bottom: 1px solid var(--line);
+}
+
+.workspace-form-row text {
+	width: 76rpx;
+	color: var(--ink2);
+	font-size: 22rpx;
+	flex-shrink: 0;
+}
+
+.workspace-form-row input {
+	flex: 1;
+	color: var(--ink);
+	font-size: 24rpx;
+}
+
+.workspace-form-error {
+	color: var(--match-coral);
+	font-size: 21rpx;
+}
+
+.workspace-confirm-tip {
+	color: var(--ink2);
+	font-size: 23rpx;
+	line-height: 1.5;
+}
+
+.workspace-confirm-gender {
+	display: flex;
+	flex-direction: column;
+	gap: 12rpx;
+}
+
+.workspace-confirm-gender > text {
+	color: var(--muted);
+	font-size: 21rpx;
 }
 </style>
