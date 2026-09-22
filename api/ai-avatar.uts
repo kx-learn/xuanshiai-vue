@@ -230,7 +230,8 @@ function normalizeServerDashboard(raw: any): any {
 async function loadServerConversation(ownerId: number, profile: any): Promise<any> {
   const res = await request({
     url: '/ai-avatars/' + ownerId + '/conversations',
-    method: 'GET'
+    method: 'GET',
+    timeout: 60000
   })
   if (!res.success || res.data == null) return res
   const rows = mapServerMessages(res.data, profile)
@@ -243,7 +244,8 @@ async function sendServerMessage(ownerId: number, content: string, idempotencyKe
     url: '/ai-avatars/' + ownerId + '/messages',
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
-    data: { content: content }
+    data: { content: content },
+    timeout: 60000
   })
 }
 
