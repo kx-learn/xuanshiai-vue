@@ -191,7 +191,7 @@ try {
   const checks = [
     ['军师接口封装', apiContent.includes('/ai/advisor/sessions') && apiContent.includes('/advice')],
     ['结构化建议 Mock', mockContent.includes('suggestions') && mockContent.includes('risk_level')],
-    ['聊天页入口', chatContent.includes('openAiAdvisor') && chatContent.includes('AI军师')],
+    ['聊天页入口', chatContent.includes('openAiAdvisor') && chatContent.includes('问知遇')],
     ['场景和语气选择', sheetContent.includes('ADVISOR_SCENARIOS') && sheetContent.includes('ADVISOR_TONES')],
     ['复制而不自动发送', sheetContent.includes('setClipboardData') && !sheetContent.includes('sendMessageApi')],
     ['错误状态处理', sheetContent.includes('advisorErrorMessage') && sheetContent.includes('errorMessage')]

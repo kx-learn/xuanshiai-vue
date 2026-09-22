@@ -619,16 +619,16 @@
 				</view>
 			</view>
 
-			<!-- AI分身悬浮按钮（仅推荐页显示）：3D 小猫形象，与当前展示用户的AI分身聊天 -->
-			<view v-if="currentTab === 0 && canShowRecommendUsers" class="ai-float-btn" @click="openAiAvatarForCurrentUser">
-				<image class="ai-float-cat" src="/static/ai-cat/ai-cat.webp" mode="aspectFit"></image>
+			<!-- 知遇悬浮入口（仅推荐页显示）：点开聚合能力，不直接进分身 -->
+			<view v-if="currentTab === 0 && canShowRecommendUsers" class="ai-float-btn" @click="openZhiyuHub">
+				<XsaZhiyuMark size="112rpx" />
 			</view>
-			<!-- 小猫说话气泡：随机 3~6 秒自动弹出，点击气泡进 AI 分身，× 关闭后本次会话不再弹出 -->
+			<!-- 知遇说话气泡：随机 3~6 秒自动弹出，点击气泡打开聚合面板，× 关闭后本次会话不再弹出 -->
 			<XsaAiCatBubble
 				:active="currentTab === 0 && canShowRecommendUsers"
 				right="112rpx"
-				bottom="506rpx"
-				@tap="openAiAvatarForCurrentUser"
+				bottom="560rpx"
+				@tap="openZhiyuHub"
 			/>
 		</view>
 
@@ -644,6 +644,13 @@
 			:other-mbti="aiOtherMbti"
 			:score="aiScore"
 			@close="aiVisible = false"
+			@close="aiVisible = false"
+		/>
+		<XsaZhiyuHub
+			:visible="zhiyuHubVisible"
+			:actions="zhiyuHubActions"
+			@close="zhiyuHubVisible = false"
+			@select="onZhiyuHubSelect"
 		/>
 
 		<!-- 申请认识：统一 XsaApplySheet（与社区同源） -->
@@ -729,6 +736,8 @@
 	import XsaTabBar from '@/components/XsaTabBar.uvue'
 	import XsaAiMatchSheet from '@/components/XsaAiMatchSheet.uvue'
 	import XsaAiCatBubble from '@/components/XsaAiCatBubble.uvue'
+	import XsaZhiyuMark from '@/components/XsaZhiyuMark.uvue'
+	import XsaZhiyuHub from '@/components/XsaZhiyuHub.uvue'
 	import { getEmotionLabSummary } from '@/api/emotionLab.uts'
 	import { guardRealName } from '@/utils/realNameGate.uts'
 	import { likeUser, blockUser, unblockUser, saveAiAvatarProfileSnapshot } from '@/api'
@@ -1126,6 +1135,27 @@
 		const goPostDetail = (postId: number) => {
 			uni.navigateTo({ url: '/pagesSub/community/post-detail?id=' + postId })
 		}
+
+	// ========== 知遇聚合入口 ==========
+	const zhiyuHubVisible = ref(false)
+	const zhiyuHubActions = [
+		{ key: 'avatar', glyph: '聊', title: '和 TA 的分身聊聊', desc: '先看公开资料，不冒充本人，对方不会收到提醒' },
+		{ key: 'self', glyph: '己', title: '与知遇聊聊', desc: '用对话认识自己和期待的关系' },
+		{ key: 'match', glyph: '合', title: '看看合拍度', desc: '整理交集和破冰建议，仅供参考' },
+		{ key: 'search', glyph: '寻', title: '帮我找找', desc: '按条件筛选，结果仍由你自己判断' }
+	]
+	const openZhiyuHub = () => { zhiyuHubVisible.value = true }
+	const onZhiyuHubSelect = (key: string) => {
+		zhiyuHubVisible.value = false
+		if (key == 'avatar') openAiAvatarForCurrentUser()
+		else if (key == 'self') {
+			uni.navigateTo({
+				url: '/pagesSub/profileExtra/my-portrait-master',
+				fail: () => { showToast('知遇页面打开失败，请重试') }
+			})
+		} else if (key == 'match') showAiScore()
+		else if (key == 'search') onSearch()
+	}
 
 	// ========== AI 匹配度（MBTI 配对解析小窗） ==========
 	const aiVisible = ref(false)
@@ -1548,8 +1578,7 @@
 .heart-icon { font-size: 52rpx; }
 
 /* ==================== AI悬浮按钮（3D 小猫形象，静态） ==================== */
-.ai-float-btn { position: fixed; right: 28rpx; bottom: 200rpx; width: 136rpx; height: 136rpx; z-index: 10; display: flex; align-items: center; justify-content: center; }
-.ai-float-cat { width: 136rpx; height: 136rpx; flex: none; }
+.ai-float-btn { position: fixed; right: 20rpx; bottom: 200rpx; width: 136rpx; z-index: 10; display: flex; align-items: center; justify-content: center; }
 
 /* ==================== AI解读文案 ==================== */
 .ai-interpret { display: flex; flex-direction: column; gap: 12rpx; padding: 24rpx; border-radius: var(--radius-md); background-color: var(--accent-soft); }

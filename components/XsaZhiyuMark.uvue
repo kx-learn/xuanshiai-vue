@@ -1,0 +1,52 @@
+<template>
+	<view class="zym" :class="compact ? 'zym-compact' : ''">
+		<image class="zym-cat" :style="{ width: size, height: size }" src="/static/ai-cat/ai-cat.webp" mode="aspectFit"></image>
+		<text v-if="showLabel" class="zym-label">知遇</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+/**
+ * XsaZhiyuMark - 知遇 IP 字标
+ * 全站 AI 入口共用同一只小猫 +「知遇」，不再另起吉祥物或名字。
+ * size 用行内样式控制边长，避免小程序样式 v-bind 不稳定。
+ */
+interface Props {
+	size?: string
+	showLabel?: boolean
+	compact?: boolean
+}
+
+withDefaults(defineProps<Props>(), {
+	size: '72rpx',
+	showLabel: true,
+	compact: false
+})
+</script>
+
+<style scoped>
+.zym {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2rpx;
+}
+
+.zym-cat {
+	flex: none;
+}
+
+.zym-label {
+	font-size: 22rpx;
+	line-height: 1.2;
+	font-weight: 700;
+	color: var(--accent2);
+	letter-spacing: 2rpx;
+}
+
+.zym-compact .zym-label {
+	font-size: 20rpx;
+	letter-spacing: 1rpx;
+}
+</style>

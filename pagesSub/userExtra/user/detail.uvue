@@ -37,7 +37,7 @@
 					<view v-if="user.moxiangPersonaTitle != '' || user.moxiangPersonaTags.length > 0" class="vip-section-card moxiang-section-card">
 						<view class="moxiang-card-header">
 							<view class="moxiang-header-title-group">
-								<text class="moxiang-seal-badge">墨</text>
+								<XsaZhiyuMark size="36rpx" :show-label="false" :compact="true" />
 								<text class="vip-section-title moxiang-card-title">知遇墨相 · 灵魂底色</text>
 							</view>
 							<view v-if="isOwnProfile" class="moxiang-view-report" @tap="onViewMyPortrait">
@@ -161,17 +161,17 @@
 			<view class="scroll-bottom-spacer" :class="{ 'spacer-matchmaker': fromMatchmaker }"></view>
 		</scroll-view>
 
-			<!-- AI分身悬浮按钮：3D 小猫形象（与首页同款），右下悬浮位；红娘代看模式隐藏 -->
-			<view v-if="!isOwnProfile && !isPreview && !fromMatchmaker && !detailLoading && detailError == ''" class="detail-ai-float" @tap="openAiAvatar">
-				<image class="detail-ai-float-cat" src="/static/ai-cat/ai-cat.webp" mode="aspectFit"></image>
+			<!-- 知遇悬浮入口：点开聚合能力；红娘代看模式隐藏 -->
+			<view v-if="!isOwnProfile && !isPreview && !fromMatchmaker && !detailLoading && detailError == ''" class="detail-ai-float" @tap="openZhiyuHub">
+				<XsaZhiyuMark size="112rpx" />
 			</view>
-			<view v-if="showAiGuide && !fromMatchmaker" class="ai-guide-bubble" @tap="dismissAiGuide"><text class="ai-guide-text">与对方的AI分身聊天获取更多信息</text></view>
-			<!-- 小猫说话气泡：引导气泡消失后才开始自动弹出，避免两块气泡打架；红娘代看模式隐藏 -->
+			<view v-if="showAiGuide && !fromMatchmaker" class="ai-guide-bubble" @tap="dismissAiGuide"><text class="ai-guide-text">点知遇，看看能怎么了解对方</text></view>
+			<!-- 知遇说话气泡：引导气泡消失后才开始自动弹出，避免两块气泡打架；红娘代看模式隐藏 -->
 			<XsaAiCatBubble
 				:active="!isOwnProfile && !isPreview && !fromMatchmaker && !detailLoading && detailError == '' && !showAiGuide"
 				right="112rpx"
-				bottom="calc(346rpx + env(safe-area-inset-bottom))"
-				@tap="openAiAvatar"
+				bottom="calc(400rpx + env(safe-area-inset-bottom))"
+				@tap="openZhiyuHub"
 			/>
 
 			<view v-if="isOwnProfile && !isPreview && !detailLoading && detailError == ''" class="bottom-bar bottom-bar-own">
@@ -201,7 +201,7 @@
 		<XsaPaymentSheet :visible="spotlightPaymentVisible" :amount="SPOTLIGHT_AMOUNT" :loading="spotlightPaying" confirm-text="确认支付爆灯" notice="爆灯 9.9 元/次：确认后展示爆灯成功状态。" @close="closeSpotlightPayment" @confirm="confirmSpotlightPayment" />
 		<XsaSpotlightSuccessSheet :visible="spotlightSuccessVisible" :target="spotlightTarget" @close="closeSpotlightSuccess" />
 
-		<XsaSheet :visible="matchVisible" title="AI 合拍度解读" @close="matchVisible = false">
+		<XsaSheet :visible="matchVisible" title="知遇 · 合拍度" @close="matchVisible = false">
 			<view class="match-sheet">
 				<view class="match-sheet-score"><text>{{ user.matchAvailable ? user.match + '%' : '暂无评分' }}</text></view>
 				<view class="match-interpret">
@@ -211,6 +211,12 @@
 				<view class="match-sheet-tip"><text>合拍度由系统按双方当前可见资料估算，供了解和破冰参考，不代表平台承诺结果。</text></view>
 			</view>
 		</XsaSheet>
+		<XsaZhiyuHub
+			:visible="zhiyuHubVisible"
+			:actions="zhiyuHubActions"
+			@close="zhiyuHubVisible = false"
+			@select="onZhiyuHubSelect"
+		/>
 	</view>
 </template>
 
@@ -221,6 +227,8 @@ import XsaPaymentSheet from '@/components/XsaPaymentSheet.uvue'
 import XsaSpotlightSuccessSheet from '@/components/XsaSpotlightSuccessSheet.uvue'
 import XsaSheet from '@/components/XsaSheet.uvue'
 import XsaAiCatBubble from '@/components/XsaAiCatBubble.uvue'
+import XsaZhiyuMark from '@/components/XsaZhiyuMark.uvue'
+import XsaZhiyuHub from '@/components/XsaZhiyuHub.uvue'
 import { getUserDetail, likeUser, getOwnProfile, getMyPosts, getMembershipStatus, getUserVisitorCount, saveAiAvatarProfileSnapshot, getDynamicList, getPortraitNarrative } from '@/api'
 import { resolveMediaUrl, getAccessToken } from '@/api/config.uts'
 import locationJson from '@/data/location.json'
@@ -734,6 +742,33 @@ const openAiAvatar = () => {
 		+ '&locked=' + (isLockedView.value ? 'true' : 'false')
 	uni.navigateTo({ url: url, fail: () => { uni.showToast({ title: 'AI 分身打开失败，请重试', icon: 'none' }) } })
 }
+const zhiyuHubVisible = ref(false)
+const zhiyuHubActions = [
+	{ key: 'avatar', glyph: '聊', title: '与对方的 AI 分身聊天', desc: '只看当前公开资料，不冒充本人，对方不会收到提醒' },
+	{ key: 'match', glyph: '合', title: '看看合拍度', desc: '整理交集和破冰建议，仅供参考' },
+	{ key: 'self', glyph: '己', title: '与知遇聊聊', desc: '用对话认识自己和期待的关系' },
+	{ key: 'search', glyph: '寻', title: '帮我找找', desc: '按条件筛选，结果仍由你自己判断' }
+]
+const openZhiyuHub = () => {
+	dismissAiGuide()
+	zhiyuHubVisible.value = true
+}
+const onZhiyuHubSelect = (key: string) => {
+	zhiyuHubVisible.value = false
+	if (key == 'avatar') openAiAvatar()
+	else if (key == 'match') matchVisible.value = true
+	else if (key == 'self') {
+		uni.navigateTo({
+			url: '/pagesSub/profileExtra/my-portrait-master',
+			fail: () => { uni.showToast({ title: '知遇页面打开失败，请重试', icon: 'none' }) }
+		})
+	} else if (key == 'search') {
+		uni.navigateTo({
+			url: '/pagesSub/profileExtra/search',
+			fail: () => { uni.showToast({ title: '搜索页面打开失败，请重试', icon: 'none' }) }
+		})
+	}
+}
 const onSpotlight = () => {
 	if (isOwnProfile.value) {
 		uni.showToast({ title: '不能向自己爆灯', icon: 'none' })
@@ -955,6 +990,7 @@ const onLike = async () => {
 /* 红娘查看会员主页：底部权限提示 + 编辑资料 / 红娘中心 */
 .mm-bar { position: fixed; z-index: 60; left: 0; right: 0; bottom: 0; display: flex; flex-direction: row; align-items: center; gap: 10rpx; padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom)); background-color: var(--surface); border-top: 1rpx solid var(--line); box-shadow: 0 -4rpx 20rpx rgba(17, 23, 24, 0.06); }
 .mm-bar-alert { width: 32rpx; height: 32rpx; border-radius: 8rpx; background-color: var(--match-blush); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.detail-ai-float { position: fixed; right: 20rpx; bottom: calc(200rpx + env(safe-area-inset-bottom)); width: 136rpx; z-index: 56; display: flex; align-items: center; justify-content: center; }
 .mm-bar-alert-mark { color: var(--match-coral); font-size: 21rpx; font-weight: 800; }
 .mm-bar-alert-text { flex: 1; min-width: 0; color: var(--ink2); font-size: 21rpx; }
 .mm-bar-actions { display: flex; flex-direction: row; align-items: center; gap: 12rpx; flex-shrink: 0; }

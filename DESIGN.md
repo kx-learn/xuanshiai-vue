@@ -289,6 +289,12 @@ components:
 - **VoiceRecorder / VoiceWaveform**：录音键为 64px 圆形，五态——idle（`--surface`）、speaking（AI 播报，`--soft` 波形反向跳动）、listening（聆听，`--accent` 填充 + 脉动光环）、transcribing（旋转加载 + 三点弹跳）、reviewing（转写完成，`--sage`）。长按说话，上滑约 40px 拖拽取消（`--match-coral` 提示），单次录音上限 60 秒；波形由 7 根圆角柱组成，状态动画 0.4s—0.8s。
 - 语音问答的转写结果先展示文本供用户修改，确认后才作为回答提交；AI 结果用「仅供参考」说明约束确定性，不用颜色暗示结果。
 
+### 知遇 IP
+
+- 产品内 AI 能力对外统一叫「知遇」。形象只用现有 `/static/ai-cat/ai-cat.webp`，字标组件是 `XsaZhiyuMark`，聚合入口是 `XsaZhiyuHub`。
+- 出现位置：首页推荐悬浮、我的页专区与悬浮、他人资料详情悬浮与墨相卡、AI 分身会话头部、真人聊天里的回复建议。
+- 颜色继续用 `--navy`、`--accent`、`--accent2`、`--sage` 与现有表面色，不新增 Token，也不另造吉祥物、印章字或「AI 军师」这类并列名字。
+- 知遇只整理公开资料、交集和回复建议，必须保留「仅供参考」。不能写成替用户同意、发送消息或承诺关系结果。
 ### Layout / Responsive / Motion
 
 - 小程序优先，覆盖 320px—428px；内容左右内边距通常 16px，页面底部为固定操作栏预留空间。

@@ -1,9 +1,9 @@
 ﻿<template>
-  <XsaSheet :visible="visible" title="AI 军师" :tall="true" @close="closeSheet">
+  <XsaSheet :visible="visible" title="知遇 · 回复建议" :tall="true" @close="closeSheet">
     <view class="advisor-sheet">
       <view class="advisor-intro">
-        <text class="advisor-kicker">沟通建议仅供参考</text>
-        <text class="advisor-summary">根据你的表达习惯给出回复方向，不会替你发送消息。</text>
+        <text class="advisor-kicker">知遇的建议仅供参考</text>
+        <text class="advisor-summary">根据你的表达习惯给出回复方向，不会替你发送消息，也不替你做决定。</text>
       </view>
       <view class="advisor-section">
         <text class="advisor-label">沟通场景</text>

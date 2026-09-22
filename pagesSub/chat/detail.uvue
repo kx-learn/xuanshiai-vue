@@ -26,13 +26,17 @@
 						:src="aiAvatarProfile.avatar"
 						mode="aspectFill"
 					></image>
-					<view v-else class="ai-head-avatar-fallback"><text>AI</text></view>
-					<view class="ai-head-badge"><text>AI</text></view>
+					<view v-else class="ai-head-avatar-fallback">
+						<XsaZhiyuMark size="42px" :show-label="false" />
+					</view>
+					<view class="ai-head-zhiyu">
+						<XsaZhiyuMark size="22px" :show-label="false" />
+					</view>
 				</view>
 				<view class="ai-head-copy">
 					<view class="ai-head-name-row">
 						<text class="ai-head-name">{{ aiAvatarProfile.name != null ? aiAvatarProfile.name + '的 AI 分身' : 'AI 分身' }}</text>
-						<view class="ai-head-live-dot"></view>
+						<text class="ai-head-zhiyu-label">知遇</text>
 					</view>
 					<text class="ai-head-desc">只参考当前公开资料 · 对方不会收到提醒</text>
 				</view>
@@ -197,7 +201,7 @@
 							</view>
 							<view class="menu-item" v-if="!isParentMode" @click="openAiAdvisor">
 								<view class="menu-icon">✦</view>
-								<text class="menu-text">AI军师</text>
+								<text class="menu-text">问知遇</text>
 							</view>
 							<view class="menu-item" @click="openChatReport">
 							<view class="menu-icon">⚑</view>
@@ -266,6 +270,7 @@
 	import XsaButton from '@/components/XsaButton.uvue'
 	import XsaReportSheet from '@/components/XsaReportSheet.uvue'
 	import XsaAiAdvisorSheet from '@/components/XsaAiAdvisorSheet.uvue'
+	import XsaZhiyuMark from '@/components/XsaZhiyuMark.uvue'
 	import XsaSheet from '@/components/XsaSheet.uvue'
 	import type { MessageSubject, ParentContext } from '@/api'
 	import {
@@ -1493,6 +1498,27 @@
 		font-weight: 700;
 	}
 
+	.ai-head-zhiyu {
+		position: absolute;
+		right: -6px;
+		bottom: -4px;
+		width: 22px;
+		height: 22px;
+		border: 1px solid var(--surface);
+		border-radius: 11px;
+		background: var(--surface);
+		overflow: hidden;
+	}
+	.ai-head-zhiyu-label {
+		margin-left: 6px;
+		padding: 1px 6px;
+		border-radius: 8px;
+		background: var(--accent-bg);
+		color: var(--accent2);
+		font-size: 10px;
+		font-weight: 700;
+		line-height: 16px;
+	}
 	.ai-head-badge {
 		position: absolute;
 		right: -3px;

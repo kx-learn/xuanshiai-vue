@@ -1,0 +1,159 @@
+<template>
+	<XsaSheet :visible="visible" title="知遇" :tall="true" @close="onClose">
+		<view class="zyh">
+			<view class="zyh-hero">
+				<XsaZhiyuMark size="112rpx" :show-label="false" />
+				<view class="zyh-hero-copy">
+					<text class="zyh-name">知遇</text>
+					<text class="zyh-lead">一个知遇，帮你认识自己、了解对方。仅供参考。</text>
+				</view>
+			</view>
+			<view
+				v-for="item in actions"
+				:key="item.key"
+				class="zyh-item"
+				@tap="onPick(item.key)"
+			>
+				<view class="zyh-item-mark">
+					<text class="zyh-item-glyph">{{ item.glyph }}</text>
+				</view>
+				<view class="zyh-item-copy">
+					<text class="zyh-item-title">{{ item.title }}</text>
+					<text class="zyh-item-desc">{{ item.desc }}</text>
+				</view>
+				<text class="zyh-item-arrow">›</text>
+			</view>
+		</view>
+	</XsaSheet>
+</template>
+
+<script setup lang="uts">
+/**
+ * XsaZhiyuHub - 知遇能力聚合面板
+ * 只负责展示和抛出 action，具体跳转仍由所在页面的现有函数完成。
+ * 不承诺关系结果，不替用户发送或同意。
+ */
+import XsaSheet from './XsaSheet.uvue'
+import XsaZhiyuMark from './XsaZhiyuMark.uvue'
+
+interface ZhiyuAction {
+	key: string
+	glyph: string
+	title: string
+	desc: string
+}
+
+interface Props {
+	visible: boolean
+	actions: ZhiyuAction[]
+}
+
+defineProps<Props>()
+
+const emit = defineEmits<{
+	close: []
+	select: [key: string]
+}>()
+
+function onClose(): void {
+	emit('close')
+}
+
+function onPick(key: string): void {
+	emit('select', key)
+}
+</script>
+
+<style scoped>
+.zyh {
+	display: flex;
+	flex-direction: column;
+	gap: 16rpx;
+	padding-bottom: 12rpx;
+}
+
+.zyh-hero {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 16rpx;
+	padding: 8rpx 4rpx 12rpx;
+}
+
+.zyh-hero-copy {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 6rpx;
+}
+
+.zyh-name {
+	font-size: 34rpx;
+	font-weight: 700;
+	color: var(--navy);
+	line-height: 1.2;
+}
+
+.zyh-lead {
+	font-size: 24rpx;
+	line-height: 1.55;
+	color: var(--ink2);
+}
+
+.zyh-item {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 16rpx;
+	padding: 22rpx 20rpx;
+	border-radius: 20rpx;
+	background: var(--paper);
+	border: 1px solid var(--line);
+}
+
+.zyh-item-mark {
+	width: 72rpx;
+	height: 72rpx;
+	border-radius: 36rpx;
+	background: var(--accent-bg);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.zyh-item-glyph {
+	font-size: 28rpx;
+	font-weight: 700;
+	color: var(--accent2);
+}
+
+.zyh-item-copy {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4rpx;
+}
+
+.zyh-item-title {
+	font-size: 28rpx;
+	font-weight: 700;
+	color: var(--ink);
+	line-height: 1.35;
+}
+
+.zyh-item-desc {
+	font-size: 22rpx;
+	line-height: 1.5;
+	color: var(--muted);
+}
+
+.zyh-item-arrow {
+	font-size: 32rpx;
+	line-height: 1;
+	color: var(--muted);
+	flex-shrink: 0;
+}
+</style>
