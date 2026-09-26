@@ -8,7 +8,10 @@
     "dev:mp-weixin": "uni -p mp-weixin",
     "build:mp-weixin": "uni build -p mp-weixin",
     "verify:mp": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-mp-weixin.ps1 -MainPackageLimitBytes 2097152 -SubpackageLimitBytes 2097152 -MediaLimitBytes 204800",
-    "verify:mp:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-mp-weixin.ps1 -MainPackageLimitBytes 3145728 -SubpackageLimitBytes 3145728 -MediaLimitBytes 307200"
+    "verify:mp:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-mp-weixin.ps1 -MainPackageLimitBytes 3145728 -SubpackageLimitBytes 3145728 -MediaLimitBytes 307200",
+    "test": "node tests/run-tests.cjs",
+    "test:core": "node tests/run-tests.cjs",
+    "test:all": "node tests/run-tests.cjs --all"
   },
   "dependencies": {
     "@dcloudio/uni-app": "3.0.0-4020920240930001",

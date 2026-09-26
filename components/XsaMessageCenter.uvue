@@ -33,13 +33,13 @@
 				<text class="section-title">最近聊天</text>
 				<text
 					class="section-action text-accent"
-					:class="{ disabled: markingAllRead || unreadTotal === 0 }"
+					:class="{ disabled: markingAllRead || !canMarkAllRead }"
 					@click="markAllRead"
 				>全部已读</text>
 			</view>
 
 			<view class="app-card" v-if="pendingApplicationCount > 0" @click="openApplications">
-				<text class="app-title">待处理申请 {{ pendingApplicationCount }}</text>
+				<text class="app-title">{{ incomingHasMore ? '已加载待处理申请' : '待处理申请' }} {{ pendingApplicationCount }}</text>
 				<text class="app-desc text-muted">双方同意后才会开放聊天</text>
 			</view>
 
@@ -121,6 +121,8 @@
 	const conversationCursor = ref('')
 	const conversationHasMore = ref(true)
 	const unreadTotal = ref(0)
+	const allReadConfirmed = ref(false)
+	const canMarkAllRead = computed(() => unreadTotal.value > 0 || (conversationHasMore.value && conversations.value.length > 0 && !allReadConfirmed.value))
 	const initialLoading = ref(false)
 	const loadingMore = ref(false)
 	const pageError = ref('')
@@ -171,7 +173,8 @@
 
 	const applicationHint = computed(() => {
 		const count = pendingApplicationCount.value
-		return count > 0 ? `${count} 条待处理` : '暂无新申请'
+		if (count > 0) return `${count} 条待处理${incomingHasMore.value ? '（已加载）' : ''}`
+		return incomingHasMore.value && incomingApplications.value.length > 0 ? '更多申请待查看' : '暂无新申请'
 	})
 
 	const currentApplicationHasMore = computed(() => {
@@ -476,7 +479,8 @@
 			conversations.value = reset ? list : appendUnique(conversations.value, list)
 			conversationCursor.value = data.nextCursor != null ? '' + data.nextCursor : ''
 			conversationHasMore.value = data.hasMore == true
-			unreadTotal.value = data.unreadTotal != null ? data.unreadTotal : 0
+			unreadTotal.value = conversations.value.reduce((total: number, item: any) => total + Number(item.unreadCount || 0), 0)
+			if (reset) allReadConfirmed.value = false
 			return true
 		} catch (error: any) {
 			if (!isConversationRequestCurrent(mutationVersion, requestSubjectKey)) return false
@@ -559,7 +563,7 @@
 				incomingApplications.value = reset ? list : appendUnique(incomingApplications.value, list)
 				incomingCursor.value = data.nextCursor != null ? '' + data.nextCursor : ''
 				incomingHasMore.value = data.hasMore == true
-				incomingPendingCount.value = data.pendingCount != null ? Number(data.pendingCount) : 0
+				incomingPendingCount.value = incomingApplications.value.filter((item: any) => item.status == 'pending').length
 			} else {
 				outgoingApplications.value = reset ? list : appendUnique(outgoingApplications.value, list)
 				outgoingCursor.value = data.nextCursor != null ? '' + data.nextCursor : ''
@@ -624,7 +628,7 @@
 	}
 
 	const markAllRead = async () => {
-		if (!componentActive || markingAllRead.value || unreadTotal.value === 0) return
+		if (!componentActive || markingAllRead.value || !canMarkAllRead.value) return
 		const sourceSubjectKey = subjectKey(activeMessageSubject.value)
 		const attemptId = markAllReadAttemptSequence + 1
 		markAllReadAttemptSequence = attemptId
@@ -636,7 +640,7 @@
 			if (subject == null) return
 			const requestSubjectKey = subjectKey(subject)
 			if (sourceSubjectKey != '' && sourceSubjectKey != requestSubjectKey) return
-			if (unreadTotal.value === 0) return
+			if (!canMarkAllRead.value) return
 			const res = await markAllMessagesRead(subject)
 			if (handleSubjectUnauthorizedResponse(res, requestSubjectKey, '登录状态已失效，请重新登录')) return
 			if (
@@ -654,6 +658,7 @@
 			})
 			invalidateConversationRequests()
 			unreadTotal.value = 0
+			allReadConfirmed.value = true
 			showToast('消息已全部标为已读')
 		} catch (error) {
 			if (

@@ -70,4 +70,4 @@
 - 检查项：包体积（主包 + 各分包 ≤ 2 MiB）、lazyCodeLoading 启用、媒体文件阈值、可疑静态文件残留。
 - **关键**：交叉验证 `app.json` 声明的 pages 与产物磁盘文件，防止条件编译或 tree-shaking 静默吞掉声明过的页面。
 - 退出码：0（通过）、2（质量失败）、1（参数或运行时错误）。
-- 预期产物路径：`unpackage/dist/dev/mp-weixin/`，执行 `npm run build:mp-weixin` 后可用。
+- 预期产物路径：`unpackage/dist/dev/mp-weixin/`。该目录由 HBuilderX 编译生成；`npm run build:mp-weixin` 在当前根目录式工程上不能作为生成入口。

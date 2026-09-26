@@ -4,7 +4,7 @@
  */
 
 import { request } from './request.uts'
-import { buildApiUrl, getAccessToken } from './config.uts'
+import { CURRENT_USER_ID_KEY, resolveMediaUrl } from './config.uts'
 import {
   getMockConversationPage,
   getMockApplicationPage,
@@ -22,7 +22,12 @@ import {
 const DEFAULT_PEER_AVATAR = '/static/portraits/profile-woman-main.webp'
 const DEFAULT_ME_AVATAR = '/static/portraits/profile-man-light.webp'
 /** 消息切片独立使用可变 Mock，避免受全局联调开关影响。 */
-export const MESSAGE_USE_MOCK = true
+/** 普通用户消息中心与普通文字聊天使用 FastAPI；父母端仍由 subject fail-closed 保护。 */
+export const MESSAGE_USE_MOCK = false
+export const CHAT_USE_MOCK = false
+/** 联系方式交换尚未有对应 FastAPI 路由，继续隔离在本地 Mock。 */
+export const CONTACT_EXCHANGE_USE_MOCK = true
+export const CHAT_MEDIA_USE_MOCK = true
 
 export type MessageSubject = {
   mode: 'self' | 'parent'
@@ -88,7 +93,10 @@ function businessData(res: any): any {
 function normalizePageResponse(res: any, fallback: string): any {
   if (res == null || res.success != true) return res
   const data = businessData(res)
-  if (data == null || !Array.isArray(data.list)) {
+  if (
+    data == null ||
+    (!Array.isArray(data.list) && !Array.isArray(data.items))
+  ) {
     return failResponse(fallback, 'INVALID_PAGE_RESPONSE', data)
   }
   return okResponse(data)
@@ -490,6 +498,67 @@ function normalizeApplicationResult(result: any, action: string): any {
   return okResponse(result)
 }
 
+function pageNumberFromCursor(cursor: string): number {
+  const parsed = Number(cursor)
+  return Number.isFinite(parsed) && Math.floor(parsed) == parsed && parsed > 0 ? parsed : 1
+}
+
+function mapConversationItem(item: any): any {
+  const target = item != null && item.target != null ? item.target : {}
+  const sessionId = Number(item != null && item.id != null ? item.id : 0)
+  return {
+    id: sessionId,
+    sessionId: sessionId,
+    userId: Number(target.user_id != null ? target.user_id : 0),
+    name: target.nickname != null && target.nickname != '' ? '' + target.nickname : '用户',
+    avatar: target.avatar != null ? resolveMediaUrl(target.avatar) : '',
+    lastMessage: item != null && item.last_message != null ? '' + item.last_message : '',
+    time: item != null && item.last_message_time != null ? '' + item.last_message_time : '',
+    unreadCount: Number(item != null && item.unread_count != null ? item.unread_count : 0),
+    pinned: item != null && item.pinned == true,
+    online: false,
+    messageType: 'text'
+  }
+}
+
+function applicationStatus(value: any): string {
+  const status = Number(value)
+  if (status == 1) return 'accepted'
+  if (status == 2) return 'rejected'
+  if (status == 3) return 'expired'
+  return 'pending'
+}
+
+function applicationStatusText(status: string): string {
+  if (status == 'accepted') return '已同意'
+  if (status == 'rejected') return '已拒绝'
+  if (status == 'expired') return '已过期'
+  return '待处理'
+}
+
+function mapApplicationItem(item: any, direction: string): any {
+  const incoming = direction == 'incoming'
+  const user = incoming
+    ? (item != null && item.from_user != null ? item.from_user : {})
+    : (item != null && item.to_user != null ? item.to_user : {})
+  const status = applicationStatus(item != null ? item.status : 0)
+  return {
+    id: Number(item != null && item.id != null ? item.id : 0),
+    userId: Number(incoming
+      ? (item != null && item.from_user_id != null ? item.from_user_id : 0)
+      : (item != null && item.to_user_id != null ? item.to_user_id : 0)),
+    name: user.nickname != null && user.nickname != '' ? '' + user.nickname : '用户',
+    avatar: user.avatar != null ? resolveMediaUrl(user.avatar) : '',
+    message: item != null && item.message != null && item.message != '' ? '' + item.message : '想和你认真认识',
+    status: status,
+    statusText: applicationStatusText(status),
+    createdAt: item != null && item.created_at != null ? '' + item.created_at : '',
+    expireAt: item != null && item.expire_at != null ? '' + item.expire_at : '',
+    fromUserId: Number(item != null && item.from_user_id != null ? item.from_user_id : 0),
+    toUserId: Number(item != null && item.to_user_id != null ? item.to_user_id : 0)
+  }
+}
+
 /** 游标分页获取会话。data: { list, nextCursor, hasMore, total, unreadTotal } */
 export async function getConversationPage(
   cursor: string = '',
@@ -512,10 +581,11 @@ export async function getConversationPage(
       subjectContext
     )
   }
-  const requestData: any = { cursor: cursor, pageSize: size, photoScope: photoScope }
+  const page = pageNumberFromCursor(cursor)
+  const requestData: any = { page: page, page_size: size, photoScope: photoScope }
   appendMessageSubject(requestData, subjectContext)
   const normalized = normalizeBusinessResponse(await messageRequest({
-    url: '/message/list',
+    url: '/chat/sessions',
     method: 'GET',
     data: requestData
   }))
@@ -523,8 +593,28 @@ export async function getConversationPage(
   if (pageResponse == null || pageResponse.success != true) {
     return protectSubjectResponse(pageResponse, subjectContext)
   }
-  pageResponse.data = protectPageAvatars(pageResponse.data, photoScope)
-  return protectSubjectResponse(pageResponse, subjectContext)
+  const raw = pageResponse.data
+  const rawItems = Array.isArray(raw.items) ? raw.items : []
+  const list: any[] = []
+  for (let index = 0; index < rawItems.length; index++) {
+    const mapped = mapConversationItem(rawItems[index])
+    if (!isPositiveInteger(mapped.id) || !isPositiveInteger(mapped.userId)) {
+      return protectSubjectResponse(failResponse('会话列表包含无效主体', 'INVALID_CHAT_SESSION', rawItems[index]), subjectContext)
+    }
+    list.push(mapped)
+  }
+  const hasMore = raw.has_more == true
+  const responseData: any = {
+    list: list,
+    nextCursor: hasMore ? '' + (page + 1) : '',
+    hasMore: hasMore,
+    total: raw.total != null ? Number(raw.total) : list.length,
+    unreadTotal: raw.unreadTotal != null
+      ? Number(raw.unreadTotal)
+      : list.reduce((sum: number, item: any) => sum + Number(item.unreadCount || 0), 0)
+  }
+  protectPageAvatars(responseData, photoScope)
+  return protectSubjectResponse(okResponse(responseData), subjectContext)
 }
 
 /** 按收到/发出分页获取申请。 */
@@ -544,25 +634,20 @@ export async function getApplicationPage(
     return failResponse('不支持的申请方向', 'INVALID_APPLICATION_DIRECTION')
   }
   const size = normalizedPageSize(pageSize)
-  const normalizedDirection = direction
   if (MESSAGE_USE_MOCK) {
     return protectSubjectResponse(
       okResponse(protectPageAvatars(
-        getMockApplicationPage(normalizedDirection, cursor, size, subjectContext.key),
+        getMockApplicationPage(direction, cursor, size, subjectContext.key),
         photoScope
       )),
       subjectContext
     )
   }
-  const requestData: any = {
-    direction: normalizedDirection,
-    cursor: cursor,
-    pageSize: size,
-    photoScope: photoScope
-  }
+  const page = pageNumberFromCursor(cursor)
+  const requestData: any = { page: page, page_size: size }
   appendMessageSubject(requestData, subjectContext)
   const normalized = normalizeBusinessResponse(await messageRequest({
-    url: '/message/applications',
+    url: direction == 'incoming' ? '/discovery/applications/incoming' : '/discovery/applications/outgoing',
     method: 'GET',
     data: requestData
   }))
@@ -570,43 +655,104 @@ export async function getApplicationPage(
   if (pageResponse == null || pageResponse.success != true) {
     return protectSubjectResponse(pageResponse, subjectContext)
   }
-  pageResponse.data = protectPageAvatars(pageResponse.data, photoScope)
-  return protectSubjectResponse(pageResponse, subjectContext)
+  const raw = pageResponse.data
+  const rawItems = Array.isArray(raw.items) ? raw.items : []
+  const list: any[] = []
+  for (let index = 0; index < rawItems.length; index++) {
+    const mapped = mapApplicationItem(rawItems[index], direction)
+    if (!isPositiveInteger(mapped.id) || !isPositiveInteger(mapped.userId)) {
+      return protectSubjectResponse(failResponse('申请列表包含无效主体', 'INVALID_APPLICATION', rawItems[index]), subjectContext)
+    }
+    list.push(mapped)
+  }
+  const hasMore = raw.has_more == true
+  const pendingCount = direction == 'incoming'
+    ? list.filter((item: any) => item.status == 'pending').length
+    : 0
+  const responseData: any = {
+    list: list,
+    nextCursor: hasMore ? '' + (page + 1) : '',
+    hasMore: hasMore,
+    total: raw.total != null ? Number(raw.total) : list.length,
+    pendingCount: pendingCount
+  }
+  protectPageAvatars(responseData, photoScope)
+  return protectSubjectResponse(okResponse(responseData), subjectContext)
 }
 
-/** 进入会话和加载详情前均需调用；任何不明确结果都视为不可聊天。 */
+
+function chatBackendUnavailable(subjectContext: any): any | null {
+  if (subjectContext.mode == 'parent') {
+    return failResponse('父母端聊天尚未接入当前后端接口', 'PARENT_BACKEND_NOT_AVAILABLE')
+  }
+  return null
+}
+
+/** Resolve a peer to a server-owned chat session; never treat peer IDs as session IDs. */
+async function findRealChatSession(targetUserId: number): Promise<any> {
+  const pageSize = 50
+  for (let page = 1; page <= 1000; page++) {
+    const response = normalizeBusinessResponse(await messageRequest({
+      url: '/chat/sessions',
+      method: 'GET',
+      data: { page: page, page_size: pageSize }
+    }))
+    if (response == null || response.success != true) return response ?? failResponse('聊天会话加载失败', 'CHAT_SESSION_LOOKUP_FAILED')
+    const data = businessData(response)
+    if (data == null || !Array.isArray(data.items)) return failResponse('聊天会话响应无效', 'INVALID_CHAT_SESSION_PAGE', data)
+    for (let index = 0; index < data.items.length; index++) {
+      const item = data.items[index]
+      const peerId = Number(item?.target?.user_id ?? 0)
+      if (peerId != targetUserId) continue
+      const sessionId = Number(item?.id ?? 0)
+      if (!isPositiveInteger(sessionId)) return failResponse('聊天会话标识无效', 'INVALID_CHAT_SESSION', item)
+      return okResponse({ id: sessionId, target: item.target ?? null })
+    }
+    if (data.has_more != true) break
+    if (page == 1000) return failResponse('会话列表超过查询上限，暂时无法定位', 'CHAT_SESSION_LOOKUP_INCOMPLETE')
+  }
+  return failResponse('双方尚无可用聊天会话', 'SESSION_NOT_FOUND')
+}
+
+function currentChatUserId(): number {
+  try {
+    const value = Number(uni.getStorageSync(CURRENT_USER_ID_KEY))
+    return isPositiveInteger(value) ? value : 0
+  } catch (error) {
+    return 0
+  }
+}
+
+function chatMessageTypeFromBackend(value: any): string {
+  const type = Number(value)
+  if (type == 2) return 'image'
+  if (type == 3) return 'voice'
+  if (type == 4) return 'video'
+  return 'text'
+}
+
+/** 进入会话和加载详情前均需调用；真实权限由后端可见会话列表裁决。 */
 export async function getChatPermission(userId: number, subject: MessageSubject | null = null) {
   const subjectContext = resolveMessageSubject(subject)
   if (subjectContext.valid != true) return messageSubjectFailure(subjectContext)
-  const parentBackendFailure = parentBackendUnavailable(subjectContext)
-  if (parentBackendFailure != null) return parentBackendFailure
   if (!isPositiveInteger(userId)) return failResponse('无效的会话用户', 'INVALID_USER')
-  if (MESSAGE_USE_MOCK) {
+  if (CHAT_USE_MOCK) {
     const permission = getMockChatPermission(userId, subjectContext.key)
     return typeof permission.canChat == 'boolean'
       ? protectSubjectResponse(okResponse(permission), subjectContext)
       : protectSubjectResponse(failResponse('聊天权限响应无效', 'INVALID_PERMISSION_RESPONSE', permission), subjectContext)
   }
-  const requestData: any = { userId: userId }
-  appendMessageSubject(requestData, subjectContext)
-  const normalized = normalizeBusinessResponse(await messageRequest({
-    url: '/message/chat/permission',
-    method: 'GET',
-    data: requestData
-  }))
-  if (normalized == null || normalized.success != true) {
-    return protectSubjectResponse(normalized, subjectContext)
+  const unavailable = chatBackendUnavailable(subjectContext)
+  if (unavailable != null) return unavailable
+  const sessionRes = await findRealChatSession(userId)
+  if (sessionRes == null || sessionRes.success != true) {
+    if (sessionRes != null && sessionRes.code == 'SESSION_NOT_FOUND') {
+      return protectSubjectResponse(okResponse({ canChat: false, reason: '双方尚无可用聊天会话' }), subjectContext)
+    }
+    return protectSubjectResponse(sessionRes ?? failResponse('聊天权限检查失败', 'CHAT_PERMISSION_FAILED'), subjectContext)
   }
-  const permission = businessData(normalized)
-  if (permission == null || typeof permission.canChat != 'boolean') {
-    return protectSubjectResponse(
-      failResponse('聊天权限响应无效', 'INVALID_PERMISSION_RESPONSE', permission),
-      subjectContext
-    )
-  }
-  return protectSubjectResponse(okResponse(permission), subjectContext)
+  return protectSubjectResponse(okResponse({ canChat: true, sessionId: Number(sessionRes.data.id) }), subjectContext)
 }
-
 /**
  * Resolve the current subject's chat-session ID for one approved conversation.
  * The lookup is intentionally permission-first: a target-user ID must never be
@@ -618,6 +764,16 @@ export async function getChatSessionId(
 ) {
   const subjectContext = resolveMessageSubject(subject)
   if (subjectContext.valid != true) return messageSubjectFailure(subjectContext)
+  if (!isPositiveInteger(targetUserId)) return failResponse('无效的会话用户', 'INVALID_USER')
+	if (!CHAT_USE_MOCK) {
+		const unavailable = chatBackendUnavailable(subjectContext)
+		if (unavailable != null) return unavailable
+		const sessionRes = await findRealChatSession(targetUserId)
+		if (sessionRes == null || sessionRes.success != true || sessionRes.data == null) {
+			return protectSubjectResponse(sessionRes ?? failResponse('当前没有可用聊天会话', 'SESSION_NOT_FOUND'), subjectContext)
+		}
+		return protectSubjectResponse(okResponse({ id: Number(sessionRes.data.id), target: sessionRes.data.target ?? null }), subjectContext)
+	}
   const parentBackendFailure = parentBackendUnavailable(subjectContext)
   if (parentBackendFailure != null) return parentBackendFailure
   if (!isPositiveInteger(targetUserId)) return failResponse('无效的会话用户', 'INVALID_USER')
@@ -683,7 +839,20 @@ export async function getChatSessionId(
   return protectSubjectResponse(failResponse('当前没有可用聊天会话', 'SESSION_NOT_FOUND'), subjectContext)
 }
 
-/** 将全部会话标为已读。 */
+async function markChatSessionRead(sessionId: number, subjectContext: any): Promise<any> {
+  if (!isPositiveInteger(sessionId)) return failResponse('聊天会话标识无效', 'INVALID_CHAT_SESSION')
+  const requestData: any = {}
+  appendMessageSubject(requestData, subjectContext)
+  const response = normalizeBusinessResponse(await messageRequest({
+    url: '/chat/sessions/' + sessionId + '/read',
+    method: 'POST',
+    data: requestData
+  }))
+  if (response == null || response.success != true) return response ?? failResponse('已读状态更新失败', 'CHAT_READ_FAILED')
+  return okResponse({ success: true, sessionId: sessionId })
+}
+
+/** 将全部可见会话逐一标为已读；失败时不虚报成功。 */
 export async function markAllMessagesRead(subject: MessageSubject | null = null) {
   const subjectContext = resolveMessageSubject(subject)
   if (subjectContext.valid != true) return messageSubjectFailure(subjectContext)
@@ -699,17 +868,34 @@ export async function markAllMessagesRead(subject: MessageSubject | null = null)
       subjectContext
     )
   }
-  const requestData: any = {}
-  appendMessageSubject(requestData, subjectContext)
-  const normalized = normalizeBusinessResponse(await messageRequest({
-    url: '/message/read-all',
-    method: 'POST',
-    data: requestData
-  }))
-  return protectSubjectResponse(
-    normalizeCommandResponse(normalized, '全部已读响应无效', 'INVALID_READ_ALL_RESPONSE'),
-    subjectContext
-  )
+  let cursor = ''
+  let markedCount = 0
+  for (let pageIndex = 0; pageIndex < 1000; pageIndex++) {
+    const pageRes = await getConversationPage(cursor, 50, 'standard', subject)
+    if (pageRes == null || pageRes.success != true || pageRes.data == null) {
+      return protectSubjectResponse(pageRes ?? failResponse('消息会话加载失败', 'CHAT_SESSION_LOOKUP_FAILED'), subjectContext)
+    }
+    const rows = Array.isArray(pageRes.data.list) ? pageRes.data.list as any[] : [] as any[]
+    for (let index = 0; index < rows.length; index++) {
+      const sessionId = Number(rows[index]?.sessionId ?? rows[index]?.id ?? 0)
+      const readRes = await markChatSessionRead(sessionId, subjectContext)
+      if (readRes == null || readRes.success != true) {
+        return protectSubjectResponse(failResponse('全部已读失败，请重试', 'CHAT_READ_FAILED', readRes), subjectContext)
+      }
+      markedCount += 1
+    }
+    const hasMore = pageRes.data.hasMore == true
+    if (!hasMore) break
+    const nextCursor = pageRes.data.nextCursor != null ? String(pageRes.data.nextCursor).trim() : ''
+    if (nextCursor == '' || nextCursor == cursor) {
+      return protectSubjectResponse(failResponse('消息会话分页响应无效', 'INVALID_CHAT_SESSION_PAGE', pageRes.data), subjectContext)
+    }
+    if (pageIndex == 999) {
+      return protectSubjectResponse(failResponse('消息会话超过查询上限，请稍后重试', 'CHAT_SESSION_LOOKUP_INCOMPLETE'), subjectContext)
+    }
+    cursor = nextCursor
+  }
+  return protectSubjectResponse(okResponse({ success: true, markedCount: markedCount }), subjectContext)
 }
 
 /** 旧导出兼容：返回完整会话数组；父母调用方必须请求 protected scope。 */
@@ -725,7 +911,7 @@ export async function getMessageList(
   )
 }
 
-/** 获取聊天详情；API 层同样 fail-closed。 */
+/** Fetch a real chat history through the authenticated session-scoped FastAPI route. */
 export async function getChatMessages(
   userId: number,
   privacyScope: string = 'standard',
@@ -733,53 +919,56 @@ export async function getChatMessages(
 ) {
   const subjectContext = resolveMessageSubject(subject)
   if (subjectContext.valid != true) return messageSubjectFailure(subjectContext)
+  if (!isPositiveInteger(userId)) return failResponse('无效的会话用户', 'INVALID_USER')
   const photoScope = effectivePrivacyScope(privacyScope, subjectContext)
-  const permissionRes = await getChatPermission(userId, subject)
-  const permission = permissionRes != null ? permissionRes.data : null
-  if (permissionRes == null || permissionRes.success != true) {
-    return protectSubjectResponse(
-      permissionRes != null ? permissionRes : failResponse('聊天权限检查失败', 'CHAT_PERMISSION_FAILED'),
-      subjectContext
-    )
-  }
-  if (permission == null || permission.canChat != true) {
-    const reason = permission != null && permission.reason != null
-      ? '' + permission.reason
-      : '双方同意后才能开始聊天'
-    return protectSubjectResponse(failResponse(reason, 'CHAT_NOT_ALLOWED', permission), subjectContext)
-  }
-  if (MESSAGE_USE_MOCK) {
+  if (CHAT_USE_MOCK) {
+    const permission = getMockChatPermission(userId, subjectContext.key)
+    if (permission == null || permission.canChat != true) return failResponse(permission?.reason ?? '双方同意后才能开始聊天', 'CHAT_NOT_ALLOWED')
     const messages = getMockChatMessages(userId, subjectContext.key)
-    return protectSubjectResponse(
-      okResponse(photoScope == 'protected' ? protectMessageList(messages) : messages),
-      subjectContext
-    )
+    return protectSubjectResponse(okResponse(photoScope == 'protected' ? protectMessageList(messages) : messages), subjectContext)
   }
-  const requestOptions: any = {
-    url: '/message/chat',
+  const unavailable = chatBackendUnavailable(subjectContext)
+  if (unavailable != null) return unavailable
+  const sessionRes = await getChatSessionId(userId, subject)
+  if (sessionRes == null || sessionRes.success != true || sessionRes.data == null) return sessionRes
+  const sessionId = Number(sessionRes.data.id)
+  const response = normalizeBusinessResponse(await messageRequest({
+    url: '/chat/sessions/' + sessionId + '/messages',
     method: 'GET',
-    data: { userId: userId, photoScope: privacyScope }
+    data: { page: 1, page_size: 50 }
+  }))
+  if (response == null || response.success != true) return protectSubjectResponse(response, subjectContext)
+  const rows = businessData(response)
+  if (!Array.isArray(rows)) return protectSubjectResponse(failResponse('聊天记录响应无效', 'INVALID_CHAT_RESPONSE', rows), subjectContext)
+  const currentUserId = currentChatUserId()
+  if (!isPositiveInteger(currentUserId)) return protectSubjectResponse(failResponse('登录用户信息已失效，请重新登录', 'AUTH_REQUIRED'), subjectContext)
+  const peerAvatar = sessionRes.data.target?.avatar ?? DEFAULT_PEER_AVATAR
+  const messages = rows.map((row: any) => {
+    const isMine = Number(row?.from_user_id ?? 0) == currentUserId
+    const type = chatMessageTypeFromBackend(row?.type)
+    const isMedia = type == 'image' || type == 'voice' || type == 'video'
+    return {
+      id: Number(row?.id ?? 0),
+      clientMessageId: String(row?.client_message_id ?? ''),
+      type: type,
+      content: isMedia ? String(row?.media_url ?? '') : String(row?.content ?? ''),
+      time: row?.created_at ?? '',
+      showTime: false,
+      isMine: isMine,
+      avatar: isMine ? DEFAULT_ME_AVATAR : peerAvatar,
+      senderAvatar: isMine ? DEFAULT_ME_AVATAR : peerAvatar,
+      revoked: row?.revoked === true || row?.is_recalled === true,
+      status: isMine ? 'sent' : ''
+    }
+  })
+  const readResponse = await markChatSessionRead(sessionId, subjectContext)
+  if (readResponse == null || readResponse.success != true) {
+    return protectSubjectResponse(failResponse('聊天记录已加载，但已读状态更新失败，请重试', 'CHAT_READ_FAILED', readResponse), subjectContext)
   }
-  requestOptions.data.photoScope = photoScope
-  appendMessageSubject(requestOptions.data, subjectContext)
-  const normalized = normalizeBusinessResponse(await messageRequest(requestOptions))
-  if (normalized == null || normalized.success != true) {
-    return protectSubjectResponse(normalized, subjectContext)
-  }
-  const data = businessData(normalized)
-  if (!Array.isArray(data)) {
-    return protectSubjectResponse(failResponse('聊天记录响应无效', 'INVALID_CHAT_RESPONSE', data), subjectContext)
-  }
-  return protectSubjectResponse(
-    okResponse(photoScope == 'protected' ? protectMessageList(data as any[]) : data),
-    subjectContext
-  )
+  return protectSubjectResponse(okResponse(photoScope == 'protected' ? protectMessageList(messages) : messages), subjectContext)
 }
 
-/**
- * 发送消息。clientMessageId 在首次发送和单条重试时保持不变，用于服务端去重。
- * 空 ID 会被拒绝；页面重试必须复用同一 ID。
- */
+/** Send one user-authored message and return a stable UI envelope. */
 export async function sendMessage(
   userId: number,
   content: string,
@@ -790,77 +979,53 @@ export async function sendMessage(
 ) {
   const subjectContext = resolveMessageSubject(subject)
   if (subjectContext.valid != true) return messageSubjectFailure(subjectContext)
-  const parentBackendFailure = parentBackendUnavailable(subjectContext)
-  if (parentBackendFailure != null) return parentBackendFailure
   if (!isPositiveInteger(userId)) return failResponse('无效的会话用户', 'INVALID_USER')
-  if (type != 'text' && type != 'image' && type != 'voice' && type != 'video') {
-    return failResponse('不支持的消息类型', 'INVALID_MESSAGE_TYPE')
-  }
-  if (typeof content != 'string' || (type == 'text' && content.trim() == '')) {
-    return failResponse('消息内容不能为空', 'EMPTY_MESSAGE')
-  }
-  if (type != 'text' && (!isPositiveInteger(mediaId != null ? mediaId : 0) || content.trim() != '')) {
-    return failResponse('媒体消息必须引用已上传媒体且不能附带文本', 'INVALID_MEDIA_MESSAGE')
-  }
-  if (clientMessageId == null || clientMessageId.trim() == '') {
-    return failResponse('缺少消息唯一标识', 'CLIENT_MESSAGE_ID_REQUIRED')
-  }
-  if (clientMessageId.length > 128) {
-    return failResponse('消息唯一标识过长', 'INVALID_CLIENT_MESSAGE_ID')
-  }
+  if (type != 'text' && type != 'image' && type != 'voice' && type != 'video') return failResponse('不支持的消息类型', 'INVALID_MESSAGE_TYPE')
+  if (typeof content != 'string' || (type == 'text' && content.trim() == '')) return failResponse('消息内容不能为空', 'EMPTY_MESSAGE')
+  if (clientMessageId == null || clientMessageId.trim() == '') return failResponse('缺少消息唯一标识', 'CLIENT_MESSAGE_ID_REQUIRED')
   const resolvedClientMessageId = clientMessageId.trim()
+  if (resolvedClientMessageId.length > 128) return failResponse('消息唯一标识过长', 'INVALID_CLIENT_MESSAGE_ID')
+
+  if (CHAT_USE_MOCK) {
+    const permissionRes = await getChatPermission(userId, subject)
+    const permission = permissionRes != null ? permissionRes.data : null
+    if (permissionRes == null || permissionRes.success != true) return permissionRes ?? failResponse('聊天权限检查失败', 'CHAT_PERMISSION_FAILED')
+    if (permission == null || permission.canChat != true) return failResponse(permission?.reason ?? '双方同意后才能开始聊天', 'CHAT_NOT_ALLOWED', permission)
+    if (type != 'text') return failResponse('Mock 模式不上传本地媒体，请切换真实后端后重试', 'MOCK_MEDIA_UPLOAD_NOT_SUPPORTED')
+    const result = sendMockMessage(userId, content, type, resolvedClientMessageId, subjectContext.key)
+    if (result.success != true) return protectSubjectResponse(failResponse(result.message, result.code, result), subjectContext)
+    return protectSubjectResponse(normalizeCommandResponse(okResponse(result), '发送消息响应无效', 'INVALID_SEND_RESPONSE'), subjectContext)
+  }
+
+  const unavailable = chatBackendUnavailable(subjectContext)
+  if (unavailable != null) return unavailable
+  if (type != 'text') return failResponse('当前真实聊天闭环仅支持文字消息', 'REAL_MEDIA_NOT_SUPPORTED')
   const permissionRes = await getChatPermission(userId, subject)
   const permission = permissionRes != null ? permissionRes.data : null
-  if (permissionRes == null || permissionRes.success != true) {
-    return protectSubjectResponse(
-      permissionRes != null ? permissionRes : failResponse('聊天权限检查失败', 'CHAT_PERMISSION_FAILED'),
-      subjectContext
-    )
-  }
-  if (permission == null || permission.canChat != true) {
-    return protectSubjectResponse(
-      failResponse(
-        permission != null && permission.reason != null ? '' + permission.reason : '双方同意后才能开始聊天',
-        'CHAT_NOT_ALLOWED',
-        permission
-      ),
-      subjectContext
-    )
-  }
-  if (MESSAGE_USE_MOCK) {
-    if (type != 'text') {
-      return failResponse('Mock 模式不上传本地媒体，请切换真实后端后重试', 'MOCK_MEDIA_UPLOAD_NOT_SUPPORTED')
-    }
-    const result = sendMockMessage(userId, content, type, resolvedClientMessageId, subjectContext.key)
-    if (result.success != true) {
-      return protectSubjectResponse(failResponse(result.message, result.code, result), subjectContext)
-    }
-    const protectedResult = subjectContext.mode == 'parent'
-      ? protectSendResult(result)
-      : result
-    return protectSubjectResponse(
-      normalizeCommandResponse(okResponse(protectedResult), '发送消息响应无效', 'INVALID_SEND_RESPONSE'),
-      subjectContext
-    )
-  }
-  const requestData: any = {
-    userId: userId,
-    content: content,
-    type: type,
-    clientMessageId: resolvedClientMessageId,
-    mediaId: type == 'text' ? null : mediaId
-  }
-  appendMessageSubject(requestData, subjectContext)
-  const normalized = normalizeBusinessResponse(await messageRequest({
-    url: '/message/send',
+  if (permissionRes == null || permissionRes.success != true) return protectSubjectResponse(permissionRes ?? failResponse('聊天权限检查失败', 'CHAT_PERMISSION_FAILED'), subjectContext)
+  if (permission == null || permission.canChat != true) return protectSubjectResponse(failResponse(permission?.reason ?? '双方同意后才能开始聊天', 'CHAT_NOT_ALLOWED', permission), subjectContext)
+  const sessionId = Number(permission.sessionId ?? 0)
+  if (!isPositiveInteger(sessionId)) return protectSubjectResponse(failResponse('聊天会话标识无效', 'INVALID_CHAT_SESSION'), subjectContext)
+
+  const response = normalizeBusinessResponse(await messageRequest({
+    url: '/chat/sessions/' + sessionId + '/messages',
     method: 'POST',
-    data: requestData
+    data: { type: 1, content: content.trim(), client_message_id: resolvedClientMessageId }
   }))
-  const commandResponse = normalizeCommandResponse(normalized, '发送消息响应无效', 'INVALID_SEND_RESPONSE')
-  if (commandResponse != null && commandResponse.success == true && subjectContext.mode == 'parent') {
-    commandResponse.data = protectSendResult(commandResponse.data)
+  if (response == null || response.success != true) {
+    if (response != null && Number(response.code) == 409) {
+      return protectSubjectResponse(failResponse('消息请求与已发送内容不一致，无法重复提交。', 'IDEMPOTENCY_CONFLICT', response.data), subjectContext)
+    }
+    return protectSubjectResponse(response ?? failResponse('发送失败，请稍后重试'), subjectContext)
   }
-  return protectSubjectResponse(commandResponse, subjectContext)
+  const row = businessData(response)
+  if (row == null || !isPositiveInteger(Number(row.id))) return protectSubjectResponse(failResponse('发送响应无效', 'INVALID_SEND_RESPONSE', row), subjectContext)
+  return protectSubjectResponse(okResponse({
+    success: true,
+    messageId: Number(row.id),
+    clientMessageId: String(row.client_message_id ?? resolvedClientMessageId),
+    createdAt: row.created_at ?? null
+  }), subjectContext)
 }
 
 /** 旧导出兼容：合并收到和发出的申请；父母调用方必须请求 protected scope。 */
@@ -899,7 +1064,7 @@ function validCommandId(value: string, label: string): any {
   return id
 }
 
-/** Uploads a real chat attachment and returns its backend media ID. */
+/** Chat media remains explicitly fail-closed until its audited backend contract exists. */
 export async function uploadChatMedia(
   userId: number,
   filePath: string,
@@ -911,43 +1076,10 @@ export async function uploadChatMedia(
   if (parentBackendFailure != null) return parentBackendFailure
   if (!isPositiveInteger(userId)) return failResponse('无效的会话用户', 'INVALID_USER')
   if (filePath == null || filePath.trim() == '') return failResponse('请选择要发送的媒体', 'EMPTY_FILE')
-  if (MESSAGE_USE_MOCK) {
-    return failResponse('Mock 模式不上传本地媒体，请切换真实后端后重试', 'MOCK_MEDIA_UPLOAD_NOT_SUPPORTED')
+  if (CHAT_MEDIA_USE_MOCK) {
+    return failResponse('聊天媒体暂未接入真实服务，请先发送文字消息', 'CHAT_MEDIA_NOT_AVAILABLE')
   }
-  const permissionRes = await getChatPermission(userId, subject)
-  if (permissionRes == null || permissionRes.success != true || permissionRes.data == null || permissionRes.data.canChat != true) {
-    return permissionRes != null ? permissionRes : failResponse('聊天权限检查失败', 'CHAT_PERMISSION_FAILED')
-  }
-  const token = getAccessToken()
-  return await new Promise<any>((resolve) => {
-    uni.uploadFile({
-      url: buildApiUrl('/message/media/uploads'),
-      filePath: filePath,
-      name: 'file',
-      formData: { peerUserId: '' + userId },
-      header: token != '' ? { Authorization: 'Bearer ' + token } : {},
-      success: (res: any) => {
-        let data: any = null
-        try {
-          data = JSON.parse('' + res.data)
-        } catch (error) {
-          resolve(failResponse('上传响应解析失败', 'INVALID_UPLOAD_RESPONSE'))
-          return
-        }
-        if (res.statusCode >= 200 && res.statusCode < 300 && data != null && isPositiveInteger(Number(data.id))) {
-          resolve(okResponse({
-            id: Number(data.id),
-            mediaType: data.mediaType != null ? data.mediaType : data.media_type,
-            url: data.url != null ? data.url : data.file_url
-          }))
-          return
-        }
-        const detail = data != null && data.detail != null ? '' + data.detail : '媒体上传失败，请重试'
-        resolve(failResponse(detail, res.statusCode))
-      },
-      fail: () => resolve(failResponse('媒体上传失败，请检查网络', 'UPLOAD_FAILED'))
-    })
-  })
+  return failResponse('聊天媒体上传契约尚未开放', 'CHAT_MEDIA_NOT_AVAILABLE')
 }
 
 export async function revokeMessage(
@@ -967,11 +1099,11 @@ export async function revokeMessage(
     return result.success == true ? okResponse(result) : failResponse(result.message, result.code, result)
   }
   const normalized = normalizeBusinessResponse(await messageRequest({
-    url: '/message/messages/' + messageId,
-    method: 'DELETE',
-    data: { clientCommandId: commandId }
+    url: '/chat/messages/' + messageId,
+    method: 'DELETE'
   }))
-  return normalizeCommandResponse(normalized, '撤回消息响应无效', 'INVALID_REVOKE_RESPONSE')
+  if (normalized == null || normalized.success != true) return normalized
+  return okResponse({ messageId: messageId, revoked: true, clientCommandId: commandId })
 }
 
 export async function getContactExchanges(
@@ -983,17 +1115,11 @@ export async function getContactExchanges(
   const parentBackendFailure = parentBackendUnavailable(subjectContext)
   if (parentBackendFailure != null) return parentBackendFailure
   if (!isPositiveInteger(userId)) return failResponse('无效的会话用户', 'INVALID_USER')
-  if (MESSAGE_USE_MOCK) {
+  if (MESSAGE_USE_MOCK || CONTACT_EXCHANGE_USE_MOCK) {
     const result = getMockContactExchanges(userId, subjectContext.key)
     return result.success == true ? okResponse(result.list) : failResponse(result.message, result.code, result)
   }
-  const normalized = normalizeBusinessResponse(await messageRequest({
-    url: '/message/contact-exchanges', method: 'GET', data: { userId: userId }
-  }))
-  if (normalized == null || normalized.success != true) return normalized
-  const data = businessData(normalized)
-  if (data == null || !Array.isArray(data.list)) return failResponse('联系方式响应无效', 'INVALID_CONTACT_RESPONSE', data)
-  return okResponse(data.list)
+  return failResponse('联系方式交换后端契约尚未开放', 'CONTACT_EXCHANGE_NOT_AVAILABLE')
 }
 
 export async function createContactExchange(
@@ -1011,17 +1137,11 @@ export async function createContactExchange(
   if (contactType != 'phone' && contactType != 'wechat') return failResponse('不支持的联系方式类型', 'INVALID_CONTACT_TYPE')
   const commandId = validCommandId(clientCommandId, '联系方式操作')
   if (typeof commandId != 'string') return commandId
-  if (MESSAGE_USE_MOCK) {
+  if (MESSAGE_USE_MOCK || CONTACT_EXCHANGE_USE_MOCK) {
     const result = createMockContactExchange(userId, contactType, contactValue, commandId, subjectContext.key)
     return result.success == true ? okResponse(result.exchange) : failResponse(result.message, result.code, result)
   }
-  const normalized = normalizeBusinessResponse(await messageRequest({
-    url: '/message/contact-exchanges', method: 'POST', data: {
-      userId: userId, contactType: contactType, contactValue: contactValue, clientCommandId: commandId
-    }
-  }))
-  if (normalized == null || normalized.success != true) return normalized
-  return okResponse(businessData(normalized))
+  return failResponse('联系方式交换后端契约尚未开放', 'CONTACT_EXCHANGE_NOT_AVAILABLE')
 }
 
 export async function respondContactExchange(
@@ -1038,16 +1158,11 @@ export async function respondContactExchange(
   if (action != 'accept' && action != 'reject') return failResponse('不支持的处理方式', 'INVALID_ACTION')
   const commandId = validCommandId(clientCommandId, '联系方式操作')
   if (typeof commandId != 'string') return commandId
-  if (MESSAGE_USE_MOCK) {
+  if (MESSAGE_USE_MOCK || CONTACT_EXCHANGE_USE_MOCK) {
     const result = respondMockContactExchange(exchangeId, action, commandId, subjectContext.key)
     return result.success == true ? okResponse(result.exchange) : failResponse(result.message, result.code, result)
   }
-  const normalized = normalizeBusinessResponse(await messageRequest({
-    url: '/message/contact-exchanges/' + exchangeId + '/respond', method: 'POST',
-    data: { action: action, clientCommandId: commandId }
-  }))
-  if (normalized == null || normalized.success != true) return normalized
-  return okResponse(businessData(normalized))
+  return failResponse('联系方式交换后端契约尚未开放', 'CONTACT_EXCHANGE_NOT_AVAILABLE')
 }
 
 /** Compatibility alias retained for callers of the former placeholder export. */
@@ -1105,19 +1220,25 @@ export async function handleApplication(
   }
   appendMessageSubject(requestData, subjectContext)
   const normalized = normalizeBusinessResponse(await messageRequest({
-    url: '/message/application/handle',
+    url: '/discovery/applications/' + applicationId + '/' + (action == 'accept' ? 'accept' : 'reject'),
     method: 'POST',
     data: requestData
   }))
   if (normalized == null || normalized.success != true) {
     return protectSubjectResponse(normalized, subjectContext)
   }
-  const result = businessData(normalized)
+  const backendApplication = businessData(normalized)
+  if (backendApplication == null || !isPositiveInteger(Number(backendApplication.id))) {
+    return protectSubjectResponse(failResponse('申请处理响应无效', 'INVALID_APPLICATION_RESPONSE', backendApplication), subjectContext)
+  }
+  const result: any = {
+    success: true,
+    application: mapApplicationItem(backendApplication, 'incoming'),
+    conversation: null,
+    canChat: action == 'accept'
+  }
   return protectSubjectResponse(
-    normalizeApplicationResult(
-      subjectContext.mode == 'parent' ? protectApplicationResult(result) : result,
-      action
-    ),
+    normalizeApplicationResult(result, action),
     subjectContext
   )
 }

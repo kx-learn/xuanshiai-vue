@@ -110,8 +110,9 @@ const generateAdvice = async () => {
       max_suggestions: 3
     }, adviceIdempotencyKey.value)
     if (!response.success || response.data == null) { errorMessage.value = advisorErrorMessage(Number(response.code), String(response.message)); return }
-    advice.value = response.data
     adviceIdempotencyKey.value = ''
+  } catch (error) {
+    errorMessage.value = '网络连接不可用，请检查网络后重试。'
   } finally { generating.value = false }
 }
 

@@ -28,8 +28,12 @@ try {
     console.log(`   ✅ 配置文件正常`)
     console.log(`   📌 USE_MOCK = ${useMock}`)
     console.log(`   ${useMock ? '📦 当前使用 Mock 数据' : '🌐 当前使用真实 API'}\n`)
+  } else {
+    process.exitCode = 1
+    console.log('   ❌ 配置文件缺少 USE_MOCK 声明')
   }
 } catch (error) {
+  process.exitCode = 1
   console.log(`   ❌ 配置文件读取失败: ${error.message}\n`)
 }
 
@@ -59,11 +63,13 @@ try {
       const exportMatch = content.match(/export const mock\w+/g)
       console.log(`   ✅ ${file} - 导出 ${exportMatch ? exportMatch.length : 0} 个数据项`)
     } else {
+      process.exitCode = 1
       console.log(`   ❌ ${file} - 文件不存在`)
     }
   })
   console.log('')
 } catch (error) {
+  process.exitCode = 1
   console.log(`   ❌ Mock 文件检查失败: ${error.message}\n`)
 }
 
@@ -93,11 +99,13 @@ try {
       const exportMatch = content.match(/export async function \w+/g)
       console.log(`   ✅ ${file} - 导出 ${exportMatch ? exportMatch.length : 0} 个 API 方法`)
     } else {
+      process.exitCode = 1
       console.log(`   ❌ ${file} - 文件不存在`)
     }
   })
   console.log('')
 } catch (error) {
+  process.exitCode = 1
   console.log(`   ❌ API 文件检查失败: ${error.message}\n`)
 }
 
@@ -125,11 +133,13 @@ try {
       if (!hasApiImport) console.log(`      ⚠️  未导入 API`)
       if (!hasOnMounted) console.log(`      ⚠️  未使用 onMounted 加载数据`)
     } else {
+      process.exitCode = 1
       console.log(`   ❌ ${page.name} - 文件不存在`)
     }
   })
   console.log('')
 } catch (error) {
+  process.exitCode = 1
   console.log(`   ❌ 页面文件检查失败: ${error.message}\n`)
 }
 

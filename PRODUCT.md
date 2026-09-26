@@ -375,10 +375,10 @@ AI 分身问答不是双方聊天，不会进入真人消息列表、触发对�
 
 ## Current Implementation Boundary
 
-当前仓库体现的是前端与 Mock 驱动的产品实现：
+当前实现边界以工作区根 `../PRODUCT.md` 为准。本文件只记录前端侧可核对事实：
 
-- `api/config.uts` 当前为 `USE_MOCK = false`，默认请求可达后端；这不代表所有模块都有真实后端或已完成生产联调。
-- 消息、父母端与情感实验室分别由 `MESSAGE_USE_MOCK`、`PARENT_USE_MOCK`、`EMOTION_LAB_USE_MOCK` 显式保持 Mock，不能再依赖请求参数静默回退。
+- `api/config.uts` 当前为 `USE_MOCK = false`，`API_BASE_URL` 与 `LAN_API_BASE_URL` 都是 `http://127.0.0.1:8000`。这是本机地址，不代表测试服、真机或生产后端可达。
+- 消息、父母端、情感实验室和纸飞机次数分别由 `MESSAGE_USE_MOCK`、`PARENT_USE_MOCK`、`EMOTION_LAB_USE_MOCK`、`PAPER_PLANE_CHANCE_USE_MOCK` 保持 Mock。
 - 页面、组件、接口封装与 Mock 数据已分层存在。
 - UniCloud 空间、数据库结构、真实认证、支付、审核与消息能力不能仅凭前端页面视为已完成。
 - 真实父母/子女关系授权、关联子女主体推荐与申请，以及消息与情感实验室接口的部署联调仍是生产发布门禁；MBTI 题库授权已确认。

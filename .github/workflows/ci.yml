@@ -12,6 +12,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout backend contract
+        uses: actions/checkout@v4
+        with:
+          repository: kx-learn/xuanshiai
+          path: backend-contract
 
       - uses: actions/setup-node@v4
         with:
@@ -22,4 +27,6 @@ jobs:
         run: npm ci
 
       - name: Validate frontend source
-        run: node tests/test-mock-system.js
+        env:
+          XSA_BACKEND_ROOT: backend-contract
+        run: npm test

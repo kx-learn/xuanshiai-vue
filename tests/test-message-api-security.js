@@ -115,9 +115,17 @@ assert.ok(apiSource.includes('data.actingChildId ='), 'HTTP requests must transm
 assert.ok(apiSource.includes('data.subjectMode = subjectContext.mode'), 'HTTP requests must transmit a scalar subject mode')
 assert.ok(!apiSource.includes('data.subject = {'), 'GET requests must not serialize a subject object as [object Object]')
 assert.ok(
-  (apiSource.match(/appendMessageSubject\(/g) || []).length >= 8,
-  'all real protected message operations must append the subject claim',
+  (apiSource.match(/appendMessageSubject\((?:requestData|data), subjectContext\)/g) || []).length >= 4,
+  'legacy message endpoints that accept acting subjects must retain their explicit subject claims',
 )
+assert.ok(apiSource.includes('export const CHAT_USE_MOCK = false'), 'ordinary chat must use the formal authenticated backend')
+assert.ok(apiSource.includes("url: '/chat/sessions'"), 'ordinary chat must resolve sessions from the server-visible session list')
+assert.ok(apiSource.includes('const sessionId = Number(item?.id ?? 0)'), 'ordinary chat must use the server-provided session id')
+assert.ok(apiSource.includes("url: '/chat/sessions/' + sessionId + '/messages'"), 'chat history must be scoped by the resolved session id')
+assert.ok(apiSource.includes("data: { type: 1, content: content.trim(), client_message_id: resolvedClientMessageId }"), 'chat send must include the same client_message_id for retries')
+assert.ok(apiSource.includes('function chatBackendUnavailable(subjectContext: any)'), 'formal chat must have a dedicated fail-closed subject boundary')
+assert.ok(apiSource.includes("'PARENT_BACKEND_NOT_AVAILABLE'"), 'unsupported parent-mode chat must fail closed')
+assert.ok(!apiSource.includes("url: '/chat/sessions/' + userId + '/messages'"), 'a peer user id must never be used as a session id')
 assert.ok(
   apiSource.includes("'CLIENT_MESSAGE_ID_REQUIRED'"),
   'sendMessage must reject a missing clientMessageId',
@@ -127,8 +135,9 @@ assert.ok(
   'handleApplication must reject a missing clientCommandId',
 )
 assert.ok(
-  (apiSource.match(/permissionRes != null \? permissionRes : failResponse\('聊天权限检查失败', 'CHAT_PERMISSION_FAILED'\)/g) || []).length >= 2,
-  'history and send must preserve 401/auth failures from their permission recheck',
+  apiSource.includes("permissionRes != null ? permissionRes : failResponse('聊天权限检查失败', 'CHAT_PERMISSION_FAILED')") &&
+    (apiSource.match(/permissionRes \?\? failResponse\('聊天权限检查失败', 'CHAT_PERMISSION_FAILED'\)/g) || []).length >= 2,
+  'permission rechecks must preserve 401/auth failures in mock and real send paths',
 )
 assert.ok(!apiSource.includes('legacyClientMessageSequence'), 'sendMessage must not fabricate an idempotency key')
 assert.ok(

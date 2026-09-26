@@ -22,7 +22,7 @@
 
 | 文档 | 说明 |
 |---|---|
-| [`MOCK_API_GUIDE.md`](./MOCK_API_GUIDE.md) | 当前 Mock/API 结构与真实接口切换前提 |
+| [`DEV_SUBAGENT_ORCHESTRATION.md`](./DEV_SUBAGENT_ORCHESTRATION.md) | 开发期 Luna 探索、Sol 修复强度阈值、调用回传与主模型复核规范 |
 | [`COMMUNITY_HTTP_CHANGELOG.md`](./COMMUNITY_HTTP_CHANGELOG.md) | 社区 FE↔BE 联调修改记录 |
 | [`服务红娘管理中心框架开发文档.md`](./服务红娘管理中心框架开发文档.md) | 总店红娘首页框架、支付门禁和后端联调契约 |
 | [`红娘管理中心-数据看板开发文档.md`](./红娘管理中心-数据看板开发文档.md) | 8 项数据简报的固定顺序、占位规则与接口契约 |

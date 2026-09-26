@@ -6,7 +6,7 @@
 
 ```bash
 npm install
-npm run dev:h5
+node tests/test-mock-system.js
 ```
 
 如果提示找不到 `package.json`，说明当前目录不正确。

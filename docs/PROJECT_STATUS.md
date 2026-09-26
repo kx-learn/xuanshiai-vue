@@ -1,9 +1,10 @@
 # 当前工程状态
 
-> 更新日期：2026-09-01。
-> 用途：只记录可由当前代码或本轮验证确认的状态，避免将占位实现、Mock 或历史配置描述为已完成生产能力。
+> 更新日期：2026-09-25。
+> 用途：只记录可由当前代码核对的状态。带日期的验收段落是当时记录，不自动代表今天的运行结果。
+> 不把占位实现、Mock 或历史配置写成已完成生产能力。
 
-## 当前微信小程序产物验收（2026-09-01）
+## 微信小程序产物验收（历史记录：2026-09-01）
 
 - HBuilderX `5.24` 已成功编译 `mp-weixin`，产物目录为 `unpackage/dist/dev/mp-weixin`，可直接导入微信开发者工具。
 - `npm run verify:mp` 已通过：主包 `1,859.6 KiB`，全部 6 个分包均低于 `2 MiB`，其中 `pagesSub/profileExtra` 为 `1,265.6 KiB`；全部媒体文件不超过 `200 KiB`，且 `lazyCodeLoading=requiredComponents`。
@@ -26,33 +27,32 @@
 
 ## 当前演示模式
 
-- 全局默认 `USE_MOCK = false`，常规业务维持真实接口策略。
+- 全局 `USE_MOCK = false`，但消息、父母端、情感实验室和纸飞机次数仍走模块级 Mock，见下一节。
 - 父母端固定使用独立 Mock，并保持当前登录账号、父母身份和关联子女主体的本地隔离。
 - 演示登录会建立本地演示会话；它不能证明真实身份、父母关系或服务端授权已经通过。
 
-## 后端对接状态（2026-07-27）
+## 后端对接状态（配置核对：2026-09-25）
 
-- **USE_MOCK = false**，已连接后端 FastAPI（当前 `API_BASE_URL` 指向测试服务器 `https://xhztest.xyz`）
-- 纸飞机核心接口（发送、获取、回复、会话列表、消息、已读）均已对接后端
-- 纸飞机获取次数（`purchasePaperPlaneChance`）后端暂未实现，仍使用本地 Mock（`PAPER_PLANE_CHANCE_USE_MOCK = true`）
+- 全局 `USE_MOCK = false`，当前 `API_BASE_URL` 与 `LAN_API_BASE_URL` 都是 `http://127.0.0.1:8000`。这是本机联调地址，不是测试服 `https://xhztest.xyz`，也不是生产域名。
+- 纸飞机获取次数仍使用本地 Mock（`PAPER_PLANE_CHANCE_USE_MOCK = true`）。
+- 消息、父母端、情感实验室分别由 `MESSAGE_USE_MOCK`、`PARENT_USE_MOCK`、`EMOTION_LAB_USE_MOCK` 保持 Mock。
 
 ## 媒体与互动扩展（2026-07-26）
 
 - 已补：评论点赞、纸飞机语音上传播放、纸飞机回复转匿名会话（页内面板）。
 - 真实私信仍仅申请同意后开启；消息 Tab 的 /chat/sessions 联调不在本次。
 
-## M04 AI 画像（2026-08-20，前端已实现）
+## M04 AI 画像（历史记录：2026-08-20）
 
-- **范围：** 对话式建构「关于我 / 关于对方」画像。新增 `api/ai-profile.uts`（会话 / 草稿 / 发布 / 历史 / 任务轮询 / 语音转写，含幂等键与错误码映射）、`mock/ai-profile.uts`（字段抽取、版本冲突、任务轮询模拟）、页面 `pagesSub/profileExtra/my-portrait.uvue`、组件 `XsaPortraitField` / `VoiceRecorder` / `VoiceWaveform`；`pages/profile/profile.uvue` 画像入口已从占位 Toast 改为 `navigateTo`。
-- **验证：** `node tests/test-ai-profile-page.js`、`node tests/test-mock-system.js`、`node tests/test-activity-detail-page.js`、`node tests/test-community-test-filters.js` 均 exit 0；`git diff --check` 通过。`npm run verify:mp` 因技能脚本 `debug-wechat-build-artifacts` 在本机缺失无法运行（环境问题，非本次改动），手工等价检查现有产物：`lazyCodeLoading=requiredComponents`、主包 ~416KB、`pagesSub` ~1.5MB、`my-portrait` 页面文件与 `app.json` 声明交叉验证通过。HBuilderX 重编译 + 微信开发者工具回归尚未执行（HBuilderX 安装未定位）。
-- **后置：** 真实 ASR 接入、后端 `/ai/*` 接口联调、67% 提前建构、暂停 / 恢复 / 重新开始、画像更新触发用心度与搜索重算。
-- **API_BASE_URL：** 仓库当前 `api/config.uts` 为测试服务器 `https://xhztest.xyz`（`USE_MOCK = false`）。本机 FastAPI `http://127.0.0.1:8000` 仅作可选本地联调，不作为仓库默认。
+- 2026-08-20 的页面入口是 `pagesSub/profileExtra/my-portrait.uvue`。2026-09-25 的 `pages.json` 已不再登记该页；现役画像路由是 `my-portrait-master`、`my-portrait-result`、`my-portrait-archive`。
+- 同日记录的测试、包体和「HBuilderX 未定位」只描述 2026-08-20，不能当作当前验收。
+- 当时后置项：真实 ASR、后端 `/ai/*` 联调、67% 提前建构、暂停 / 恢复 / 重新开始。是否已完成以当前代码和后端门禁为准，本文不补写未复验结论。
 
 ## 1. 当前可确认的工程事实
 
 - 技术栈：UniApp / Vue 3，页面和组件以 `.uvue` 为主，逻辑以 `.uts` 为主。
 - 主目标端：微信小程序；H5 用于快速调试。
-- `pages.json` 当前登记主包 7 页 + 分包 50 页，共 57 个页面；五个 Tab 为 **首页 / 牵线 / 社区 / 消息 / 我的**（`XsaTabBar` 文案与定版一致；`pages.json` tabBar 第二项文本仍为「红娘服务」，属受保护配置，未擅自改名）。
+- `pages.json` 于 2026-09-25 登记主包 10 页 + 6 个分包共 57 页，合计 67 页。五个 Tab 为 **首页 / 红娘服务 / 社区 / 消息 / 我的**（`pages.json` tabBar 第二项文本就是「红娘服务」，属受保护配置）。
 - 社区闭环子路由（`pages.json` 已登记）：话题列表/详情、动态详情、活动列表/详情/我的活动、纸飞机、社区通知、发布。
 - 社区主 Tab：**关注 / 同城 / 发现**；二级筛选随主 Tab 切换：
   - 关注：`全部 / 关注 / 喜欢`（喜欢 = 用户级喜欢关系，不是帖子点赞）
@@ -70,14 +70,12 @@
 
 ## 2. 运行与构建状态
 
-- 2026-07-24 结构验证：`node tests/test-mock-system.js` 与 `node tests/test-community-flow.js` 均 exit 0；`git diff --check` 无错误（仅有 CRLF 提示）。工作区根目录 graphify 见 `../graphify-out/`（本项目目录内无独立 `graphify-out/`）。
-- **HBuilderX 端侧编译：** 2026-07-25 关 Mock 后以 CLI `launch mp-weixin --compile true` 重新生成 `unpackage/dist/dev/mp-weixin`（产物 HTTP-only）；微信开发者工具已打开该目录。H5 冒烟预览端口为本机 `http://localhost:8080`（`:5173` 不是本工程 UI）。
-- **社区列表曾报“网络异常”：** 根因不是真实网络失败，而是 UTS 编译对象属性简写时丢掉局部变量（`normalizeListQuery` 返回 `{ tab }` 被编成裸 `tab` → ReferenceError → 页面 catch 文案）。源码已改为 `resolveTabValue` + 显式 `tab: tabName` 等属性名；产物中可见 `tab: tabName_1`。同类对象简写在 `.uts` 中应避免。
-- npm CLI 当前未通过：默认会读取不存在的 `src/manifest.json`；手动指定项目根目录后，又会在解析 `App.uvue` 时失败。`npm run build:mp-weixin` / `dev:mp-weixin` 不能作为端侧验收结论。
-- 因此当前应以 HBuilderX 作为端侧编译入口，并分别在浏览器和微信开发者工具验证；旧 `unpackage` 不能代替本次重新编译。
+- npm CLI 当前不能作为端侧验收：默认读取不存在的 `src/manifest.json`；指定项目根目录后仍会在解析 `App.uvue` 时失败。`npm run build:mp-weixin` / `dev:mp-weixin` 不能生成验收产物。
+- 端侧编译入口是 HBuilderX。产物目录为 `unpackage/dist/dev/mp-weixin`；`npm run verify:mp` 只审计这份已有产物。
 - 不得通过移动受保护配置、复制双份 `manifest.json` / `pages.json` 或批量改写 `.uvue` 来隐藏该架构差异。
-- **微信 AppID 历史记录：** 2026-07-27 以前曾使用 `touristappid`/空 AppID；该状态已由当前授权 AppID `wxb5f4e639f4eb2591` 替换，验收以最新 HBuilderX 产物为准。
+- 2026-09-01 及更早的包体、页面数和模拟器通过记录保留在上文历史段落，不代表 2026-09-25 重新编译通过。
 - **社区门槛（实现覆盖）：** 浏览无需认证；互动与申请认识仅 `realNameStatus === 'passed'`；学历只展示不拦截；举报/拉黑无门槛。
+- **微信 AppID 历史记录：** 2026-07-27 以前曾使用 `touristappid`/空 AppID；该状态已由当前授权 AppID `wxb5f4e639f4eb2591` 替换，验收以最新 HBuilderX 产物为准。
 
 ## 3. 页面成熟度说明
 
@@ -88,10 +86,8 @@
 ## 4. 当前后端 / 联调状态
 
 - `api/request.uts`：`USE_MOCK=true` 走 mock；`false` 走 FastAPI HTTP（Bearer）。不再按 `useHttp` 回退 uniCloud。
-- 仓库默认 `API_BASE_URL=https://xhztest.xyz`（测试服务器；本地联调可临时改为 `http://127.0.0.1:8000` 或局域网 IP）；token 存 `xsa_access_token`。
-- 社区模块主链路与旁路（like/apply）**适配器 + 审查 P0 缺陷已修**。
-- **2026-07-25 本地 HTTP 冒烟（A1–A4/B1 核心）已过：** quotas 200、like 可取消、`page_size` 50/100 契约、互喜欢无 `chat_session`、apply remain−1 + 409、accept 才建会话；记录见 changelog「实际测试」。环境：MySQL + Docker Redis + `SMS_PROVIDER=mock`。
-- **关 Mock 端侧联调（本地模拟器已验证）：** 本地使用 `USE_MOCK=false`、`API_BASE_URL=http://127.0.0.1:8000`（现已切到测试服务器 `https://xhztest.xyz`）；登录页调试登录使用 `17870810285`/`123456`；HBuilderX 5.15 编译成功，微信开发者工具已打开并完成社区路径回归。物理手机、正式登录、正式 HTTPS 合法域名仍不在本次范围。
+- 2026-09-25 仓库配置是 `API_BASE_URL=http://127.0.0.1:8000`，`LAN_API_BASE_URL` 也是回环地址；token 存 `xsa_access_token`。真机需要改成当前可达局域网地址。测试服 `https://xhztest.xyz` 不是当前默认值。
+- 2026-07-25 的本地 HTTP 冒烟和关 Mock 端侧记录只证明当天环境，不证明当前后端、模拟器或真机仍然通过。
 - 实测顺带修：BE `discovery._viewer_context` 缺 `user_auth` JOIN（R-T1）；社区 feed `up.school` → `ua.school`（R-T2）。
 - 物理手机扫码预览、正式发布配置和阶段 C 仍开放；本地 DevTools 通过不能替代生产验收。
 - BE：`set_like` 不再互喜欢建会话（对齐先申请再聊）；quotas VIP 用 `end_at`；额度 Redis 键 UTC 统一。
@@ -120,12 +116,12 @@
 
 ## 7. 当前需求依据
 
-定版产品定义以工作区根 `../PRODUCT.md` 为唯一权威；本目录 `PRODUCT.md` 仅为受控实现镜像。裁决优先级：
+定版产品定义以工作区根 `../PRODUCT.md` 为唯一权威；本目录 `PRODUCT.md` 是实现侧参考，不是第二份产品真相。裁决优先级：
 
 1. **用户本次明确授权**
 2. **`../PRODUCT.md`：** 产品定位、原则、边界与当前基线
 3. **`AGENTS.md` 硬约束**
-4. **`../DESIGN.md`**（视觉权威）与当前代码 / Mock 状态；本地 `DESIGN.md` 仅为实现镜像
+4. **`../DESIGN.md`**（视觉权威）与当前代码 / Mock 状态；本地 `DESIGN.md` 仅为实现参考
 
 注意：
 
