@@ -8,7 +8,7 @@
 				<view class="welcome-avatar"><text>人</text></view>
 				<view class="welcome-copy">
 					<view class="welcome-eyebrow"><text class="welcome-eyebrow-dot"></text><text class="welcome-eyebrow-text">{{ greeting }}</text></view>
-					<view class="welcome-title-row" :class="{ 'is-bounce': introBounce }"><text class="welcome-title">{{ displayName }}</text><view class="welcome-lockup"><text class="welcome-title-sep">·</text><text class="welcome-brand">XUANSHI</text></view></view>
+					<view class="welcome-title-row" :class="{ 'is-bounce': introBounce }"><text class="welcome-title">{{ displayName }}</text><view class="welcome-lockup"><text class="welcome-title-sep">·</text><text class="welcome-brand">宣誓爱</text></view></view>
 					<text class="welcome-subtitle">牵线搭桥，成就美好姻缘</text>
 				</view>
 				<view class="role-badge" @click="emit('identity')"><text>{{ roleName }}</text></view>
@@ -16,11 +16,11 @@
 
 			<view class="store-brief">
 				<view class="brief-heading">
-					<text class="brief-title">门店数据简报</text>
+					<text class="brief-title">待处理业务</text>
 					<text class="brief-copy" @click="emit('refresh')">刷新数据</text>
 				</view>
 				<view class="metric-grid">
-					<view v-for="item in storeMetrics" :key="item.key" class="metric-item" @click="onMetricAction(item)">
+					<view v-for="(item, index) in briefMetrics" :key="item.key" class="metric-item" :class="{ 'metric-sep': index > 0 }" @click="onMetricAction(item)">
 						<view class="metric-value"><text v-if="item.valuePrefix" class="metric-currency">{{ item.valuePrefix }}</text><text>{{ item.value }}</text><text v-if="item.badge" class="metric-badge">{{ item.badge }}</text></view>
 						<text class="metric-label">{{ item.label }}</text>
 					</view>
@@ -29,7 +29,7 @@
 
 			<view class="quick-actions">
 				<view v-for="item in quickActions" :key="item.key" class="quick-action" @click="emit('action', item.action)">
-					<view class="quick-action-icon" :class="item.tone"><text>{{ item.icon }}</text></view>
+					<view class="quick-action-icon"><image class="quick-action-image" :src="item.iconSrc" mode="aspectFit"></image></view>
 					<text class="quick-action-label">{{ item.label }}</text>
 				</view>
 			</view>
@@ -43,12 +43,20 @@
 				</view>
 			</view>
 
-			<view class="function-list">
-				<view v-for="item in navigationItems" :key="item.key" class="function-item" @click="emit('action', item.action)">
-					<view class="function-icon" :class="item.tone"><text>{{ item.icon }}</text></view>
-					<text class="function-label">{{ item.label }}</text>
-					<text v-if="item.trailing" class="function-trailing">{{ item.trailing }}</text>
-					<text class="function-link">{{ item.actionLabel }} ›</text>
+			<view class="function-section">
+				<view class="function-head">
+					<text class="function-head-title">功能导航</text>
+					<text class="function-head-sub">常用管理入口</text>
+				</view>
+				<view class="function-list">
+					<view v-for="item in navigationItems" :key="item.key" class="function-row" @click="emit('action', item.action)">
+						<view class="function-icon" :class="item.tone"><text>{{ item.icon }}</text></view>
+						<view class="function-copy">
+							<text class="function-label">{{ item.label }}</text>
+							<text v-if="item.value" class="function-value">{{ item.value }}</text>
+						</view>
+						<view class="function-arrow"><text class="function-arrow-glyph">›</text></view>
+					</view>
 				</view>
 			</view>
 
@@ -101,7 +109,7 @@ const defaultMetrics = [
 	{ key: 'pending_introduction', label: '待我牵线', value: '3', action: '牵线记录', valuePrefix: '', badge: '' },
 	{ key: 'introduction_succeeded', label: '牵线成功', value: '29', action: '牵线记录', valuePrefix: '', badge: '' },
 	{ key: 'meeting_requests', label: '约见申请', value: '2', action: '约见申请', valuePrefix: '', badge: '' },
-	{ key: 'pending_meeting', label: '待见面', value: '1', action: '约会管理', valuePrefix: '', badge: '' }
+	{ key: 'pending_meeting', label: '等待见面', value: '1', action: '约会管理', valuePrefix: '', badge: '' }
 ]
 
 // 本地联调时后端可能尚未准备业务记录；仅在四项业务指标全为 0 时提供可点击的演示计数。
@@ -127,6 +135,24 @@ const storeMetrics = computed(() => {
 	return defaultMetrics
 })
 
+// 「待处理业务」简报只展示四类待办；其余指标（我服务的 / 线上分成 / 线下业绩 / 牵线成功）
+// 仍完整保留在 storeMetrics 中，供功能导航的 metricValue 取数，所以这里只做过滤、不删源数据。
+// 顺序按 key 显式指定，不依赖后端返回顺序。
+const briefMetricKeys = ['pending_review', 'pending_introduction', 'meeting_requests', 'pending_meeting']
+
+const briefMetrics = computed(() => {
+	const all: any = storeMetrics.value
+	const out: any[] = []
+	briefMetricKeys.forEach((key: string) => {
+		const found: any = all.find((item: any): boolean => String(item.key) == key)
+		if (found != null) {
+			// 展示名与「牵线」「约见」两个模块的口径对齐后统一为「等待见面」
+			out.push(key == 'pending_meeting' ? { ...found, label: '等待见面' } : found)
+		}
+	})
+	return out
+})
+
 const onMetricAction = (item: any) => {
 	if (item != null && (item.key == 'pending_introduction' || item.key == 'introduction_succeeded' || item.key == 'meeting_requests' || item.key == 'pending_meeting')) {
 		emit('action', 'metric:' + String(item.key))
@@ -136,32 +162,64 @@ const onMetricAction = (item: any) => {
 }
 
 const quickActions = [
-	{ key: 'lead', label: '录入线索', icon: '线', tone: 'tone-one', action: '录入线索' },
-	{ key: 'member', label: '录入会员', icon: '会', tone: 'tone-two', action: '录入会员' },
-	{ key: 'introduction', label: '添加牵线', icon: '牵', tone: 'tone-three', action: '添加牵线' },
-	{ key: 'meeting', label: '安排约见', icon: '约', tone: 'tone-four', action: '安排约见' },
-	{ key: 'activity', label: '活动报名', icon: '报', tone: 'tone-five', action: '活动报名' }
+	{ key: 'lead', label: '录入线索', iconSrc: '/static/icons/action-lead.png', action: '录入线索' },
+	{ key: 'member', label: '录入会员', iconSrc: '/static/icons/action-member.png', action: '录入会员' },
+	{ key: 'introduction', label: '添加牵线', iconSrc: '/static/icons/action-introduction.png', action: '添加牵线' },
+	{ key: 'meeting', label: '安排约见', iconSrc: '/static/icons/action-meeting.png', action: '安排约见' },
+	{ key: 'activity', label: '活动报名', iconSrc: '/static/icons/action-activity.png', action: '活动报名' }
 ]
 
-const navigationItems = [
-	{ key: 'leads', label: '客源线索', icon: '线', tone: 'tone-one', action: '查看客源线索', actionLabel: '查看', trailing: '' },
-	{ key: 'members', label: '全部会员', icon: '会', tone: 'tone-two', action: '查看全部会员', actionLabel: '查看', trailing: '' },
-	{ key: 'served', label: '我服务的', icon: '我', tone: 'tone-three', action: '查看我服务的', actionLabel: '查看', trailing: '' },
-	{ key: 'introductions', label: '牵线记录', icon: '牵', tone: 'tone-four', action: '查看牵线记录', actionLabel: '查看', trailing: '' },
-	{ key: 'requests', label: '约见申请', icon: '约', tone: 'tone-five', action: '查看约见申请', actionLabel: '查看', trailing: '' },
-	{ key: 'meetings', label: '约会管理', icon: '会', tone: 'tone-one', action: '查看约会管理', actionLabel: '查看', trailing: '' },
-	{ key: 'video', label: '视频管理', icon: '视', tone: 'tone-two', action: '查看视频管理', actionLabel: '查看', trailing: '' },
-	{ key: 'commission', label: '分成明细', icon: '分', tone: 'tone-three', action: '查看分成明细', actionLabel: '查看', trailing: '' },
-	{ key: 'finance', label: '财务明细', icon: '财', tone: 'tone-five', action: '查看财务明细', actionLabel: '查看', trailing: '--' },
-	{ key: 'account', label: '我的账号', icon: '账', tone: 'tone-four', action: '查看我的账号', actionLabel: '设置', trailing: '' }
-]
+const metricValue = (key: string): string => {
+	const found = storeMetrics.value.find((item: any): boolean => item.key == key)
+	return found != null && found.value != null ? String(found.value) : '0'
+}
+
+// 功能导航：竖排列表卡（仿参考截图：圆角色块图标 + 标题 + 计数小字 + 右箭头）
+// 计数是红娘真正要一眼看到的信息，放在标题下方做灰色小字；不再用胶囊 CTA。
+const navigationItems = computed(() => {
+	const base = [
+		{ key: 'leads', label: '客源线索', icon: '线', tone: 'tone-one', action: '查看客源线索', value: '' },
+		{ key: 'members', label: '全部会员', icon: '会', tone: 'tone-two', action: '查看全部会员', value: '' },
+		{ key: 'served', label: '我服务的', icon: '我', tone: 'tone-three', action: '查看我服务的', value: metricValue('served_members') + ' 位会员' },
+		{ key: 'introductions', label: '牵线记录', icon: '牵', tone: 'tone-four', action: '查看牵线记录', value: '成功 ' + metricValue('introduction_succeeded') },
+		{ key: 'requests', label: '约见申请', icon: '约', tone: 'tone-five', action: '查看约见申请', value: metricValue('meeting_requests') + ' 条待处理' },
+		{ key: 'meetings', label: '约会管理', icon: '会', tone: 'tone-one', action: '查看约会管理', value: '等待见面 ' + metricValue('pending_meeting') },
+		{ key: 'video', label: '视频管理', icon: '视', tone: 'tone-two', action: '查看视频管理', value: '' },
+		{ key: 'commission', label: '分成明细', icon: '分', tone: 'tone-three', action: '查看分成明细', value: '￥' + metricValue('online_commission') },
+		{ key: 'finance', label: '财务明细', icon: '财', tone: 'tone-five', action: '查看财务明细', value: metricValue('offline_performance') == '0' ? '--' : '￥' + metricValue('offline_performance') },
+		{ key: 'account', label: '我的账号', icon: '账', tone: 'tone-four', action: '查看我的账号', value: '' }
+	]
+	return base
+})
 </script>
 
 <style scoped>
-.management-center { flex: 1; height: 0; background: var(--canvas); }
+/* 墨绿 + 暖米白主题：作用域覆盖全局 token，只在本组件生效，不动 App.uvue。
+ * 主色压到墨绿 #154A45（复用项目已有 match-deep），冷白底换暖米白，米白底带来纸的厚重感。
+ * 金色点缀（流光标题字/品牌字/光斑/眉点）刻意保留，墨绿配金更显稳重贵气。 */
+.management-center {
+	--canvas: #F1ECE3;
+	--paper: #FAF7F0;
+	--accent: #3A6B62;
+	--accent2: #154A45;
+	--soft: #557F75;
+	--sage-soft: #DCE7E2;
+	--accent-bg: #B8D5CD;
+	--match-deep: #154A45;
+	--ink: #1E2320;
+	--ink2: #4E544F;
+	--muted: #7C8078;
+	--line: #DED8CC;
+	/* 待处理业务数字专用色（用户指定取色 #E8433C） */
+	--metric-num: #E8433C;
+	/* 四列分隔线专用色：比 --line 深，保证 1rpx 细线在肉眼可辨
+	 * （按墨量对齐原「14│8」那条的视觉重量） */
+	--metric-div: #C0B7A8;
+	flex: 1; height: 0; background: var(--canvas);
+}
 .center-content { padding: 32rpx 28rpx calc(env(safe-area-inset-bottom) + 46rpx); display: flex; flex-direction: column; gap: 22rpx; }
-.welcome-section { position: relative; overflow: hidden; padding: 30rpx 28rpx; border-radius: 26rpx; background: linear-gradient(120deg, #005A4E 0%, #0A7A69 58%, #17A08A 100%); box-shadow: var(--shadow-md); display: flex; flex-direction: row; align-items: center; gap: 20rpx; transition: transform .32s cubic-bezier(.22, .61, .36, 1), box-shadow .32s ease; }
-.welcome-section.is-lit { transform: scale(1.015); box-shadow: 0 12px 36px rgba(0, 74, 66, 0.28); }
+.welcome-section { position: relative; overflow: hidden; padding: 30rpx 28rpx; border-radius: 26rpx; background: linear-gradient(120deg, #0F3A36 0%, #154A45 58%, #22635B 100%); box-shadow: var(--shadow-md); display: flex; flex-direction: row; align-items: center; gap: 20rpx; transition: transform .32s cubic-bezier(.22, .61, .36, 1), box-shadow .32s ease; }
+.welcome-section.is-lit { transform: scale(1.015); box-shadow: 0 12px 36px rgba(15, 50, 45, 0.30); }
 /* 极光扫光：hover/touch 时淡入的柔光带（meoo radial-gradient + blur 手法） */
 .welcome-aurora { position: absolute; top: -60%; left: -30%; width: 120%; height: 220%; background: radial-gradient(60% 60% at 30% 40%, rgba(255, 217, 160, 0.28) 0%, rgba(255, 255, 255, 0.0) 70%); opacity: 0; transition: opacity .4s ease; pointer-events: none; }
 .welcome-section.is-lit .welcome-aurora { opacity: 1; }
@@ -181,41 +239,58 @@ const navigationItems = [
 .welcome-lockup { display: flex; flex-direction: row; align-items: baseline; }
 .welcome-title { color: transparent; background: linear-gradient(100deg, #FFFFFF 0%, #FFD9A0 32%, #FFF7E6 50%, #FFD9A0 68%, #FFFFFF 100%); background-size: 200% auto; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-family: var(--serif); font-size: 46rpx; line-height: 1.16; font-weight: 700; letter-spacing: 1rpx; animation: welcome-shimmer 3.2s linear infinite; }
 .welcome-title-sep { margin: 0 10rpx; color: rgba(255, 255, 255, 0.5); font-family: var(--serif); font-size: 34rpx; }
-.welcome-brand { color: #FFD9A0; font-size: 23rpx; font-weight: 800; letter-spacing: 6rpx; }
+.welcome-brand { color: #FFD9A0; font-size: 25rpx; font-weight: 800; letter-spacing: 3rpx; }
 .welcome-subtitle { color: rgba(255, 255, 255, 0.78); font-size: 23rpx; line-height: 1.45; letter-spacing: 2rpx; }
 .role-badge { position: relative; padding: 12rpx 20rpx; border-radius: 999rpx; background: rgba(255, 255, 255, 0.18); border: 2rpx solid rgba(255, 255, 255, 0.42); color: #FFFFFF; font-size: 21rpx; font-weight: 800; white-space: nowrap; }
-.store-brief { overflow: hidden; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
-.brief-heading { padding: 22rpx 26rpx; background: var(--accent2); display: flex; flex-direction: row; align-items: center; gap: 16rpx; }
-.brief-title { color: var(--paper); font-size: 27rpx; font-weight: 800; }
-.brief-copy { color: var(--accent-bg); font-size: 23rpx; }
+/* 待处理业务：一张大卡包住四个部分（标题在卡内做卡头）。
+ * 内部四项沿用参考图的层级：大号粗体数字在上、灰色小字标签在下，无图标；
+ * 四列之间用细分隔线划出「四个部分」，不再各自独立成卡。 */
+.store-brief { display: flex; flex-direction: column; gap: 16rpx; padding: 22rpx 16rpx 26rpx; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
+.brief-heading { padding: 0 8rpx; display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; }
+.brief-title { color: var(--ink); font-size: 26rpx; font-weight: 800; }
+.brief-copy { color: var(--muted); font-size: 21rpx; }
+/* 四个部分：四等分。分隔线改用「第二列起加 border-left」而不是伪元素画背景条：
+ * 伪元素画的 1rpx/2rpx 细条在 3x 屏上是 1.56/3.12 设备像素（非整数），
+ * 渲染器会按每列各自的小数相位量化为 1 或 2 列，肉眼看到「粗细不一」。
+ * 边框走的是盒子绘制路径，随整数布局边界走，三条才一致。 */
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.metric-item { min-height: 128rpx; padding: 18rpx 8rpx; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7rpx; }
-.metric-value { position: relative; min-height: 36rpx; display: flex; flex-direction: row; align-items: baseline; color: var(--ink); font-family: var(--serif); font-size: 35rpx; line-height: 1; font-weight: 700; }.metric-currency { margin-right: 3rpx; font-family: var(--sans); font-size: 22rpx; font-weight: 800; }.metric-badge { position: absolute; top: -22rpx; right: -44rpx; padding: 5rpx 10rpx; border-radius: 999rpx; background: var(--match-coral); color: var(--paper); font-family: var(--sans); font-size: 20rpx; font-weight: 800; line-height: 1.1; white-space: nowrap; }
+.metric-item { box-sizing: border-box; padding: 10rpx 6rpx; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9rpx; }
+.metric-sep { border-left: 1rpx solid var(--metric-div); }
+.metric-value { position: relative; min-height: 54rpx; display: flex; flex-direction: row; align-items: baseline; color: var(--metric-num); font-family: var(--serif); font-size: 54rpx; line-height: 1; font-weight: 700; }.metric-currency { margin-right: 3rpx; font-family: var(--sans); font-size: 24rpx; font-weight: 700; }.metric-badge { position: absolute; top: -22rpx; right: -40rpx; padding: 4rpx 10rpx; border-radius: 999rpx; background: var(--match-coral); color: var(--paper); font-family: var(--sans); font-size: 19rpx; font-weight: 800; line-height: 1.1; white-space: nowrap; }
 .metric-label { color: var(--muted); font-size: 22rpx; line-height: 1.3; text-align: center; }
 .quick-actions { padding: 25rpx 16rpx; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: row; justify-content: space-between; gap: 8rpx; }
 .quick-action { width: 20%; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 10rpx; }
-.quick-action-icon, .function-icon { display: flex; align-items: center; justify-content: center; color: var(--paper); font-weight: 800; }
-.quick-action-icon { width: 48rpx; height: 48rpx; border-radius: 13rpx; font-size: 22rpx; }
+.function-icon { display: flex; align-items: center; justify-content: center; color: var(--paper); font-weight: 800; }
+.quick-action-icon { display: flex; align-items: center; justify-content: center; width: 48rpx; height: 48rpx; }
+.quick-action-image { width: 46rpx; height: 46rpx; }
 .quick-action-label { color: var(--ink2); font-size: 22rpx; white-space: nowrap; }
 .promotion-panel { padding: 26rpx; border-radius: 20rpx; background: var(--sage-soft); display: flex; flex-direction: column; gap: 10rpx; }
 .promotion-title { color: var(--accent2); font-size: 24rpx; font-weight: 800; }
 .promotion-copy { color: var(--ink2); font-size: 23rpx; line-height: 1.5; }
 .promotion-actions { display: flex; flex-direction: row; gap: 12rpx; margin-top: 4rpx; }
 .promotion-action { flex: 1; min-width: 0; min-height: 54rpx; border-radius: 999rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; color: var(--accent2); font-size: 22rpx; font-weight: 800; white-space: nowrap; }
-.function-list { overflow: hidden; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); }
-.function-item { min-height: 90rpx; padding: 0 24rpx; border-top: 1px solid var(--line); display: flex; flex-direction: row; align-items: center; gap: 14rpx; }
-.function-item:first-child { border-top: none; }
-.function-icon { width: 32rpx; height: 32rpx; border-radius: 9rpx; font-size: 17rpx; flex-shrink: 0; }
-.function-label { flex: 1; min-width: 0; color: var(--ink); font-size: 25rpx; font-weight: 700; }
-.function-trailing { color: var(--muted); font-size: 22rpx; }
-.function-link { color: var(--muted); font-size: 22rpx; white-space: nowrap; }
+.function-section { display: flex; flex-direction: column; gap: 14rpx; }
+.function-head { padding: 0 6rpx; display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; }
+.function-head-title { color: var(--ink); font-size: 26rpx; font-weight: 800; }
+.function-head-sub { color: var(--muted); font-size: 21rpx; }
+.function-list { display: flex; flex-direction: column; padding: 8rpx 0; border-radius: 20rpx; background: var(--surface); box-shadow: var(--shadow-sm); overflow: hidden; }
+.function-row { min-height: 96rpx; padding: 20rpx 26rpx; display: flex; flex-direction: row; align-items: center; gap: 22rpx; }
+.function-icon { width: 60rpx; height: 60rpx; border-radius: 18rpx; font-size: 24rpx; flex-shrink: 0; }
+.function-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5rpx; }
+.function-label { color: var(--ink); font-size: 26rpx; font-weight: 700; }
+.function-value { color: var(--muted); font-size: 21rpx; }
+/* 右侧箭头：用文字折角承载（空 view 的 border 在本机渲染为 0×0，实测不可用）。
+ * 颜色取 --soft 而非 --line：--line 在白卡上对比度太低，肉眼近乎不可见。 */
+.function-arrow { width: 24rpx; height: 36rpx; display: flex; align-items: center; justify-content: flex-end; flex-shrink: 0; }
+.function-arrow-glyph { color: var(--soft); font-size: 40rpx; font-weight: 500; line-height: 1; }
 .logout-action { min-height: 72rpx; border-radius: 999rpx; background: var(--surface); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 23rpx; font-weight: 800; }
-.tone-one { background: var(--accent); }
-.tone-two { background: var(--accent2); }
-.tone-three { background: var(--match-deep); }
-.tone-four { background: var(--match-paper); color: var(--accent2); }
-.tone-five { background: var(--sage); color: var(--ink); }
-.metric-item:active, .brief-copy:active, .quick-action:active, .promotion-action:active, .function-item:active, .logout-action:active { opacity: 0.78; transform: scale(0.98); }
+/* 图标色块：墨绿系轮转；tone-five 留暖金，呼应欢迎卡的金色点缀 */
+.tone-one { background: #DCE9E3; color: #154A45; }
+.tone-two { background: #E3EDE6; color: #2A5F52; }
+.tone-three { background: #D6E5DE; color: #1B5249; }
+.tone-four { background: #E7EEE9; color: #3B6A5E; }
+.tone-five { background: #F5EBD6; color: #8A6A2A; }
+.metric-item:active, .brief-copy:active, .quick-action:active, .promotion-action:active, .function-row:active, .logout-action:active { opacity: 0.78; transform: scale(0.98); }
 /* meoo 式流光艺术字：光带扫过文字 */
 @keyframes welcome-shimmer { 0% { background-position: 200% center; } 100% { background-position: -200% center; } }
 /* meoo 式灵动弹跳：进入时上下弹两下 */

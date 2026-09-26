@@ -347,10 +347,51 @@ export async function getMatchmakerReviewMembers(data: any | null = null) {
 export async function createMatchmakerWorkspaceMember(data: any) {
   const source = data != null ? data : {}
   const maritalText = source.maritalStatus != null ? String(source.maritalStatus) : ''
-  const isMarried = maritalText == '已婚' ? 1 : (maritalText == '离异' || maritalText == '离婚' ? 2 : (maritalText == '丧偶' ? 3 : 1))
+  const maritalMap: any = { '未婚': 1, '离异': 2, '离婚': 2, '丧偶': 3, '离婚未育': 4, '离异未带孩': 5, '离异带女孩': 6, '离异带男孩': 7 }
+  const isMarried = maritalMap[maritalText] != null ? maritalMap[maritalText] : 1
   const heightText = source.height != null && String(source.height).trim() != '' ? Number(source.height) : null
   const weightText = source.weight != null && String(source.weight).trim() != '' ? Number(source.weight) : null
-  const incomeText = source.income != null && String(source.income).trim() != '' ? Number(String(source.income).replace(/[^0-9.]/g, '')) : null
+  // 收入：支持直接传数值（月收入），或传档位文案（录入表单选择）。档位映射与后台 INCOME_VALUES 一致。
+  const incomeRaw = source.income != null ? String(source.income).trim() : ''
+  const incomeBands: any = { '3千元以下': 2500, '3-5千元': 4000, '5-8千元': 6500, '8千-1万元': 9000, '1-2万元': 15000, '2万以上': 30000, '5万以上': 50000, '年入百万': 83333 }
+  let incomeValue: any = null
+  if (incomeRaw != '') {
+    const banded = incomeBands[incomeRaw]
+    if (banded != null) incomeValue = banded
+    else {
+      const numeric = Number(incomeRaw.replace(/[^0-9.]/g, ''))
+      incomeValue = !isNaN(numeric) && numeric > 0 ? numeric : null
+    }
+  }
+  // 标签：既支持数组（多选），也兼容旧「|」分隔字符串。
+  let tagsValue: any = null
+  if (source.tags != null) {
+    if (Array.isArray(source.tags)) {
+      const arr = (source.tags as any[]).filter((t: any) => t != null && String(t).trim() != '')
+      tagsValue = arr.length > 0 ? arr.map((t: any) => String(t).trim()).join('|') : null
+    } else {
+      tagsValue = String(source.tags).trim() || null
+    }
+  }
+  // 择偶要求编码映射（与后台 MemberDetailWorkspace 一致）
+  const pref = source.pref != null ? source.pref : {}
+  const eduOrder = ['初中', '技校', '高中', '中专', '大专', '本科', '硕士', '博士']
+  const eduMin = pref.education != null && String(pref.education) != '' && String(pref.education) != '不限'
+    ? eduOrder.indexOf(String(pref.education)) + 1 : null
+  const incomeMin = pref.income != null && String(pref.income) != '' && String(pref.income) != '不限'
+    ? (incomeBands[String(pref.income)] != null ? incomeBands[String(pref.income)] : Number(String(pref.income).replace(/[^0-9.]/g, ''))) : null
+  const occReq = pref.occupation != null && String(pref.occupation) != '' && String(pref.occupation) != '不限' ? String(pref.occupation) : null
+  const marriageAccept = pref.marriageAccept != null && String(pref.marriageAccept) != '' && String(pref.marriageAccept) != '不限' ? String(pref.marriageAccept) : null
+  const housingReq = pref.housing != null && String(pref.housing) != '' && String(pref.housing) != '不限'
+    ? (String(pref.housing) == '愿意和父母同住' ? 1 : String(pref.housing) == '要有独立婚房' ? 2 : null) : null
+  const smokingReq = pref.smoking != null && String(pref.smoking) != '' && String(pref.smoking) != '不限'
+    ? (String(pref.smoking) == '不接受吸烟' ? 1 : String(pref.smoking) == '可以偶尔吸烟' ? 2 : null) : null
+  const weddingPlan = pref.weddingPlan != null && String(pref.weddingPlan) != '' && String(pref.weddingPlan) != '不限' ? String(pref.weddingPlan) : null
+  const ageMin = pref.ageMin != null && Number(pref.ageMin) > 0 ? Number(pref.ageMin) : null
+  const ageMax = pref.ageMax != null && Number(pref.ageMax) > 0 ? Number(pref.ageMax) : null
+  const heightMin = pref.heightMin != null && Number(pref.heightMin) > 0 ? Number(pref.heightMin) : null
+  const heightMax = pref.heightMax != null && Number(pref.heightMax) > 0 ? Number(pref.heightMax) : null
+  const hasPref = ageMin != null || ageMax != null || heightMin != null || heightMax != null || eduMin != null || incomeMin != null || occReq != null || marriageAccept != null || housingReq != null || smokingReq != null || weddingPlan != null
   return request({
     url: '/matchmaker/workbench/members', method: 'POST', data: {
       phone: String(source.phone || '').trim(), nickname: String(source.nickname || '').trim(), real_name: String(source.realName || '').trim() || null,
@@ -359,11 +400,14 @@ export async function createMatchmakerWorkspaceMember(data: any) {
       hometown: String(source.hometown || '').trim() || null, residence: String(source.residence || '').trim() || null,
       household: String(source.household || '').trim() || null, ethnicity: String(source.ethnicity || '').trim() || null,
       zodiac: String(source.zodiac || '').trim() || null, education: String(source.education || '').trim() || null,
-      job: String(source.occupation || '').trim() || null, income: !isNaN(incomeText) && incomeText != null && incomeText > 0 ? incomeText : null,
+      job: String(source.occupation || '').trim() || null, income: incomeValue,
       house: String(source.housing || '').trim() || null, car: String(source.vehicle || '').trim() || null,
       smoking: String(source.smoking || '').trim() || null, drinking: String(source.drinking || '').trim() || null,
       religion: String(source.religion || '').trim() || null, marriage_plan: String(source.marriagePlan || '').trim() || null,
-      tags: String(source.tags || '').trim() || null, remark: String(source.remark != null ? source.remark : (source.memberCode != null && source.codeMode == 'custom' ? '录入编号：' + String(source.memberCode).trim() : '')).trim() || null
+      tags: tagsValue, remark: String(source.remark != null ? source.remark : (source.memberCode != null && source.codeMode == 'custom' ? '录入编号：' + String(source.memberCode).trim() : '')).trim() || null,
+      age_min: ageMin, age_max: ageMax, height_min: heightMin, height_max: heightMax,
+      education_min: eduMin, income_min: incomeMin, occupation_requirement: occReq,
+      marriage_accept: marriageAccept, housing_requirement: housingReq, smoking_requirement: smokingReq, wedding_plan: weddingPlan
     }
   })
 }
@@ -435,6 +479,9 @@ export async function updateWorkspaceLead(leadId: string, changes: any) {
   if (source.intentionValue != null) data.intention_value = Number(source.intentionValue)
   if (source.status != null) data.status = String(source.status)
   if (source.remark != null) data.remark = String(source.remark)
+  if (source.photo != null) data.photo = String(source.photo)
+  if (source.gender != null) data.gender = Number(source.gender)
+  if (source.birthday != null) data.birthday = String(source.birthday)
   return request({ url: '/matchmaker/workbench/leads/' + encodeURIComponent(leadId), method: 'PATCH', data: data })
 }
 
@@ -451,8 +498,43 @@ export async function createWorkspaceLead(data: any) {
       source: source.source != null && String(source.source).trim() != '' ? String(source.source).trim() : '手动录入',
       intention_level: source.intentionLevel != null ? Number(source.intentionLevel) : 1,
       intention_value: source.intentionValue != null ? Number(source.intentionValue) : 1,
-      remark: source.remark != null && String(source.remark).trim() != '' ? String(source.remark).trim() : null
+      remark: source.remark != null && String(source.remark).trim() != '' ? String(source.remark).trim() : null,
+      photo: source.photo != null && String(source.photo).trim() != '' ? String(source.photo).trim() : null,
+      gender: source.gender != null ? Number(source.gender) : null,
+      birthday: source.birthday != null && String(source.birthday).trim() != '' ? String(source.birthday).trim() : null
     }
+  })
+}
+
+/** 上传客源线索照片，返回 { url, thumbnail_url, size }。 */
+export async function uploadWorkspaceLeadPhoto(filePath: string) {
+  return new Promise<any>((resolve) => {
+    uni.uploadFile({
+      url: buildApiUrl('/matchmaker/workbench/leads/photo'),
+      filePath: filePath,
+      name: 'file',
+      header: getAccessToken() != '' ? { Authorization: 'Bearer ' + getAccessToken() } : {},
+      success: (res: any) => {
+        if (res.statusCode == 401) clearAuthTokens()
+        let data: any = null
+        try {
+          data = JSON.parse('' + res.data)
+        } catch (e) {
+          resolve({ success: false, data: null, code: res.statusCode, message: '上传响应解析失败' })
+          return
+        }
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve({ success: true, data, code: res.statusCode, message: 'success' })
+        } else {
+          const detail = data != null && data.detail != null ? data.detail : '上传失败'
+          resolve({ success: false, data, code: res.statusCode, message: '' + detail })
+        }
+      },
+      fail: (err: any) => {
+        const message = err != null && err.errMsg != null ? '' + err.errMsg : '上传失败，请检查网络'
+        resolve({ success: false, data: null, code: -1, message })
+      }
+    })
   })
 }
 
@@ -1062,6 +1144,17 @@ export async function getRegionCities(provinceCode: string) {
     skipAuth: true,
     method: 'GET',
     data: { province_code: provinceCode }
+  })
+}
+
+/** 按城市代码获取区县列表。 */
+export async function getRegionDistricts(cityCode: string) {
+  return request({
+    url: '/regions/districts',
+    forceHttp: true,
+    skipAuth: true,
+    method: 'GET',
+    data: { city_code: cityCode }
   })
 }
 

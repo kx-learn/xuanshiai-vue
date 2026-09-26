@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <circle cx="24" cy="24" r="23" fill="#13313D"/>
+  <path d="M 12.60 22.00 C 12.60 20.60 13.70 19.60 15.10 19.60 L 32.90 19.60 C 34.30 19.60 35.40 20.60 35.40 22.00 L 35.40 30.40 C 35.40 31.80 34.30 32.80 32.90 32.80 L 15.10 32.80 C 13.70 32.80 12.60 31.80 12.60 30.40 Z" stroke="#FDFEFE" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 19.60 19.60 C 19.60 16.80 21.30 15.00 24.00 15.00 C 26.70 15.00 28.40 16.80 28.40 19.60" stroke="#FDFEFE" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 13.40 25.00 L 34.60 25.00" stroke="#FDFEFE" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
