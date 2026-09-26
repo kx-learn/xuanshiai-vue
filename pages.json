@@ -266,6 +266,12 @@
           "style": {
             "navigationBarTitleText": "私人定制"
           }
+        },
+        {
+          "path": "my-account",
+          "style": {
+            "navigationBarTitleText": "我的账号"
+          }
         }
       ]
     },

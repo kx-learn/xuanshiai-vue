@@ -28,4 +28,5 @@ open-wechat-devtools.bat
 # local worktrees
 .worktrees/
 .config.uts
-.workbuddy
+.workbuddyproject.private.config.json
+project.private.config.json.bobibak

@@ -1,0 +1,544 @@
+<template>
+	<view class="page">
+		<!-- 滚动内容区 -->
+		<scroll-view scroll-y class="content-scroll" enhanced show-scrollbar="false">
+			<view class="content-inner">
+			<!-- 个人资料头部（横向布局，精简版：无 VIP 标识 / 无完成度；保留「编辑资料」入口） -->
+			<view class="profile-header">
+				<view class="avatar-wrap">
+					<image v-if="user.avatar != ''" class="avatar-image" :src="user.avatar" mode="aspectFill"></image>
+					<text v-else class="ic ic-social ic-touxiang avatar-icon"></text>
+				</view>
+				<view class="profile-info">
+					<view class="nickname-row">
+						<text class="nickname">{{ user.nickname }}</text>
+					</view>
+					<view class="vip-tag-row">
+						<view class="vip-tag">
+							<text class="vip-tag-text">服务红娘</text>
+						</view>
+						<text class="vip-tag-desc">红娘身份已生效</text>
+					</view>
+				</view>
+				<!-- 资料编辑入口：与会员端「我的」页同款描边胶囊，跳同一个编辑页（账号数据共用） -->
+				<view class="edit-profile-btn" @tap="onEditProfile">
+					<text class="edit-profile-text">编辑资料</text>
+					<text class="edit-profile-arrow">›</text>
+				</view>
+			</view>
+
+			<!-- 菜单卡片：主菜单与底部菜单同卡连续排列，中间以分隔线断组（避免两卡分离的割裂感） -->
+			<view class="menu-card">
+				<view class="menu-row" v-for="item in mainMenuItems" :key="item.label" @tap="handleMenuItem(item)">
+					<view class="menu-icon-wrap" :style="{ backgroundColor: item.iconBg }">
+						<text :class="item.iconClass + ' menu-icon'"></text>
+					</view>
+					<text class="menu-label">{{ item.label }}</text>
+					<view class="menu-spacer"></view>
+					<text class="ic ic-sys ic-jiantou-you menu-arrow"></text>
+				</view>
+
+				<view class="menu-divider"></view>
+
+				<view class="menu-row" v-for="item in bottomMenuItems" :key="item.label" @tap="item.label == '安全中心' ? onSecurity() : handleMenuItem(item)">
+					<view class="menu-icon-wrap" :style="{ backgroundColor: item.iconBg }">
+						<text :class="item.iconClass + ' menu-icon'"></text>
+					</view>
+					<view class="menu-text-col">
+						<text class="menu-label">{{ item.label }}</text>
+						<text v-if="item.subtitle" class="menu-subtitle">{{ item.subtitle }}</text>
+					</view>
+					<view class="menu-spacer"></view>
+					<text class="ic ic-sys ic-jiantou-you menu-arrow"></text>
+				</view>
+			</view>
+
+			<!-- 底部留白 -->
+			<view class="scroll-bottom-spacer"></view>
+			</view>
+		</scroll-view>
+	</view>
+
+	<!-- 邀请分享弹窗：复用「我的」页同款弹窗 -->
+	<view v-if="inviteShareVisible" class="invite-share-mask" @tap="closeInviteShare">
+		<view class="invite-share-sheet" @tap.stop>
+			<view class="invite-share-handle"></view>
+			<text class="invite-share-title">分享邀请好友</text>
+			<view class="invite-share-options">
+				<view class="invite-share-option" @tap="shareToWechat">
+					<view class="invite-share-option-icon invite-share-option-icon-green"><text class="invite-share-symbol">↗</text></view>
+					<text class="invite-share-option-label">发送给朋友</text>
+				</view>
+				<view class="invite-share-option" @tap="goMyPoster">
+					<view class="invite-share-option-icon invite-share-option-icon-gold"><text class="invite-share-symbol">▧</text></view>
+					<text class="invite-share-option-label">生成海报</text>
+				</view>
+			</view>
+			<text class="invite-share-note">好友通过你的分享卡片/海报完成注册后，邀请人和新好友双方均可获得平台积分，分享可兑现奖励。</text>
+			<view class="invite-share-cancel" @tap="closeInviteShare"><text>取消</text></view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref } from 'vue'
+import { getProfileOverview } from '@/api'
+import { resolveMediaUrl } from '@/api/config.uts'
+
+// 红娘管理中心「我的账号」子页面：与会员端「我的」页共用同一账号数据，
+// 但页面独立、内容为精简版——会员征婚向功能（VIP/统计/AI 专区/任务/动态等）不在此页出现。
+const user = ref({
+	nickname: '加载中',
+	avatar: '',
+})
+
+const loadOverview = async () => {
+	try {
+		const res = await getProfileOverview()
+		if (!res.success || res.data == null) return
+		const data = res.data as any
+		const profile = data.profile != null && typeof data.profile === 'object' ? data.profile : {}
+		const account = data.user != null && typeof data.user === 'object' ? data.user : {}
+		const nickname = data.nickname != null && data.nickname != ''
+			? data.nickname
+			: (profile.nickname != null && profile.nickname != '' ? profile.nickname : account.nickname)
+		user.value.nickname = nickname != null && nickname != '' ? '' + nickname : '未设置昵称'
+		const avatar = data.avatar != null && data.avatar != '' ? data.avatar : (profile.avatar != null && profile.avatar != '' ? profile.avatar : account.avatar)
+		user.value.avatar = resolveMediaUrl(avatar)
+	} catch (error) {
+		console.error('[MyAccount] overview load failed', error)
+	}
+}
+
+const onMenuSettings = () => {
+	uni.navigateTo({ url: '/pagesSub/profileExtra/settings' })
+}
+
+const onHelp = () => {
+	uni.navigateTo({ url: '/pagesSub/profileExtra/help', fail: () => { uni.showToast({ title: '客服与帮助打开失败，请重试', icon: 'none' }) } })
+}
+
+const onAbout = () => {
+	uni.navigateTo({ url: '/pagesSub/about/about' })
+}
+
+const onSecurity = () => {
+	uni.navigateTo({
+		url: '/pagesSub/profileExtra/security',
+		animationType: 'slide-in-right',
+		fail: (err) => {
+			console.log('安全中心导航失败', err)
+			uni.showToast({ title: '安全中心暂不可用，请重试', icon: 'none' })
+		}
+	})
+}
+
+const onCertification = () => {
+	uni.navigateTo({ url: '/pagesSub/profileExtra/certification' })
+}
+
+// 资料编辑：与会员端「我的」页共用同一账号数据，因此跳同一个编辑页。
+// 这里保留这个入口，方便红娘在管理中心内直接改资料，不必绕回首页「我的」。
+const onEditProfile = () => {
+	uni.navigateTo({
+		url: '/pagesSub/userExtra/user/edit',
+		fail: () => { uni.showToast({ title: '编辑资料打开失败，请重试', icon: 'none' }) }
+	})
+}
+
+const onInviteFriend = () => {
+	inviteShareVisible.value = true
+}
+
+const inviteShareVisible = ref(false)
+
+const closeInviteShare = () => { inviteShareVisible.value = false }
+
+const shareToWechat = () => {
+	inviteShareVisible.value = false
+	uni.showToast({ title: '已准备好分享内容', icon: 'success' })
+}
+
+const goMyPoster = () => {
+	inviteShareVisible.value = false
+	uni.navigateTo({
+		url: '/pagesSub/profileExtra/my-posters?userId=9001',
+		fail: () => { uni.showToast({ title: '页面打开失败，请重试', icon: 'none' }) }
+	})
+}
+
+const handleMenuItem = (item: any) => {
+	if (item == null) return
+	const label = item.label != null ? '' + item.label : ''
+	if (label == '客服与帮助') {
+		onHelp()
+	} else if (label == '安全中心') {
+		onSecurity()
+	} else if (label == '设置') {
+		onMenuSettings()
+	} else if (label == '关于我们') {
+		onAbout()
+	} else if (label == '诚信认证') {
+		onCertification()
+	} else if (item.action != null) {
+		item.action()
+	}
+}
+
+// iconSrc 非空时用 SVG 图片图标（优先），否则用 iconClass 字体图标
+const mainMenuItems = [
+	{ iconClass: 'ic ic-sys ic-shiming', iconSrc: '', iconBg: '#FEF3E4', label: '诚信认证', action: onCertification },
+	{ iconClass: 'ic ic-sys ic-fenxiang', iconSrc: '', iconBg: '#FEF3E4', label: '推荐给好友', action: onInviteFriend },
+	{ iconClass: 'ic ic-me ic-shezhi', iconSrc: '', iconBg: '#FEF3E4', label: '设置', action: onMenuSettings },
+]
+
+const bottomMenuItems = [
+	{ iconClass: 'ic ic-me ic-kefu', iconBg: '#FEF3E4', label: '客服与帮助', subtitle: 'AI客服 . 意见反馈', action: onHelp },
+	{ iconClass: 'ic ic-me ic-bangzhu', iconBg: '#FEF3E4', label: '关于我们', subtitle: '版本 1.0.0', action: onAbout },
+	{ iconClass: 'ic ic-sys ic-shiming', iconBg: '#FEF3E4', label: '安全中心', url: '/pagesSub/profileExtra/security', action: onSecurity },
+]
+
+onLoad(() => { loadOverview() })
+</script>
+
+<style>
+/* ==================== 页面级 CSS 变量 & 基础样式（与「我的」页同源） ==================== */
+page {
+	--profile-bg: #F7F4F0;
+	--profile-card: #FFFFFF;
+	--profile-dark: #3A3A3A;
+	--profile-accent: #8FA88A;
+	--profile-rose: #D4A89E;
+	--profile-text: #2C2C2C;
+	--profile-text-secondary: #8E8E8A;
+	--profile-text-muted: #C5C3BE;
+	--profile-text-inverse: #FFFFFF;
+	--profile-vip-sub: #B0B0B0;
+	background-color: var(--profile-bg);
+}
+
+/* ==================== 页面容器 ==================== */
+.page {
+	position: relative;
+	width: 100%;
+	min-height: 100vh;
+	background-color: var(--profile-bg);
+	display: flex;
+	flex-direction: column;
+}
+
+/* ==================== 滚动内容区 ==================== */
+.content-scroll {
+	flex: 1;
+}
+
+.content-inner {
+	display: flex;
+	flex-direction: column;
+	gap: 24px;
+	padding: 24px 24px 0 24px;
+}
+
+/* ==================== 个人资料头部 ==================== */
+.profile-header {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 14px;
+	width: 100%;
+	padding-top: 8px;
+}
+
+.avatar-wrap {
+	width: 64px;
+	height: 64px;
+	border-radius: 32px;
+	background-color: var(--profile-rose);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.avatar-image {
+	width: 100%;
+	height: 100%;
+	border-radius: 50%;
+}
+
+.profile-info {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.nickname-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.nickname {
+	font-size: 20px;
+	font-weight: 600;
+	color: var(--profile-text);
+	line-height: 1.3;
+}
+
+.vip-tag-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 6px;
+}
+
+.vip-tag {
+	background-color: var(--profile-accent);
+	border-radius: 10px;
+	padding: 2px 8px;
+	display: flex;
+	align-items: center;
+	height: 22px;
+}
+
+.vip-tag-text {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--profile-text-inverse);
+}
+
+.vip-tag-desc {
+	font-size: 12px;
+	color: var(--profile-text-secondary);
+}
+
+/* ==================== 编辑资料入口（描边胶囊，与「我的」页同款） ==================== */
+.edit-profile-btn {
+	flex-shrink: 0;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 3px;
+	padding: 6px 12px;
+	border: 1px solid var(--profile-accent);
+	border-radius: 999px;
+	background-color: var(--profile-card);
+}
+
+.edit-profile-text {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--profile-accent);
+	line-height: 1.4;
+}
+
+.edit-profile-arrow {
+	font-size: 13px;
+	color: var(--profile-accent);
+	line-height: 1.4;
+}
+
+/* ==================== 菜单卡片 ==================== */
+.menu-card {
+	display: flex;
+	flex-direction: column;
+	background-color: var(--profile-card);
+	border-radius: 16px;
+	padding: 4px 0;
+	width: 100%;
+}
+
+.menu-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 12px;
+	padding: 14px 16px;
+	width: 100%;
+}
+
+.menu-icon-wrap {
+	width: 40px;
+	height: 40px;
+	border-radius: 12px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+/* 分组分隔线：自图标列右侧起，右端留出卡片内边距 */
+.menu-divider {
+	height: 1px;
+	margin-left: 68px;
+	margin-right: 16px;
+	background-color: #F0EDE8;
+}
+
+.menu-icon {
+	font-size: 18px;
+	/* 图标线条统一为暖褐色，与淡黄底色（#FEF3E4）同属暖色系 */
+	color: #8B6F47;
+}
+
+.menu-text-col {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.menu-label {
+	font-size: 15px;
+	font-weight: 500;
+	color: var(--profile-text);
+}
+
+.menu-subtitle {
+	font-size: 12px;
+	color: var(--profile-text-secondary);
+}
+
+.menu-spacer {
+	flex: 1;
+}
+
+.menu-arrow {
+	font-size: 14px;
+	color: var(--profile-text-muted);
+}
+
+/* ==================== 底部留白 ==================== */
+.scroll-bottom-spacer {
+	height: 40px;
+	flex-shrink: 0;
+}
+
+/* ============================================================
+   婚恋图标字体
+   ============================================================ */
+@font-face { font-family: "iconfont-home"; src: url('/static/婚恋小程序图标/首页推荐与匹配/iconfont.woff2') format('woff2'), url('/static/婚恋小程序图标/首页推荐与匹配/iconfont.woff') format('woff'); }
+@font-face { font-family: "iconfont-sys"; src: url('/static/婚恋小程序图标/系统通用/iconfont.woff2') format('woff2'), url('/static/婚恋小程序图标/系统通用/iconfont.woff') format('woff'); }
+@font-face { font-family: "iconfont-social"; src: url('/static/婚恋小程序图标/社区互动与信息/iconfont.woff2') format('woff2'), url('/static/婚恋小程序图标/社区互动与信息/iconfont.woff') format('woff'); }
+@font-face { font-family: "iconfont-me"; src: url('/static/婚恋小程序图标/个人中心/iconfont.woff2') format('woff2'), url('/static/婚恋小程序图标/个人中心/iconfont.woff') format('woff'); }
+
+.ic { font-style: normal; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+.ic-sys { font-family: "iconfont-sys" !important; }
+.ic-social { font-family: "iconfont-social" !important; }
+.ic-me { font-family: "iconfont-me" !important; }
+
+/* 图标 unicode 映射（仅本页用到的子集） */
+.ic-jiantou-you:before { content: "\e928"; }
+.ic-touxiang:before { content: "\e632"; }
+.ic-shiming:before { content: "\e605"; }
+.ic-fenxiang:before { content: "\e636"; }
+.ic-shezhi:before { content: "\e69d"; }
+.ic-kefu:before { content: "\e6d0"; }
+.ic-bangzhu:before { content: "\e623"; }
+
+/* 个人中心图标尺寸 */
+.avatar-icon { font-size: 28px; color: var(--profile-text-inverse); }
+
+/* ==================== 邀请分享弹窗（与「我的」页同款） ==================== */
+.invite-share-mask {
+	position: fixed;
+	z-index: 20;
+	left: 0;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end;
+	background-color: rgba(12, 19, 19, 0.68);
+}
+
+.invite-share-sheet {
+	display: flex;
+	flex-direction: column;
+	align-self: stretch;
+	width: 100%;
+	padding: 24rpx 32rpx 26rpx;
+	border-radius: 28rpx 28rpx 0 0;
+	background-color: #EDF1EC;
+}
+
+.invite-share-handle {
+	width: 64rpx;
+	height: 6rpx;
+	margin: 0 auto 32rpx;
+	border-radius: 999px;
+	background-color: #D7DDD5;
+}
+
+.invite-share-title {
+	margin-bottom: 28rpx;
+	color: #1A1A1A;
+	font-size: 30rpx;
+	font-weight: 600;
+}
+
+.invite-share-options {
+	display: flex;
+	flex-direction: row;
+	gap: 24rpx;
+}
+
+.invite-share-option {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	height: 220rpx;
+	padding: 20rpx 8rpx;
+	border: 1px solid #B9CFB5;
+	border-radius: 24rpx;
+	background-color: #F8FAF7;
+}
+
+.invite-share-option + .invite-share-option { border-color: #D5B477; background-color: #FCF8EF; }
+
+.invite-share-option-icon {
+	width: 72rpx;
+	height: 72rpx;
+	margin-bottom: 20rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 999px;
+	font-size: 34rpx;
+}
+
+.invite-share-option-icon-green { color: #627A5F; background-color: #E2EBE0; }
+.invite-share-option-icon-gold { color: #B8944A; background-color: #F7F1E5; }
+.invite-share-symbol { line-height: 1; }
+
+.invite-share-option-label {
+	color: #1A1A1A;
+	font-size: 26rpx;
+	font-weight: 600;
+}
+
+.invite-share-note {
+	margin: 28rpx 4rpx 24rpx;
+	color: #9CA3AF;
+	font-size: 20rpx;
+	line-height: 1.5;
+	text-align: center;
+}
+
+.invite-share-cancel {
+	height: 72rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 36rpx;
+	background-color: rgba(255, 255, 255, 0.22);
+	color: #627A5F;
+	font-size: 24rpx;
+}
+</style>

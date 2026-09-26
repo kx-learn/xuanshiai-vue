@@ -23,6 +23,7 @@ export {
 // 用户相关
 export {
   getRecommendUser,
+  getRecommendUsers,
   getSquareUsers,
   getUserDetail,
   getMeProfile,
@@ -338,6 +339,7 @@ export {
   getCustomPackages,
   getRegionProvinces,
   getRegionCities,
+  getRegionDistricts,
   createCustomServiceOrder,
   getCustomServiceOrder,
   saveCustomServiceApplicationDraft,
@@ -355,6 +357,7 @@ export {
   getMatchmakerMemberCompletion,
   updateMatchmakerMemberNickname,
   uploadMatchmakerMemberMedia,
+  uploadWorkspaceLeadPhoto,
   deleteMatchmakerMemberPhoto
 } from './matchmaker.uts'
 
