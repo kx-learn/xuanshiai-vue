@@ -295,9 +295,6 @@ export async function createPartnerWithdrawal(data: any) {
   return { success: false, data: null, code: 501, message: '提现接口不在本期范围内' }
 }
 
-export let debugRawRewardsLen = -2
-export let debugRawKeys = ''
-export let debugRawIsArray = false
 function normalizePromoterCenterSnapshot(data: any) {
   const source = data != null ? data : {}
   const profile = source.profile != null ? source.profile : {}
@@ -305,13 +302,9 @@ function normalizePromoterCenterSnapshot(data: any) {
   const toLead = (item: any) => { const statusMap: any = { NEW: '待审核', CONTACTED: '待审核', INTENDED: '有效', CONVERTED: '有效', LOST: '无效', CLOSED: '无效' }; const rawStatus = item.status != null ? String(item.status) : '待审核'; return { id: item.id, name: item.name || '', nickname: item.name || '', realName: item.name || '', phone: item.phone || '', wechat: item.wechat || '', source: item.source || '', status: statusMap[rawStatus] != null ? statusMap[rawStatus] : rawStatus, createdAt: formatWorkspaceTime(item.created_at) } }
   return { profile: { nickname: profile.nickname || '', promotionCode: profile.promotion_code || '', teamName: profile.team_name != null ? String(profile.team_name) : (profile.teamName != null ? String(profile.teamName) : ''), teamStatus: profile.team_status != null ? String(profile.team_status) : 'NONE', pendingRequestId: profile.pending_request_id != null ? String(profile.pending_request_id) : '', level: profile.level != null && String(profile.level) != '推广红娘' ? String(profile.level) : '初级', nextLevel: profile.next_level != null ? String(profile.next_level) : '', memberGap: profile.member_gap != null ? Number(profile.member_gap) : null, phone: profile.phone != null ? String(profile.phone) : '', wechatBound: profile.wechat_bound == true || profile.wechatBound == true, registerAt: formatWorkspaceTime(profile.register_at != null ? profile.register_at : profile.registerAt), balance: null, points: null }, teamOptions: (Array.isArray(source.team_options) ? source.team_options : (Array.isArray(source.teamOptions) ? source.teamOptions : [])).map((team: any) => ({ id: team.id != null ? String(team.id) : '', name: team.name != null ? String(team.name) : '' })), leads: (Array.isArray(source.leads) ? source.leads : []).map(toLead), effectiveMembers: (Array.isArray(source.effective_members) ? source.effective_members : []).map(toMember), incompleteMembers: (Array.isArray(source.incomplete_members) ? source.incomplete_members : []).map(toMember), rewards: (() => {
           const rawRewardList = source.rewards
-          debugRawIsArray = Array.isArray(rawRewardList)
-          debugRawRewardsLen = debugRawIsArray ? (rawRewardList as any[]).length : -1
-          const allKeys = Object.keys(source)
-          debugRawKeys = allKeys.join(',')
-          console.log('[rewards-debug] isArray=', debugRawIsArray, 'len=', debugRawRewardsLen)
+          const isRewardList = Array.isArray(rawRewardList)
           const result: any[] = []
-          if (debugRawIsArray) {
+          if (isRewardList) {
             const list = rawRewardList as any[]
             for (let i = 0; i < list.length; i++) {
               const item = list[i]

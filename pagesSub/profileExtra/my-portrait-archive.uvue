@@ -270,7 +270,7 @@
 					const results = await Promise.all([
 						getMoxiangArchive(),
 						getMoxiangState().catch((e: any) => {
-							console.log('moxiang state load failed', e)
+							console.warn('moxiang state load failed', e)
 							return null
 						})
 					])

@@ -258,7 +258,7 @@ import MoxiangEntryState from '@/components/moxiang/MoxiangEntryState.uvue'
 import MoxiangProgressPanel from '@/components/moxiang/MoxiangProgressPanel.uvue'
 import MoxiangBuildInviteCard from '@/components/moxiang/MoxiangBuildInviteCard.uvue'
 import XsaMoxiangTrace from '@/components/XsaMoxiangTrace.uvue'
-import { MasterWS, MASTER_ROLE_NAME, ConfirmCardPayload, ConfirmCardItem, BuildInvitePayload, JourneyStage, JourneyProgress, ExtractionStatus } from '@/api/voice-master-ws.uts'
+import { MasterWS, MASTER_ROLE_NAME, ConfirmCardPayload, ConfirmCardItem, BuildInvitePayload, JourneyStage, JourneyProgress, ExtractionStatus, classifyMasterWSError } from '@/api/voice-master-ws.uts'
 import { resolveMediaUrl } from '@/api/config.uts'
 import { ProfileSubject, getProfileDraft, patchProfileDraft, fieldAction, getAiConsents, grantProfileTextConsent } from '@/api/ai-profile.uts'
 import { getMoxiangState, getSessionTurns, getMoxiangArchive, MoxiangStateResponse, MoxiangSubjectSummary, MoxiangTurn, MoxiangArchiveResponse, ArchiveSubject } from '@/api/ai-moxiang.uts'
@@ -787,7 +787,12 @@ function connectWS() {
 					ws = null
 				}
 			} else {
-				uni.showToast({ title: message, icon: 'none' })
+				// 去重：下列 kind 由 onTypedError → handleTypedWSFailure 负责展示
+				// （文案更具体）。此处只做状态清理，不再弹通用 toast，否则同一
+				// 条下行 error 会连弹两个提示（会话阶段 connecting 已为 false）。
+				if (!isTypedFailureHandledFor(code)) {
+					uni.showToast({ title: message, icon: 'none' })
+				}
 				// 邀请接受/暂缓等待服务端回执；失败时解除忙状态，
 				// 保留邀请卡以便用户重试，不把界面锁死。
 				inviteBusy.value = false
@@ -796,6 +801,14 @@ function connectWS() {
 				const idx = findMsgIndex(typingMsgId)
 				if (idx >= 0) messages.value.splice(idx, 1)
 			}
+		},
+		// 类型化错误：按 docs/api/语音.md §4 区分「授权已撤回」与「稍后重试」。
+		// 去重契约：policy_denied / temporarily_unavailable / quota_exceeded
+		// 的提示在此展示，onError 通过 isTypedFailureHandledFor 跳过通用 toast
+		// （会话阶段 connecting 已为 false，两条回调都会到达消费方，否则双 toast）。
+		onTypedError: (kind: string, code: string, message: string) => {
+			if (connecting.value) return
+			handleTypedWSFailure(kind, message)
 		},
 		// ===== 实时语音 v2 事件(未协商成功时服务端不会推送) =====
 		onVoiceReady: () => {
@@ -1358,6 +1371,59 @@ function playTTS(text: string) {
 		ws.sendReviseText(text)
 		ws.sendListen()
 	}
+}
+
+/**
+ * 该 code 是否已由 handleTypedWSFailure 展示过（用于 onError 去重）。
+ * 判定复用 WS 模块的 classifyMasterWSError，保证与 onTypedError 同一分类源。
+ */
+function isTypedFailureHandledFor(code: string): boolean {
+	const kind = classifyMasterWSError(code)
+	return kind == 'policy_denied' || kind == 'temporarily_unavailable' || kind == 'quota_exceeded'
+}
+
+/**
+ * 按后端下行 error.code 的文档语义（docs/api/语音.md §4）区分处理：
+ * - policy_denied：账号撤权/注销/签名上下文失效 → 停止播放并丢弃旧音频
+ *   URL（不得复用），提示重新获取会话；
+ * - temporarily_unavailable：ASR/TTS/模型暂时失败 → 停播保状态，提示稍后重试；
+ * - quota_exceeded：额度用尽；
+ * - 其他：沿用通用 toast（与既有 onError 行为一致）。
+ */
+function handleTypedWSFailure(kind: string, message: string) {
+	if (kind == 'policy_denied' || kind == 'temporarily_unavailable') {
+		stopAudioPlayback()
+		// 授权已撤回时会话/音频上下文已失效，旧 URL 不可复用。
+		if (kind == 'policy_denied') {
+			lastTTSUrl.value = ''
+		}
+	}
+	if (kind == 'policy_denied') {
+		masterState.value = 'idle'
+		uni.showToast({ title: '授权已撤回，请重新进入对话', icon: 'none' })
+		return
+	}
+	if (kind == 'temporarily_unavailable') {
+		masterState.value = 'idle'
+		uni.showToast({ title: '语音服务暂时不可用，请稍后重试', icon: 'none' })
+		return
+	}
+	if (kind == 'quota_exceeded') {
+		masterState.value = 'idle'
+		uni.showToast({ title: '本次额度已用完', icon: 'none' })
+		return
+	}
+}
+
+function stopAudioPlayback() {
+	if (audioContext != null) {
+		try {
+			audioContext.stop()
+			audioContext.destroy()
+		} catch (e) {}
+		audioContext = null
+	}
+	masterState.value = 'idle'
 }
 
 function playAudio(url: string) {

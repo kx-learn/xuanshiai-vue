@@ -1,0 +1,19 @@
+/**
+ * 统一调试日志开关（console 收敛）。
+ *
+ * 背景：此前 request 层每个请求、WS 生命周期与页面诊断都有裸 `console.log`，
+ * 会向小程序控制台输出请求 URL/请求体与用户资料 payload（信息泄露面），且
+ * 生产环境无法关闭。现统一收口到此模块：
+ *   - 默认 `XSA_DEBUG=false`，生产/提审包保持关闭，`debugLog` 为空操作；
+ *   - 需要本地排查时只改这一处常量，不再新增裸 console.log；
+ *   - `console.error` / `console.warn` 仍可直接使用（错误与告警保留可见性）。
+ *
+ * 防再犯卫兵：tests/test-console-hygiene.js 断言 api/pagesSub/components/
+ * pages/utils 下无裸 console.log/info/debug（显式 allowlist 除外）。
+ */
+export const XSA_DEBUG = false
+
+export function debugLog(...args: any[]) {
+	if (!XSA_DEBUG) return
+	console.log('[xsa-debug]', ...args)
+}

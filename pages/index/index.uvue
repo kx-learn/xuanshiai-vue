@@ -1300,23 +1300,20 @@
 	const onAvatarTap = () => {
 		const user = currentRecommendUser.value as any
 		const id = Number(user.id || 0)
-		console.log('[onAvatarTap] currentRecommendUser.id', id, 'name', user.name)
 		goUserDetail(id)
 	}
 	const goUserDetail = (userId: number = 0) => {
 		const id = Number(userId)
 		// 过滤 undefined/NaN/负数，避免跳到错误用户
 		if (isNaN(id) || id <= 0) {
-			console.log('[goUserDetail] invalid userId', userId)
 			uni.showToast({ title: '用户信息缺失，暂时无法查看', icon: 'none' })
 			return
 		}
-		console.log('[goUserDetail] navigate to userId', id)
 		// guest=1：推荐/广场卡片一律按访客资料打开，避免与登录账号 id 相同（mock 演示身份 id=1 与苏晚晴卡片冲突）时误判为本人主页
 		uni.navigateTo({
 			url: '/pagesSub/userExtra/user/detail?userId=' + id + '&guest=1',
 			fail: (err) => {
-				console.log('[goUserDetail] navigateTo fail', err)
+				console.warn('[goUserDetail] navigateTo fail', err)
 				uni.showToast({ title: '打开详情页失败，请重试', icon: 'none' })
 			}
 		})

@@ -12,6 +12,7 @@ import {
   clearAuthTokens,
   buildApiUrl
 } from './config.uts'
+import { debugLog } from '@/utils/debug-log.uts'
 
 /**
  * 统一请求方法
@@ -41,12 +42,12 @@ function buildMockFallback(method: string, url: string): any {
 }
 
 async function mockRequest(options: any) {
-  console.log('📦 [Mock Request]', options.url, options.data)
+  debugLog('[Mock Request]', options.url)
   await sleep(MOCK_DELAY)
   const mockMethod = options.method != null ? ('' + options.method).toUpperCase() : 'GET'
   // 未配置 mockData 的接口：走兜底空结构而不是返回 null
   if (options.mockData == null) {
-    console.log('⚠️ [Mock] 未配置 mockData，返回兜底空结构：', mockMethod, options.url)
+    debugLog('[Mock] 未配置 mockData，返回兜底空结构：', mockMethod, options.url)
     return {
       success: true,
       data: buildMockFallback(mockMethod, options.url != null ? '' + options.url : ''),
@@ -139,7 +140,7 @@ async function httpRequest(options: any) {
     body = data != null ? data : {}
   }
 
-  console.log('🌐 [HTTP Request]', method, url)
+  debugLog('[HTTP Request]', method, url)
 
   return new Promise((resolve) => {
     uni.request({

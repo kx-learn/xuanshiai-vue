@@ -498,13 +498,11 @@ const load = async () => {
 	visitorCount.value = null
 	try {
 		let res: any = null
-		console.log('[user detail] load start, isOwnProfile', isOwnProfile.value, 'userId', user.value.id)
 		if (isOwnProfile.value) {
 			res = await getOwnProfile()
 		} else {
 			res = await getUserDetail(user.value.id)
 		}
-		console.log('[user detail] load response success', res.success, 'data id', res.data != null ? (res.data.user_id || res.data.id || res.data.card?.id) : null)
 		if (res != null && res.success === true && res.data != null) {
 			mapDetailUser(res, user.value.id)
 			if (isOwnProfile.value && user.value.moxiangPersonaTitle == '' && user.value.moxiangPersonaTags.length == 0) {
@@ -644,12 +642,10 @@ onMounted(async () => {
 	// guest=1：明确以「访客资料」打开（推荐/广场卡片入口），即使 userId 与登录账号相同也不按本人主页处理
 	const guestForced = options.guest === 'true' || options.guest === true
 	isOwnProfile.value = !guestForced && (options.own === 'true' || options.own === true || isPreview.value || (viewerId > 0 && viewerId == parsed))
-	console.log('[user detail] options', options, 'parsed', parsed, 'viewerId', viewerId, 'isOwnProfile', isOwnProfile.value)
 	user.value.id = parsed
 	applyUserId.value = parsed
 	await loadViewerMembership()
 	await load()
-	console.log('[user detail] after load user.value.id', user.value.id, 'name', user.value.name)
 	detailLoadedOnce = true
 	if (!isOwnProfile.value && !isPreview.value && !fromMatchmaker.value && uni.getStorageSync('xsa_ai_avatar_guide_shown') != true) showAiGuide.value = true
 	if (options.anchor != null && ('' + options.anchor) != '') {

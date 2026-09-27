@@ -127,7 +127,7 @@ const onSecurity = () => {
 		url: '/pagesSub/profileExtra/security',
 		animationType: 'slide-in-right',
 		fail: (err) => {
-			console.log('安全中心导航失败', err)
+			console.warn('安全中心导航失败', err)
 			uni.showToast({ title: '安全中心暂不可用，请重试', icon: 'none' })
 		}
 	})

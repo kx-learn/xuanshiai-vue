@@ -10,6 +10,7 @@
 
 import { buildWsUrl, getAccessToken } from './config.uts'
 import { ProfileSubject } from './ai-profile.uts'
+import { debugLog } from '@/utils/debug-log.uts'
 
 /** 用户可见的对话角色名；供应商/模型名只存在于服务端调用与审计层。 */
 export const MASTER_ROLE_NAME = '知遇'
@@ -80,6 +81,19 @@ export interface ConfirmCardPayload {
 	items: ConfirmCardItem[]
 }
 
+/**
+ * 把后端下行 error.code 分类为可展示/可决策的错误类型。
+ * 语义对齐 docs/api/语音.md §4 错误表；未知 code 归入 unknown，不静默丢弃。
+ */
+export function classifyMasterWSError(code: string): string {
+	if (code == 'AI_POLICY_DENIED') return 'policy_denied'
+	if (code == 'AI_TEMPORARILY_UNAVAILABLE') return 'temporarily_unavailable'
+	if (code == 'AI_QUOTA_EXCEEDED') return 'quota_exceeded'
+	if (code == 'AI_INPUT_INVALID') return 'input_invalid'
+	if (code == 'AUTH_REQUIRED') return 'auth_required'
+	return 'unknown'
+}
+
 export interface MasterWSCallbacks {
 	onSessionReady?: (sessionId?: string, subject?: ProfileSubject, resumed?: boolean, newSession?: boolean) => void
 	onSubjectChanged?: (subject: ProfileSubject, sessionId?: string, resumed?: boolean, newSession?: boolean) => void
@@ -92,6 +106,18 @@ export interface MasterWSCallbacks {
 	onConfirmCard?: (card: ConfirmCardPayload) => void
 	onPublishReady?: (subject: ProfileSubject, summary: string) => void
 	onError?: (code: string, message: string) => void
+	/**
+	 * 类型化错误（在 onError 之外额外触发，onError 保持原签名不变）。
+	 * kind 语义对齐后端文档 docs/api/语音.md §4：
+	 * - policy_denied：listen 时账号撤权/注销/签名上下文失效 → 停止播放并
+	 *   重新获取当前会话/音频；
+	 * - temporarily_unavailable：ASR/TTS/模型暂时失败或无法确认账号状态
+	 *   → 稍后重试，不复用旧音频 URL；
+	 * - quota_exceeded：额度用尽；
+	 * - input_invalid：入参或状态非法（如 revise_text 空串、未 session_start）；
+	 * - unknown：其他/未知 code。
+	 */
+	onTypedError?: (kind: string, code: string, message: string) => void
 	onClose?: () => void
 	// ===== Phase 1 Contract v1.1 P1-D =====
 	onJourneyReady?: (subject: ProfileSubject, sessionId: string, journeyStage: JourneyStage, resumed: boolean, protocolVersion?: number) => void
@@ -158,7 +184,7 @@ export class MasterWS {
 			return false
 		}
 		const url = buildWsUrl('/voice/moxiang-master', token)
-		console.log('🔌 [MasterWS] connecting /voice/moxiang-master')
+		debugLog('[MasterWS] connecting /voice/moxiang-master')
 		this.socketTask = uni.connectSocket({
 			url: url,
 			success: () => {},
@@ -174,7 +200,7 @@ export class MasterWS {
 	private bindEvents() {
 		if (this.socketTask == null) return
 		this.socketTask.onOpen(() => {
-			console.log('✅ [MasterWS] connected')
+			debugLog('[MasterWS] connected')
 			this.connected = true
 			this.reconnectAttempts = 0
 			this.sendSessionStart()
@@ -183,11 +209,11 @@ export class MasterWS {
 			this.handleMessage(res.data)
 		})
 		this.socketTask.onClose(() => {
-			console.log('🔌 [MasterWS] closed')
+			debugLog('[MasterWS] closed')
 			this.connected = false
 			if (!this.manuallyClosed && this.reconnectAttempts < this.maxReconnect) {
 				this.reconnectAttempts++
-				console.log('🔄 [MasterWS] reconnecting attempt', this.reconnectAttempts)
+				debugLog('[MasterWS] reconnecting attempt', this.reconnectAttempts)
 				setTimeout(() => {
 					if (!this.manuallyClosed) {
 						this.connect()
@@ -337,12 +363,15 @@ snoozeBuildInvite(subject: ProfileSubject, inviteId: string) {
 					Number(msg.duration_ms != null ? msg.duration_ms : 0)
 				)
 				break
-			case 'error':
-				this.callbacks.onError?.(
-					String(msg.code != null ? msg.code : 'UNKNOWN'),
-					String(msg.message != null ? msg.message : MASTER_ROLE_NAME + '对话出错')
-				)
+			case 'error': {
+				const code = String(msg.code != null ? msg.code : 'UNKNOWN')
+				const message = String(msg.message != null ? msg.message : MASTER_ROLE_NAME + '对话出错')
+				// onError 保持既有签名（向后兼容）；onTypedError 额外提供分类，
+				// 使消费方能按 docs/api/语音.md §4 区分「授权已撤回」与「稍后重试」。
+				this.callbacks.onError?.(code, message)
+				this.callbacks.onTypedError?.(classifyMasterWSError(code), code, message)
 				break
+			}
 			case 'extraction_status':
 				this.handleExtractionStatus(msg)
 				break

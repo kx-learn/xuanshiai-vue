@@ -278,7 +278,6 @@ import MatchmakerServiceNavSheet from '@/components/MatchmakerServiceNavSheet.uv
 import XsaSheet from '@/components/XsaSheet.uvue'
 import { addPromoterLead, cancelPromoterTeamRequest, createPromoterPromotionCode, createPromoterWithdrawal, getPromoterCenterSnapshot, submitPromoterTeamRequest, updatePromoterCenterProfile } from '@/api'
 // 运行时诊断：暴露 api 层埋点看到的原始 rewards 状态
-import { debugRawRewardsLen, debugRawKeys, debugRawIsArray } from '@/api/matchmaker'
 import { logout as logoutApi } from '@/api/auth'
 const page = ref('home'), loading = ref(true)
 // 返回栈：仅作逻辑记录，无需驱动渲染（UTS 下 ref 包装数组会丢失 push/pop 方法）

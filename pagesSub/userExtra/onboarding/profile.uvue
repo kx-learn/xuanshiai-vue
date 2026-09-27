@@ -373,7 +373,6 @@
 			return
 		}
 		const payload = buildProfilePayload()
-		console.log('[Onboarding] profile payload', payload)
 		let res = await updateOwnProfile(payload)
 		if (!res.success) {
 			// 防御：服务端对性别等已提交字段返回修改禁令时，剔除该字段重试一次。
@@ -396,7 +395,6 @@
 			uni.showToast({ title: '资料已提交，但服务器校验失败，请重试', icon: 'none' })
 			return
 		}
-		console.log('[Onboarding] completion after save', completion.data)
 		uni.setStorageSync('xsa_onboarding_completed', true)
 		uni.setStorageSync('xsa_onboarding_mode', mode.value)
 		uni.setStorageSync('xsa_skip_welcome_once', true)
