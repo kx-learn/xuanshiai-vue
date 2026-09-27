@@ -24,10 +24,14 @@ function discover() {
   return fs.readdirSync(testDir).filter((name) => /^test-.*\.js$/.test(name)).sort()
 }
 
+// SKIP 协议：测试文件以 exit 0 结束且 stdout 含以 "SKIP" 开头的行时计为
+// skipped（不计 passed 也不计 failed）。SKIP 行必须携带原因（如编译产物
+// 缺失 → HBuilderX 重编译指引）；产物恢复后测试自然回到 PASS，无永久豁免。
 function run(files, execute = (file) => spawnSync(process.execPath, [path.join(testDir, file)], {
   cwd: path.dirname(testDir), encoding: 'utf8'
 })) {
   let failed = 0
+  let skipped = 0
   for (const file of files) {
     if (!fs.existsSync(path.join(testDir, file))) {
       console.error(`FAIL ${file}: test file missing`)
@@ -35,6 +39,18 @@ function run(files, execute = (file) => spawnSync(process.execPath, [path.join(t
       continue
     }
     const result = execute(file)
+    const output = result.stdout ?? ''
+    const skipLine = output
+      .split(/\r?\n/)
+      .find((line) => line.trim().startsWith('SKIP'))
+    if (result.status === 0 && !result.error && skipLine) {
+      skipped++
+      console.log(`SKIP ${file}`)
+      if (skipLine.trim().length > 'SKIP'.length) {
+        console.log(`  ${skipLine.trim()}`)
+      }
+      continue
+    }
     if (result.status === 0 && !result.error) {
       console.log(`PASS ${file}`)
     } else {
@@ -45,7 +61,9 @@ function run(files, execute = (file) => spawnSync(process.execPath, [path.join(t
       if (result.error) console.error(result.error)
     }
   }
-  console.log(`${files.length - failed}/${files.length} passed`)
+  console.log(
+    `${files.length - failed - skipped}/${files.length} passed, ${skipped} skipped, ${failed} failed`
+  )
   return failed === 0 ? 0 : 1
 }
 
