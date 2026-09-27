@@ -124,8 +124,8 @@ const defaultMockPreferences: any = {
 // unlockUserProfile）已于 2026-09-27 移除：后端不存在
 // /user/chat-feature-unlocks 与 /user/profile-unlock 路由，全仓无任何调用方，
 // 按导出名取用只会得到 404。产品决策登记在根目录
-// RECONSTRUCTION_DEFERRED_CHANGES.md 的「资料付费解锁」条目（原条目描述为
-// 「已接入本地解锁状态」，已被本次移除取代，待该条目复核更新为当前决定）。
+// RECONSTRUCTION_DEFERRED_CHANGES.md 的「资料付费解锁（积分解锁路径）」条目
+// （状态已于 2026-09-27 同步更新为「已回退」）。
 
 
 

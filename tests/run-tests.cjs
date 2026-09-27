@@ -17,7 +17,8 @@ const core = [
   'test-parent-chat-subject.js',
   'test-parent-route-boundary.js',
   'test-wechat-project-config.js',
-  'test-message-real-contract.js'
+  'test-message-real-contract.js',
+  'test-matchmaker-account-pages.js'
 ]
 
 function discover() {
