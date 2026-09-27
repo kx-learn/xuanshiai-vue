@@ -100,8 +100,6 @@ function extractHttpMessage(res: any, fallback: string): string {
   return fallback
 }
 
-const CHAT_FEATURE_UNLOCK_STORAGE_KEY = 'xsa_chat_feature_unlocks_v1'
-const USER_PROFILE_UNLOCK_STORAGE_KEY = 'xsa_user_profile_unlock_v1'
 
 const defaultMockPreferences: any = {
   user_id: 1,
@@ -121,183 +119,18 @@ const defaultMockPreferences: any = {
   drinking_requirement: 0,
   extra_requirement: null
 }
-export const CHAT_FEATURE_UNLOCK_COST = 80
-let chatFeatureUnlocksLoaded = false
-const chatFeatureUnlocks: any = {
-  album: false,
-  camera: false,
-  profile: false
-}
-let userProfileUnlockLoaded = false
-let userProfileUnlocked = false
+// CHAT_FEATURE_UNLOCK_* / USER_PROFILE_UNLOCK_* 状态机与四个导出函数
+// （getChatFeatureUnlocks / unlockChatFeature / getUserProfileUnlockStatus /
+// unlockUserProfile）已于 2026-09-27 移除：后端不存在
+// /user/chat-feature-unlocks 与 /user/profile-unlock 路由，全仓无任何调用方，
+// 按导出名取用只会得到 404。产品决策登记在根目录
+// RECONSTRUCTION_DEFERRED_CHANGES.md 的「资料付费解锁」条目（原条目描述为
+// 「已接入本地解锁状态」，已被本次移除取代，待该条目复核更新为当前决定）。
 
-function restoreUserProfileUnlock() {
-  if (userProfileUnlockLoaded) return
-  userProfileUnlockLoaded = true
-  try {
-    userProfileUnlocked = uni.getStorageSync(USER_PROFILE_UNLOCK_STORAGE_KEY) == true
-  } catch (e) {}
-}
 
-function saveUserProfileUnlock() {
-  uni.setStorageSync(USER_PROFILE_UNLOCK_STORAGE_KEY, userProfileUnlocked)
-}
 
-function restoreChatFeatureUnlocks() {
-  if (chatFeatureUnlocksLoaded) return
-  chatFeatureUnlocksLoaded = true
-  try {
-    const saved = uni.getStorageSync(CHAT_FEATURE_UNLOCK_STORAGE_KEY) as any
-    if (saved == null || typeof saved !== 'object') return
-    chatFeatureUnlocks.album = saved.album == true
-    chatFeatureUnlocks.camera = saved.camera == true
-    chatFeatureUnlocks.profile = saved.profile == true
-    if (saved.points != null && Number(saved.points) >= 0) {
-      mockMeProfile.points = Number(saved.points)
-    }
-  } catch (e) {
-    console.error('恢复聊天功能解锁状态失败', e)
-  }
-}
 
-function saveChatFeatureUnlocks() {
-  uni.setStorageSync(CHAT_FEATURE_UNLOCK_STORAGE_KEY, {
-    album: chatFeatureUnlocks.album == true,
-    camera: chatFeatureUnlocks.camera == true,
-    profile: chatFeatureUnlocks.profile == true,
-    points: mockMeProfile.points
-  })
-}
 
-/** 获取聊天页的付费功能解锁状态及当前积分余额。 */
-export async function getChatFeatureUnlocks() {
-  restoreChatFeatureUnlocks()
-  return request({
-    url: '/user/chat-feature-unlocks',
-    cloudFunctionName: 'user',
-    action: 'getChatFeatureUnlocks',
-    method: 'GET',
-    mockData: {
-      album: chatFeatureUnlocks.album == true,
-      camera: chatFeatureUnlocks.camera == true,
-      profile: chatFeatureUnlocks.profile == true,
-      points: mockMeProfile.points,
-      cost: CHAT_FEATURE_UNLOCK_COST
-    }
-  })
-}
-
-/** 首次使用聊天相册、拍摄或查看主页时扣除 80 积分，后续使用不再扣费。 */
-export async function unlockChatFeature(feature: string) {
-  restoreChatFeatureUnlocks()
-  const supported = feature == 'album' || feature == 'camera' || feature == 'profile'
-  if (!supported) {
-    return request({
-      url: '/user/chat-feature-unlocks',
-      cloudFunctionName: 'user',
-      action: 'unlockChatFeature',
-      method: 'POST',
-      data: { feature },
-      mockData: { success: false, message: '暂不支持该解锁功能' }
-    })
-  }
-
-  if (chatFeatureUnlocks[feature] == true) {
-    return request({
-      url: '/user/chat-feature-unlocks',
-      cloudFunctionName: 'user',
-      action: 'unlockChatFeature',
-      method: 'POST',
-      data: { feature },
-      mockData: { success: true, alreadyUnlocked: true, feature, points: mockMeProfile.points }
-    })
-  }
-
-  if (mockMeProfile.points < CHAT_FEATURE_UNLOCK_COST) {
-    return request({
-      url: '/user/chat-feature-unlocks',
-      cloudFunctionName: 'user',
-      action: 'unlockChatFeature',
-      method: 'POST',
-      data: { feature },
-      mockData: { success: false, code: 'INSUFFICIENT_POINTS', message: '积分不足，无法解锁该功能', points: mockMeProfile.points }
-    })
-  }
-
-  mockMeProfile.points -= CHAT_FEATURE_UNLOCK_COST
-  chatFeatureUnlocks[feature] = true
-  saveChatFeatureUnlocks()
-  return request({
-    url: '/user/chat-feature-unlocks',
-    cloudFunctionName: 'user',
-    action: 'unlockChatFeature',
-    method: 'POST',
-    data: { feature },
-    mockData: { success: true, feature, points: mockMeProfile.points, cost: CHAT_FEATURE_UNLOCK_COST }
-  })
-}
-
-/** 获取查看他人完整资料的解锁状态。 */
-export async function getUserProfileUnlockStatus() {
-  restoreUserProfileUnlock()
-  return request({
-    url: '/user/profile-unlock',
-    cloudFunctionName: 'user',
-    action: 'getProfileUnlockStatus',
-    method: 'GET',
-    mockData: { unlocked: userProfileUnlocked, cost: CHAT_FEATURE_UNLOCK_COST, points: mockMeProfile.points }
-  })
-}
-
-/** 首次查看他人完整资料时消耗积分；已解锁时不重复扣除。 */
-export async function unlockUserProfile() {
-  restoreUserProfileUnlock()
-  if (userProfileUnlocked) {
-    return request({
-      url: '/user/profile-unlock',
-      cloudFunctionName: 'user',
-      action: 'unlockUserProfile',
-      method: 'POST',
-      mockData: { success: true, alreadyUnlocked: true, points: mockMeProfile.points }
-    })
-  }
-  if (mockMeProfile.points < CHAT_FEATURE_UNLOCK_COST) {
-    return request({
-      url: '/user/profile-unlock',
-      cloudFunctionName: 'user',
-      action: 'unlockUserProfile',
-      method: 'POST',
-      mockData: { success: false, code: 'INSUFFICIENT_POINTS', message: '积分不足，无法查看完整资料', points: mockMeProfile.points }
-    })
-  }
-  mockMeProfile.points -= CHAT_FEATURE_UNLOCK_COST
-  userProfileUnlocked = true
-  saveUserProfileUnlock()
-  return request({
-    url: '/user/profile-unlock',
-    cloudFunctionName: 'user',
-    action: 'unlockUserProfile',
-    method: 'POST',
-    mockData: { success: true, points: mockMeProfile.points, cost: CHAT_FEATURE_UNLOCK_COST }
-  })
-}
-
-/**
- * 获取推荐用户（支持轮换 index）
- */
-export async function getRecommendUser(index: number = 0) {
-  const list = mockRecommendUsers as any[]
-  const i = list.length > 0 ? (index % list.length) : 0
-  const user = list.length > 0 ? list[i] : mockUserDetail
-  return request({
-    url: '/user/recommend',
-    cloudFunctionName: 'user',
-    action: 'getRecommend',
-    method: 'GET',
-    data: { index: i },
-    mockData: user
-  })
-}
 
 // getRecommendUsers（GET /user/recommend/list）已于 2026-09-13 移除：
 // 后端不存在该路由，唯一调用方（搜索页）已迁移至 GET /discovery/recommendations。
@@ -328,19 +161,6 @@ export async function getLikedUsers(internalMockScope: string = '') {
   })
 }
 
-/**
- * 获取广场用户列表
- */
-export async function getSquareUsers(params: any) {
-  return request({
-    url: '/user/square',
-    cloudFunctionName: 'user',
-    action: 'getSquareList',
-    method: 'GET',
-    data: params,
-    mockData: mockSquareUsers
-  })
-}
 
 /**
  * 获取用户详情（优先从高保真嘉宾列表查找）

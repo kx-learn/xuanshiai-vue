@@ -22,9 +22,6 @@ export {
 
 // 用户相关
 export {
-  getRecommendUser,
-  getRecommendUsers,
-  getSquareUsers,
   getUserDetail,
   getMeProfile,
   getOwnProfile,
@@ -38,11 +35,7 @@ export {
   applyToMeet,
   likeUser,
   getMyLikedProfiles,
-  getLikedUsers,
-  getChatFeatureUnlocks,
-  unlockChatFeature,
-  getUserProfileUnlockStatus,
-  unlockUserProfile
+  getLikedUsers
 } from './user.uts'
 
 // 首页与我的页面的发现数据

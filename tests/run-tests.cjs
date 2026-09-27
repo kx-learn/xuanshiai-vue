@@ -40,9 +40,11 @@ function run(files, execute = (file) => spawnSync(process.execPath, [path.join(t
     }
     const result = execute(file)
     const output = result.stdout ?? ''
+    // 收紧匹配：必须为「SKIP <本文件名>」形式，避免通过用例的诊断行
+    // （恰好以 SKIP 开头）被静默计为 skipped。
     const skipLine = output
       .split(/\r?\n/)
-      .find((line) => line.trim().startsWith('SKIP'))
+      .find((line) => line.trim().startsWith(`SKIP ${file}`))
     if (result.status === 0 && !result.error && skipLine) {
       skipped++
       console.log(`SKIP ${file}`)
