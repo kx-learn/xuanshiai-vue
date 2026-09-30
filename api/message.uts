@@ -548,8 +548,10 @@ function mapApplicationItem(item: any, direction: string): any {
       ? (item != null && item.from_user_id != null ? item.from_user_id : 0)
       : (item != null && item.to_user_id != null ? item.to_user_id : 0)),
     name: user.nickname != null && user.nickname != '' ? '' + user.nickname : '用户',
+    age: user.age != null ? '' + user.age : '',
+    city: user.city_code != null && user.city_code != '' ? '' + user.city_code : '未填写城市',
     avatar: user.avatar != null ? resolveMediaUrl(user.avatar) : '',
-    message: item != null && item.message != null && item.message != '' ? '' + item.message : '想和你认真认识',
+    message: item != null && item.message != null && item.message != '' ? '' + item.message : '未填写附言',
     status: status,
     statusText: applicationStatusText(status),
     createdAt: item != null && item.created_at != null ? '' + item.created_at : '',
@@ -852,6 +854,42 @@ async function markChatSessionRead(sessionId: number, subjectContext: any): Prom
   return okResponse({ success: true, sessionId: sessionId })
 }
 
+/** 会话操作只接受服务端 session_id；父母端暂无真实会话接口。 */
+export async function markConversationRead(sessionId: number, subject: MessageSubject | null = null) {
+  const context = resolveMessageSubject(subject)
+  if (context.valid != true) return messageSubjectFailure(context)
+  const unavailable = chatBackendUnavailable(context)
+  if (unavailable != null) return unavailable
+  if (MESSAGE_USE_MOCK) return failResponse('模拟会话不支持单独已读', 'CHAT_READ_NOT_AVAILABLE')
+  return markChatSessionRead(sessionId, context)
+}
+
+async function updateChatSession(sessionId: number, suffix: string, method: string, failure: string, subject: MessageSubject | null): Promise<any> {
+  const context = resolveMessageSubject(subject)
+  if (context.valid != true) return messageSubjectFailure(context)
+  const unavailable = chatBackendUnavailable(context)
+  if (unavailable != null) return unavailable
+  if (!isPositiveInteger(sessionId)) return failResponse('聊天会话标识无效', 'INVALID_CHAT_SESSION')
+  if (MESSAGE_USE_MOCK) return failResponse('模拟会话不支持该操作', 'CHAT_SESSION_MUTATION_NOT_AVAILABLE')
+  const res = normalizeBusinessResponse(await messageRequest({
+    url: '/chat/sessions/' + sessionId + suffix,
+    method: method
+  }))
+  if (res == null || res.success != true) return res ?? failResponse(failure)
+  return okResponse({ sessionId: sessionId })
+}
+
+export async function setChatSessionPinned(sessionId: number, pinned: boolean, subject: MessageSubject | null = null) {
+  return updateChatSession(sessionId, '/pin', pinned ? 'PUT' : 'DELETE', '置顶操作失败', subject)
+}
+
+export async function hideChatSession(sessionId: number, subject: MessageSubject | null = null) {
+  return updateChatSession(sessionId, '', 'DELETE', '隐藏会话失败', subject)
+}
+
+export async function restoreChatSession(sessionId: number, subject: MessageSubject | null = null) {
+  return updateChatSession(sessionId, '/restore', 'POST', '恢复会话失败', subject)
+}
 /** 将全部可见会话逐一标为已读；失败时不虚报成功。 */
 export async function markAllMessagesRead(subject: MessageSubject | null = null) {
   const subjectContext = resolveMessageSubject(subject)

@@ -4,9 +4,10 @@
 			<!-- 快捷入口 -->
 			<view class="shortcuts">
 				<view class="shortcut shortcut-application" @click="openApplications">
-					<view class="shortcut-badge shortcut-badge-num" v-if="applications.length > 0">
-						<text class="badge-inner">{{ applications.length > 99 ? '99+' : applications.length }}</text>
+					<view class="shortcut-badge shortcut-badge-num" v-if="applicationsError == '' && !applicationLoading && incomingPendingCount > 0 && !incomingHasMore">
+						<text class="badge-inner">{{ incomingPendingCount > 99 ? '99+' : incomingPendingCount }}</text>
 					</view>
+					<view class="shortcut-badge shortcut-badge-dot" v-else-if="applicationsError == '' && !applicationLoading && incomingPendingCount > 0"></view>
 					<view class="sc-copy">
 						<text class="sc-title">认识申请</text>
 						<text class="sc-desc">{{ applicationHint }}</text>
@@ -39,10 +40,19 @@
 			<!-- 聊天列表 -->
 			<view class="chat-header">
 				<text class="section-title">聊天</text>
+				<text class="clear-read" :class="{ disabled: markingAllRead || !canMarkAllRead }" @click="clearUnreadNotices">全部已读</text>
+			</view>
+			<view v-if="hiddenSessionIds.length > 0" class="hidden-session-entry" @click="restoreHiddenSessions">
+				<text>已隐藏 {{ hiddenSessionIds.length }} 个会话</text><text class="hidden-session-action">恢复</text>
 			</view>
 
+			<view v-if="messageError != '' && messageList.length == 0" class="message-state">
+				<text class="message-state-text">{{ messageError }}</text>
+				<view class="message-state-action" @click="retryMessages"><text>重试</text></view>
+			</view>
+			<view v-else-if="(loading || !messageLoaded) && messageList.length == 0" class="message-state"><text class="message-state-text">正在加载消息...</text></view>
 			<XsaEmpty
-				v-if="messageList.length === 0 && !loading"
+				v-else-if="messageList.length == 0"
 				text="暂无消息"
 				description="申请通过后，对话会出现在这里"
 				size="large"
@@ -57,9 +67,11 @@
 					@longpress="handleMessageLongPress"
 				/>
 			</view>
+			<view v-if="messageError != '' && messageList.length > 0" class="inline-error"><text>{{ messageError }}</text><text class="inline-error-action" @click="retryMessages">重试</text></view>
 
 			<view class="load-more" v-if="messageList.length > 0">
 				<text class="load-text text-muted" v-if="loading">加载中...</text>
+				<text class="load-text text-muted" v-else-if="messageError != ''" @click="retryMessages">加载失败，点击重试</text>
 				<text class="load-text text-muted" v-else-if="!hasMore">没有更多了</text>
 			</view>
 		</scroll-view>
@@ -74,7 +86,7 @@
 					@click="togglePin"
 				>取消置顶</XsaButton>
 				<XsaButton v-else class="pin-btn pin-btn-primary" variant="primary" size="medium" @click="togglePin">置顶</XsaButton>
-				<XsaButton class="pin-btn pin-btn-delete" variant="secondary" size="medium" @click="deleteSelectedMessage">删除</XsaButton>
+				<XsaButton class="pin-btn pin-btn-delete" variant="secondary" size="medium" @click="hideSelectedMessage">隐藏会话</XsaButton>
 				<XsaButton class="pin-btn pin-btn-cancel" variant="secondary" size="medium" @click="closePinSheet">取消</XsaButton>
 			</view>
 		</XsaSheet>
@@ -94,310 +106,249 @@ import XsaTabBar from '@/components/XsaTabBar.uvue'
 	import XsaSheet from '@/components/XsaSheet.uvue'
 	import XsaButton from '@/components/XsaButton.uvue'
 	import XsaToast from '@/components/XsaToast.uvue'
-	import { getMessageList, getApplications } from '@/api'
+	import { CURRENT_USER_ID_KEY } from '@/api/config.uts'
 	import {
-		createMatchedConversation,
-		getMatchedConversations,
-		getConversationPreviews
-	} from '@/utils/conversation.uts'
+		getConversationPage,
+		getApplicationPage,
+		markConversationRead,
+		markAllMessagesRead,
+		setChatSessionPinned,
+		hideChatSession,
+		restoreChatSession
+	} from '@/api'
 
-	const PINNED_MESSAGE_KEY = 'xsa-pinned-message-ids'
-	const READ_MESSAGE_KEY = 'xsa-read-message-ids'
-	const READ_SHORTCUT_NOTICE_KEY = 'xsa-read-shortcut-notices'
-	const PAPER_PLANE_NOTICE_KEY = 'paper-plane:mock-1'
-	const DYNAMIC_NOTICE_KEY = 'dynamic:mock-1'
+	const PAGE_SIZE = 20
 	const iconApplication = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzlCOEUwIiBzdHJva2Utd2lkdGg9IjEuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSI5IiBjeT0iOCIgcj0iMy4yIi8+PHBhdGggZD0iTTMuNSAxOWMwLTMgMi41LTUgNS41LTVzNS41IDIgNS41IDUiLz48Y2lyY2xlIGN4PSIxNyIgY3k9IjkiIHI9IjIuNCIvPjxwYXRoIGQ9Ik0xNS41IDE0LjRjMi4yLjMgNCAyLjEgNCA0LjEiLz48L3N2Zz4='
 	const iconPlane = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOUZDOUQ5IiBzdHJva2Utd2lkdGg9IjEuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMjEgMyAzIDEwLjVsNyAyLjUgMi41IDdMMjEgM1oiLz48cGF0aCBkPSJNMTAgMTMgMjEgMyIvPjwvc3ZnPg=='
 	const iconDynamic = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQThENUJDIiBzdHJva2Utd2lkdGg9IjEuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB4PSIzIiB5PSI3IiB3aWR0aD0iMTgiIGhlaWdodD0iMTMiIHJ4PSIyLjUiLz48cGF0aCBkPSJNOCA3VjUuNUEyIDIgMCAwIDEgMTAgMy41aDRBMiAyIDAgMCAxIDE2IDUuNVY3Ii8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMy41IiByPSIzLjIiLz48L3N2Zz4='
 	const iconLab = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRTNDOUE2IiBzdHJva2Utd2lkdGg9IjEuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNOSAzaDZNMTAgM3Y1bC00IDhhMyAzIDAgMCAwIDIuOCA0aDYuNEEzIDMgMCAwIDAgMTggMTZsLTQtOFYzIi8+PC9zdmc+'
 	const loading = ref(false)
 	const hasMore = ref(true)
-	const messageList = ref([])
-	const applications = ref([])
+	const messageList = ref([] as any[])
+	const messageLoaded = ref(false)
+	const messageCursor = ref('')
+	const messageError = ref('')
+	const messageErrorMode = ref('')
+	const unreadTotal = ref(0)
+	const allReadConfirmed = ref(false)
+	const applications = ref([] as any[])
+	const incomingTotal = ref(0)
+	const incomingHasMore = ref(false)
+	const incomingPendingCount = ref(0)
+	const applicationsError = ref('')
+	const applicationLoading = ref(false)
+	const hiddenSessionIds = ref([] as number[])
 	const pinVisible = ref(false)
 	const selectedMessage = ref<any>(null)
-	const pinnedMessageIds = ref([] as any[])
-	const readMessageIds = ref([] as any[])
-	const readShortcutNotices = ref([] as any[])
+	const markingAllRead = ref(false)
+	const sessionMutationId = ref(0)
 	const toastVisible = ref(false)
 	const toastMessage = ref('')
+	let messageRequestSequence = 0
+	let applicationRequestSequence = 0
+	let mounted = false
 
-	const displayMessageList = computed(() => {
-		const pinned: any[] = []
-		const regular: any[] = []
-		const source = messageList.value as any[]
-		source.forEach((item: any) => {
-			if (item.pinned === true) {
-				pinned.push(item)
-			} else {
-				regular.push(item)
-			}
-		})
-		return pinned.concat(regular)
-	})
+	const displayMessageList = computed(() => (messageList.value as any[]).slice())
+	const canMarkAllRead = computed(() => unreadTotal.value > 0 || (hasMore.value && messageList.value.length > 0 && !allReadConfirmed.value))
 
 	const applicationHint = computed(() => {
-		const n = applications.value.length
-		if (n > 0) return `${n} 条待处理`
+		if (applicationsError.value != '') return applicationsError.value
+		if (applicationLoading.value) return '正在加载申请...'
+		if (incomingPendingCount.value > 0) {
+			return incomingHasMore.value
+				? `${incomingPendingCount.value} 条待处理（已加载）`
+				: `${incomingPendingCount.value} 条待处理`
+		}
+		if (incomingTotal.value > 0) return `已收到 ${incomingTotal.value} 条申请`
 		return '暂无新申请'
-	})
-
-	const applicationNoticeKey = computed(() => {
-		const ids: string[] = []
-		const list = applications.value as any[]
-		list.forEach((item: any) => {
-			if (item.direction === 'in') ids.push(item.id.toString())
-		})
-		return ids.length > 0 ? `application:${ids.join(',')}` : ''
-	})
-
-	const hasApplicationNotice = computed(() => {
-		const key = applicationNoticeKey.value
-		return key.length > 0 && readShortcutNotices.value.indexOf(key) < 0
-	})
-
-	const hasPaperPlaneNotice = computed(() => {
-		return readShortcutNotices.value.indexOf(PAPER_PLANE_NOTICE_KEY) < 0
-	})
-
-	const hasDynamicNotice = computed(() => {
-		return readShortcutNotices.value.indexOf(DYNAMIC_NOTICE_KEY) < 0
 	})
 
 	const openEmotionLab = () => {
 		uni.navigateTo({ url: '/pages/emotion-lab/emotion-lab' })
 	}
 
-	onMounted(() => {
-		loadPinnedMessageIds()
-		loadReadMessageIds()
-		loadReadShortcutNotices()
-		loadMessages()
-		loadApplications()
-	})
-
-	const loadPinnedMessageIds = () => {
-		try {
-			const stored = uni.getStorageSync(PINNED_MESSAGE_KEY)
-			if (Array.isArray(stored)) {
-				pinnedMessageIds.value = stored as any[]
-			}
-		} catch (e) {
-			pinnedMessageIds.value = []
-		}
-	}
-
-	const loadReadMessageIds = () => {
-		try {
-			const stored = uni.getStorageSync(READ_MESSAGE_KEY)
-			if (Array.isArray(stored)) {
-				readMessageIds.value = stored as any[]
-			}
-		} catch (e) {
-			readMessageIds.value = []
-		}
-	}
-
-	const loadReadShortcutNotices = () => {
-		try {
-			const stored = uni.getStorageSync(READ_SHORTCUT_NOTICE_KEY)
-			if (Array.isArray(stored)) {
-				readShortcutNotices.value = stored as any[]
-			}
-		} catch (e) {
-			readShortcutNotices.value = []
-		}
-	}
-
-	const showToast = (msg: string) => {
-		toastMessage.value = msg
+	const showToast = (message: string) => {
+		toastMessage.value = message
 		toastVisible.value = true
 	}
 
-	const loadMessages = async () => {
+	const responseMessage = (res: any, fallback: string): string => {
+		if (res != null && res.message != null && res.message != '' && res.message != 'success') return '' + res.message
+		if (res != null && res.data != null && res.data.message != null) return '' + res.data.message
+		return fallback
+	}
+
+	const appendUnique = (current: any[], next: any[]): any[] => {
+		const merged = current.slice()
+		next.forEach((item: any) => {
+			if (!merged.some((existing: any) => Number(existing.id) == Number(item.id))) merged.push(item)
+		})
+		return merged
+	}
+
+	const loadMessages = async (reset: boolean = true, preserveReadState: boolean = false): Promise<boolean> => {
+		if (loading.value) return false
+		if (!reset && !hasMore.value) return false
+		const requestId = ++messageRequestSequence
+		loading.value = true
+		messageError.value = ''
+		messageErrorMode.value = ''
+		if (reset) {
+			messageCursor.value = ''
+			hasMore.value = true
+			if (!preserveReadState) allReadConfirmed.value = false
+		}
+		const cursor = reset ? '' : messageCursor.value
 		try {
-			loading.value = true
-			const res = await getMessageList()
-			if (res.success) {
-				const apiList = (res.data as any[]).slice()
-				const createdList = getMatchedConversations()
-				const previewList = getConversationPreviews()
-				const list = createdList.concat(apiList.filter((item: any) => {
-					return createdList.findIndex((created: any) => created.userId == item.userId) < 0
-				}))
-				list.forEach((item: any) => {
-					const preview = previewList.find((stored: any) => stored.userId == item.userId)
-					if (preview != null) {
-						item.lastMessage = preview.lastMessage
-						item.time = preview.time
-						item.messageType = preview.messageType
-					}
-					item.pinned = pinnedMessageIds.value.indexOf(item.id) >= 0
-					if (readMessageIds.value.indexOf(item.id) >= 0) {
-						item.unreadCount = 0
-					}
-				})
-				messageList.value = list
+			const res = await getConversationPage(cursor, PAGE_SIZE)
+			if (requestId != messageRequestSequence) return false
+			if (res == null || res.success != true || res.data == null) {
+				throw new Error(responseMessage(res, '消息加载失败，请重试'))
 			}
-		} catch (e) {
-			console.error(e)
+			const data = res.data as any
+			const rows = Array.isArray(data.list) ? data.list as any[] : []
+			messageList.value = reset ? rows : appendUnique(messageList.value as any[], rows)
+			messageCursor.value = data.nextCursor != null ? '' + data.nextCursor : ''
+			hasMore.value = data.hasMore == true
+			unreadTotal.value = (messageList.value as any[]).reduce((sum: number, item: any) => sum + Number(item.unreadCount || 0), 0)
+			messageError.value = ''
+			return true
+		} catch (error: any) {
+			if (requestId != messageRequestSequence) return false
+			messageError.value = error != null && error.message != null && error.message != '' ? '' + error.message : '消息加载失败，请重试'
+			messageErrorMode.value = reset ? 'reset' : 'more'
+			return false
 		} finally {
-			loading.value = false
+			if (requestId == messageRequestSequence) {
+				loading.value = false
+				messageLoaded.value = true
+			}
 		}
 	}
 
-	const markMessageRead = (message: any) => {
-		if (message.unreadCount == null || message.unreadCount <= 0) return
-		message.unreadCount = 0
-		if (readMessageIds.value.indexOf(message.id) < 0) {
-			readMessageIds.value.push(message.id)
-		}
-		try {
-			uni.setStorageSync(READ_MESSAGE_KEY, readMessageIds.value)
-		} catch (e) {
-			console.error(e)
-		}
-		messageList.value = (messageList.value as any[]).slice()
+	const retryMessages = () => {
+		loadMessages(messageErrorMode.value != 'more')
 	}
 
 	const loadApplications = async () => {
+		if (applicationLoading.value) return
+		const requestId = ++applicationRequestSequence
+		applicationLoading.value = true
+		applicationsError.value = ''
 		try {
-			const res = await getApplications()
-			if (res.success) {
-				// 兼容 mock 结构
-				const data = res.data
-				if (Array.isArray(data)) {
-					applications.value = data.map((x: any) => normalizeApp(x))
-					createAcceptedApplicationConversations()
-				} else if (data != null) {
-					const list: any[] = []
-					if (data.incoming != null) {
-						(data.incoming as any[]).forEach((x: any) => list.push(normalizeApp(x, 'in')))
-					}
-					if (data.outgoing != null) {
-						(data.outgoing as any[]).forEach((x: any) => list.push(normalizeApp(x, 'out')))
-					}
-					if (list.length == 0 && data.list != null) {
-						(data.list as any[]).forEach((x: any) => list.push(normalizeApp(x)))
-					}
-					applications.value = list
-					createAcceptedApplicationConversations()
-				}
+			const res = await getApplicationPage('incoming', '', PAGE_SIZE)
+			if (requestId != applicationRequestSequence) return
+			if (res == null || res.success != true || res.data == null) {
+				throw new Error(responseMessage(res, '申请列表加载失败，请重试'))
 			}
-		} catch (e) {
-			// mock 可能未实现时给演示数据
-			applications.value = [
-				{
-					id: 1,
-					userId: 1,
-					name: '苏晚晴',
-					avatar: '/static/portraits/profile-woman-main.webp',
-					message: '资料匹配度 92% · 想认真认识你',
-					direction: 'out',
-					statusText: '待回应'
-				}
-			]
+			const data = res.data as any
+			const rows = Array.isArray(data.list) ? data.list as any[] : []
+			applications.value = rows
+			incomingTotal.value = Number(data.total != null ? data.total : rows.length)
+			incomingHasMore.value = data.hasMore == true
+			incomingPendingCount.value = rows.filter((item: any) => item.status == 'pending').length
+		} catch (error: any) {
+			if (requestId != applicationRequestSequence) return
+			applicationsError.value = '申请列表加载失败，请重试'
+			const detail = error != null && error.message != null && error.message != '' ? '' + error.message : ''
+			if (detail != '') applicationsError.value = detail
+		} finally {
+			if (requestId == applicationRequestSequence) applicationLoading.value = false
 		}
 	}
 
-	const normalizeApp = (x: any, dir: string = 'in') => {
-		return {
-			id: x.id != null ? x.id : x.userId,
-			userId: x.userId != null ? x.userId : x.id,
-			name: x.name != null ? x.name : '用户',
-			avatar: x.avatar != null ? x.avatar : '/static/portraits/profile-woman-main.webp',
-			message: x.message != null ? x.message : (x.remark != null ? x.remark : '申请认识'),
-			direction: x.direction != null ? x.direction : dir,
-			status: x.status != null ? x.status : 'pending',
-			accepted: x.accepted === true || x.matched === true,
-			statusText: x.statusText != null ? x.statusText : '待回应'
+	const getHiddenSessionStorageKey = (): string => {
+		const userId = Number(uni.getStorageSync(CURRENT_USER_ID_KEY))
+		return userId > 0 ? 'xsa-hidden-chat-session-ids:' + userId : ''
+	}
+
+	const loadHiddenSessionIds = () => {
+		const key = getHiddenSessionStorageKey()
+		if (key == '') {
+			hiddenSessionIds.value = []
+			return
+		}
+		try {
+			const stored = uni.getStorageSync(key)
+			const ids: number[] = []
+			if (Array.isArray(stored)) {
+				for (let index = 0; index < stored.length; index++) {
+					const id = Number(stored[index])
+					if (id > 0 && ids.indexOf(id) < 0) ids.push(id)
+				}
+			}
+			hiddenSessionIds.value = ids
+		} catch (error) {
+			hiddenSessionIds.value = []
+		}
+	}
+
+	const saveHiddenSessionIds = () => {
+		const key = getHiddenSessionStorageKey()
+		if (key == '') return
+		try {
+			uni.setStorageSync(key, hiddenSessionIds.value)
+		} catch (error) {
+			console.error(error)
 		}
 	}
 
 	const openApplications = () => {
-		markShortcutNoticeRead(applicationNoticeKey.value)
 		uni.navigateTo({
 			url: '/pagesSub/profileExtra/applications?tab=received',
 			fail: () => { showToast('申请列表打开失败，请重试') }
 		})
 	}
 
-const openPaperPlane = () => {
-			markShortcutNoticeRead(PAPER_PLANE_NOTICE_KEY)
-			uni.navigateTo({ url: '/pagesSub/community/paper-plane' })
-		}
+	const openPaperPlane = () => {
+		uni.navigateTo({ url: '/pagesSub/community/paper-plane' })
+	}
 
 	const openDynamicNotice = () => {
-		markShortcutNoticeRead(DYNAMIC_NOTICE_KEY)
 		try {
 			uni.setStorageSync('xsa-community-entry-target', 'follow-all')
-		} catch (e) {
-			console.error(e)
+		} catch (error) {
+			console.error(error)
 		}
 		uni.switchTab({
 			url: '/pages/community/community',
 			fail: () => {
-				try { uni.removeStorageSync('xsa-community-entry-target') } catch (e) { console.error(e) }
+				try { uni.removeStorageSync('xsa-community-entry-target') } catch (error) { console.error(error) }
 				showToast('社区关注页打开失败，请重试')
 			}
 		})
 	}
 
-	const markShortcutNoticeRead = (key: string) => {
-		if (key.length == 0 || readShortcutNotices.value.indexOf(key) >= 0) return
-		readShortcutNotices.value.push(key)
-		try {
-			uni.setStorageSync(READ_SHORTCUT_NOTICE_KEY, readShortcutNotices.value)
-		} catch (e) {
-			console.error(e)
-		}
-		readShortcutNotices.value = readShortcutNotices.value.slice()
-	}
-
 	const clearUnreadNotices = () => {
+		if (!canMarkAllRead.value || markingAllRead.value) return
 		uni.showModal({
 			title: '全部标记为已读',
-			content: '是否将全部未读消息标记为已读？',
+			content: '将把服务端可见的聊天会话全部标记为已读，不会删除消息。',
 			confirmText: '确认',
 			cancelText: '取消',
 			success: (res) => {
-				if (res.confirm) markAllMessagesRead()
+				if (res.confirm) markAllUnread()
 			}
 		})
 	}
 
-	const markAllMessagesRead = () => {
-		let cleared = false
-		const messages = messageList.value as any[]
-		messages.forEach((message: any) => {
-			if (message.unreadCount != null && message.unreadCount > 0) {
-				message.unreadCount = 0
-				cleared = true
-				if (readMessageIds.value.indexOf(message.id) < 0) {
-					readMessageIds.value.push(message.id)
-				}
-			}
-		})
-		const noticeKeys = [applicationNoticeKey.value, PAPER_PLANE_NOTICE_KEY, DYNAMIC_NOTICE_KEY]
-		noticeKeys.forEach((key: string) => {
-			if (key.length > 0 && readShortcutNotices.value.indexOf(key) < 0) {
-				readShortcutNotices.value.push(key)
-				cleared = true
-			}
-		})
+	const markAllUnread = async () => {
+		if (markingAllRead.value || !canMarkAllRead.value) return
+		markingAllRead.value = true
 		try {
-			uni.setStorageSync(READ_MESSAGE_KEY, readMessageIds.value)
-			uni.setStorageSync(READ_SHORTCUT_NOTICE_KEY, readShortcutNotices.value)
-		} catch (e) {
-			console.error(e)
+			const res = await markAllMessagesRead()
+			if (res == null || res.success != true || res.data == null || res.data.success != true) {
+				showToast(responseMessage(res, '全部已读失败，请重试'))
+				return
+			}
+			allReadConfirmed.value = true
+			const refreshed = await loadMessages(true, true)
+			showToast(refreshed ? '消息已全部标为已读' : '已标记成功，但列表刷新失败，请重试')
+		} catch (error) {
+			showToast('全部已读失败，请重试')
+		} finally {
+			markingAllRead.value = false
 		}
-		messageList.value = messages.slice()
-		readShortcutNotices.value = readShortcutNotices.value.slice()
-		showToast(cleared ? '消息提示已清除' : '暂无消息提示')
-	}
-
-	const openHint = (msg: string) => {
-		showToast(msg)
 	}
 
 	const handleMessageLongPress = (message: any) => {
@@ -406,109 +357,159 @@ const openPaperPlane = () => {
 	}
 
 	const closePinSheet = () => {
+		if (sessionMutationId.value != 0) return
 		pinVisible.value = false
 		selectedMessage.value = null
 	}
 
-	const togglePin = () => {
-		if (selectedMessage.value == null) return
+	const togglePin = async () => {
 		const message = selectedMessage.value
-		message.pinned = message.pinned !== true
-		const pinnedIndex = pinnedMessageIds.value.indexOf(message.id)
-		if (message.pinned === true && pinnedIndex < 0) {
-			pinnedMessageIds.value.push(message.id)
-		} else if (message.pinned !== true && pinnedIndex >= 0) {
-			pinnedMessageIds.value.splice(pinnedIndex, 1)
-		}
+		const sessionId = Number(message != null ? message.sessionId : 0)
+		if (sessionMutationId.value != 0 || sessionId <= 0) return
+		const nextPinned = message.pinned !== true
+		sessionMutationId.value = sessionId
 		try {
-			uni.setStorageSync(PINNED_MESSAGE_KEY, pinnedMessageIds.value)
-		} catch (e) {
-			console.error(e)
+			const res = await setChatSessionPinned(sessionId, nextPinned)
+			if (res == null || res.success != true) {
+				showToast(responseMessage(res, nextPinned ? '置顶失败，请重试' : '取消置顶失败，请重试'))
+				return
+			}
+			message.pinned = nextPinned
+			messageList.value = (messageList.value as any[]).slice()
+			pinVisible.value = false
+			selectedMessage.value = null
+			showToast(nextPinned ? '已置顶该会话' : '已取消置顶')
+			await loadMessages(true, true)
+		} catch (error) {
+			showToast(nextPinned ? '置顶失败，请重试' : '取消置顶失败，请重试')
+		} finally {
+			sessionMutationId.value = 0
 		}
-		messageList.value = (messageList.value as any[]).slice()
-		showToast(message.pinned === true ? '已置顶该会话' : '已取消置顶')
-		closePinSheet()
 	}
 
-	const deleteSelectedMessage = () => {
-		if (selectedMessage.value == null) return
+	const hideSelectedMessage = () => {
 		const message = selectedMessage.value
+		if (message == null || Number(message.sessionId) <= 0 || sessionMutationId.value != 0) return
 		pinVisible.value = false
 		uni.showModal({
-			title: '删除会话',
-			content: `确定删除与${message.name}的会话吗？`,
-			confirmText: '删除',
+			title: '隐藏会话',
+			content: '隐藏后不会删除历史消息、解除关系或拉黑对方；可在消息页恢复。',
+			confirmText: '隐藏',
 			cancelText: '取消',
 			success: (res) => {
-				if (res.confirm) {
-					messageList.value = (messageList.value as any[]).filter((item: any) => item.id != message.id)
-					const pinnedIndex = pinnedMessageIds.value.indexOf(message.id)
-					if (pinnedIndex >= 0) pinnedMessageIds.value.splice(pinnedIndex, 1)
-					try {
-						uni.setStorageSync(PINNED_MESSAGE_KEY, pinnedMessageIds.value)
-					} catch (e) {
-						console.error(e)
-					}
-					showToast('已删除该会话')
-				}
-				selectedMessage.value = null
+				if (res.confirm) hideSession(message)
+				else selectedMessage.value = null
 			}
 		})
 	}
 
-	// 仅已匹配会话可进入聊天；否则提示申请流程
-	const handleMessageClick = (message: any) => {
-		markMessageRead(message)
-		const matched = message.matched === true || message.canChat === true || message.type === 'chat'
-		if (!matched && message.type === 'system') {
-			showToast(message.lastMessage != null ? message.lastMessage : '系统消息')
+	const hideSession = async (message: any) => {
+		const sessionId = Number(message != null ? message.sessionId : 0)
+		if (sessionMutationId.value != 0 || sessionId <= 0) return
+		sessionMutationId.value = sessionId
+		try {
+			const res = await hideChatSession(sessionId)
+			if (res == null || res.success != true) {
+				showToast(responseMessage(res, '隐藏会话失败，请重试'))
+				return
+			}
+			if (hiddenSessionIds.value.indexOf(sessionId) < 0) hiddenSessionIds.value.push(sessionId)
+			saveHiddenSessionIds()
+			messageList.value = (messageList.value as any[]).filter((item: any) => Number(item.sessionId) != sessionId)
+			unreadTotal.value = (messageList.value as any[]).reduce((sum: number, item: any) => sum + Number(item.unreadCount || 0), 0)
+			selectedMessage.value = null
+			showToast('已隐藏会话，可在消息页恢复')
+		} catch (error) {
+			showToast('隐藏会话失败，请重试')
+		} finally {
+			sessionMutationId.value = 0
+		}
+	}
+
+	const restoreHiddenSessions = () => {
+		if (hiddenSessionIds.value.length == 0 || sessionMutationId.value != 0) return
+		uni.showModal({
+			title: '恢复隐藏会话',
+			content: '恢复后会话和历史消息会重新出现在列表中。',
+			confirmText: '恢复',
+			cancelText: '取消',
+			success: (res) => {
+				if (res.confirm) restoreHiddenSessionList()
+			}
+		})
+	}
+	const restoreHiddenSessionList = async () => {
+		if (sessionMutationId.value != 0) return
+		const ids = (hiddenSessionIds.value as number[]).slice()
+		if (ids.length == 0) return
+		sessionMutationId.value = -1
+		let restored: number[] = []
+		let failed = 0
+		try {
+			for (let index = 0; index < ids.length; index++) {
+				try {
+					const res = await restoreChatSession(ids[index])
+					if (res != null && res.success == true) restored.push(ids[index])
+					else failed += 1
+				} catch (error) {
+					failed += 1
+				}
+			}
+			hiddenSessionIds.value = ids.filter((id: number) => restored.indexOf(id) < 0)
+			saveHiddenSessionIds()
+			if (restored.length > 0) await loadMessages(true, true)
+			if (failed == 0) showToast('已恢复隐藏会话')
+			else showToast(`已恢复 ${restored.length} 个，${failed} 个失败，请重试`)
+		} finally {
+			sessionMutationId.value = 0
+		}
+	}
+
+	const handleMessageClick = async (message: any) => {
+		const userId = Number(message != null ? message.userId : 0)
+		const sessionId = Number(message != null ? message.sessionId : 0)
+		if (userId <= 0 || sessionId <= 0) {
+			showToast('会话信息无效，请刷新后重试')
 			return
 		}
-		// 默认允许进入详情（mock 会话视为已通过双方同意）
+		const readRes = await markConversationRead(sessionId)
+		if (readRes != null && readRes.success == true) {
+			message.unreadCount = 0
+			unreadTotal.value = (messageList.value as any[]).reduce((sum: number, item: any) => sum + Number(item.unreadCount || 0), 0)
+			messageList.value = (messageList.value as any[]).slice()
+		} else {
+			showToast('已读状态暂时无法更新，仍保留未读提示')
+		}
 		uni.navigateTo({
-			url: `/pagesSub/chat/detail?userId=${message.userId}&userName=${encodeURIComponent(message.name)}`
+			url: '/pagesSub/chat/detail?userId=' + userId + '&userName=' + encodeURIComponent(message.name != null ? '' + message.name : ''),
+			fail: () => { showToast('聊天打开失败，请重试') }
 		})
 	}
 
-	const createConversationForApplication = (item: any): any => {
-		const greetingIsMine = item.direction === 'in'
-		const result = createMatchedConversation(
-			item.userId,
-			item.name,
-			item.avatar,
-			'application',
-			greetingIsMine,
-			greetingIsMine ? '/static/portraits/profile-man-light.webp' : item.avatar
-		)
-		if (result.conversation != null) {
-			const currentList = messageList.value as any[]
-			const withoutSameUser = currentList.filter((conversation: any) => conversation.userId != item.userId)
-			messageList.value = [result.conversation].concat(withoutSameUser)
-		}
-		return result
+	const handleLoadMore = () => {
+		loadMessages(false)
 	}
 
-	const createAcceptedApplicationConversations = () => {
-		const list = applications.value as any[]
-		const accepted = list.filter((item: any) => item.accepted === true || item.status === 'accepted')
-		accepted.forEach((item: any) => createConversationForApplication(item))
-		if (accepted.length > 0) {
-			applications.value = list.filter((item: any) => accepted.indexOf(item) < 0)
-		}
-	}
+	onMounted(() => {
+		mounted = true
+		loadHiddenSessionIds()
+		loadMessages(true)
+		loadApplications()
+	})
 
-	const handleLoadMore = async () => {
-		if (loading.value || !hasMore.value) return
-		loading.value = true
-		try {
-			await loadMessages()
-			if (messageList.value.length >= 20) hasMore.value = false
-		} finally {
-			loading.value = false
-		}
-	}
+	onShow(() => {
+		if (!mounted) return
+		loadHiddenSessionIds()
+		loadMessages(true)
+		loadApplications()
+	})
+
+	onUnmounted(() => {
+		messageRequestSequence += 1
+		applicationRequestSequence += 1
+		mounted = false
+	})
 </script>
-
 <style scoped>
 	.message-page {
 		min-height: 100vh;
@@ -772,6 +773,76 @@ const openPaperPlane = () => {
 
 	.chat-header .section-title {
 		margin-bottom: 0;
+	}
+
+	.clear-read {
+		margin-left: auto;
+		font-size: 24rpx;
+		line-height: 36rpx;
+		color: var(--accent2);
+	}
+
+	.clear-read.disabled {
+		color: var(--muted);
+		opacity: 0.65;
+	}
+
+	.hidden-session-entry {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin: 0 8rpx 16rpx;
+		padding: 18rpx 20rpx;
+		border: 1rpx solid var(--line);
+		border-radius: 12rpx;
+		background: var(--paper);
+		color: var(--ink2);
+		font-size: 24rpx;
+	}
+
+	.hidden-session-action,
+	.message-state-action,
+	.inline-error-action {
+		color: var(--accent2);
+		font-weight: 600;
+	}
+
+	.message-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 64rpx 32rpx;
+	}
+
+	.message-state-text {
+		color: var(--muted);
+		font-size: 26rpx;
+		text-align: center;
+	}
+
+	.message-state-action {
+		margin-top: 20rpx;
+		font-size: 24rpx;
+	}
+
+	.inline-error {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		gap: 16rpx;
+		padding: 18rpx 24rpx;
+		color: var(--muted);
+		font-size: 23rpx;
+		text-align: center;
+	}
+
+	.shortcut-badge-dot {
+		width: 18rpx;
+		height: 18rpx;
+		border-radius: 999rpx;
 	}
 
 	.list {

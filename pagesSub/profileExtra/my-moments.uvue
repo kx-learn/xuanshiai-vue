@@ -164,6 +164,7 @@
 <script setup lang="uts">
 import { getMyPosts, getOwnProfile, getProfileOverview, likeDynamic, deleteDynamic } from '@/api'
 import { resolveMediaUrl } from '@/api/config.uts'
+import { guardCommunityVerification } from '@/utils/realNameGate.uts'
 
 // 个人资料数据
 const profile = ref({
@@ -284,7 +285,10 @@ const goBack = () => {
 	uni.navigateBack({})
 }
 
-const goPublish = () => {
+const goPublish = async () => {
+	// 发布动态要求实名 + 人脸
+	const ok = await guardCommunityVerification()
+	if (!ok) return
 	uni.navigateTo({ url: '/pagesSub/community/publish' })
 }
 

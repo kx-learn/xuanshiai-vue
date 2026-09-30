@@ -301,9 +301,11 @@ let phoneMasked = ref('')
 let realnameStatus = ref(0)
 let cacheSize = ref('计算中')
 
-// 隐私设置选项
-let profilePrivacy = ref('all')   // all | friends | only_me
-let messagePrivacy = ref('all')   // all | friends | certified
+// 隐私设置选项：未从服务端读回前为 ''，避免默认宣称“所有人”。
+let profilePrivacy = ref('')   // all | friends | only_me
+let messagePrivacy = ref('')   // all | friends | certified
+let privacyLoaded = ref(false)
+let privacySaving = ref(false)
 
 // 社区安全
 let blockedUsers = ref([] as any[])
@@ -323,15 +325,15 @@ let appealReason = ref('')
 let appealSubmitting = ref(false)
 
 const profilePrivacyLabel = computed(() => {
-	const map: Record<string, string> = { all: '所有人', friends: '仅好友', only_me: '仅自己' }
-	return map[profilePrivacy.value] ?? '所有人'
+	if (!privacyLoaded.value) return '读取中…'
+	const map: Record<string, string> = { all: '所有人', friends: '已匹配的人', only_me: '仅自己' }
+	return map[profilePrivacy.value] ?? '未知'
 })
 const messagePrivacyLabel = computed(() => {
-	const map: Record<string, string> = { all: '所有人', friends: '仅好友', certified: '认证用户' }
-	return map[messagePrivacy.value] ?? '所有人'
+	if (!privacyLoaded.value) return '读取中…'
+	const map: Record<string, string> = { all: '所有人', friends: '已匹配的人', certified: '已实名用户' }
+	return map[messagePrivacy.value] ?? '未知'
 })
-
-const appVersion = computed(() => 'v1.0.0')
 const certificationLabel = computed(() => {
 	if (realnameStatus.value == 2) return '已认证'
 	if (realnameStatus.value == 1 || realnameStatus.value == 4) return '审核中'
@@ -339,6 +341,8 @@ const certificationLabel = computed(() => {
 	if (realnameStatus.value == 5) return '已撤销'
 	return '未认证'
 })
+
+const appVersion = computed(() => 'v1.0.0')
 
 const refreshAccountStatus = async () => {
 	const res = await getMeProfile()
@@ -370,7 +374,13 @@ const loadPrivacy = async () => {
 		receiveMessage.value = p.notify_message != false
 		receiveMatch.value = p.notify_match != false
 		receiveActivity.value = p.notify_activity == true
+		const profileValue = p.profile_visibility != null ? '' + p.profile_visibility : ''
+		const messageValue = p.message_privacy != null ? '' + p.message_privacy : ''
+		profilePrivacy.value = profileValue
+		messagePrivacy.value = messageValue
+		privacyLoaded.value = true
 	} catch (e) {
+		privacyLoaded.value = false
 		uni.showToast({ title: '设置加载失败，请重试', icon: 'none' })
 	}
 }
@@ -571,10 +581,63 @@ const navigateTo = (url: string) => {
 }
 
 // 隐私设置选择
-const handlePrivacy = (type: 'profile' | 'message') => {
-	const field = type === 'profile' ? '资料可见性' : '消息权限'
-	uni.showToast({ title: field + '接口暂未提供', icon: 'none' })
+const PRIVACY_OPTIONS: Record<string, string[]> = {
+	profile: ['所有人', '已匹配的人', '仅自己'],
+	message: ['所有人', '已匹配的人', '已实名用户']
 }
+const PRIVACY_VALUES: Record<string, string[]> = {
+	profile: ['all', 'friends', 'only_me'],
+	message: ['all', 'friends', 'certified']
+}
+
+// 资料可见性 / 消息权限：真实读写 GET/PUT /users/me/privacy，不再提示"接口暂未提供"。
+const handlePrivacy = (type: 'profile' | 'message') => {
+	if (!privacyLoaded.value) {
+		uni.showToast({ title: '正在读取当前设置，请稍后重试', icon: 'none' })
+		return
+	}
+	if (privacySaving.value) return
+	const options = PRIVACY_OPTIONS[type]
+	const values = PRIVACY_VALUES[type]
+	const current = type === 'profile' ? profilePrivacy.value : messagePrivacy.value
+	uni.showActionSheet({
+		itemList: options,
+		success: (res: any) => {
+			const index = Number(res.tapIndex)
+			if (isNaN(index) || index < 0 || index >= values.length) return
+			const next = values[index]
+			if (next === current) return
+			applyPrivacyChoice(type, next, current)
+		},
+		fail: () => {}
+	})
+}
+
+const applyPrivacyChoice = async (type: 'profile' | 'message', next: string, previous: string) => {
+	privacySaving.value = true
+	if (type === 'profile') profilePrivacy.value = next
+	else messagePrivacy.value = next
+	const payload: any = {}
+	payload[type === 'profile' ? 'profile_visibility' : 'message_privacy'] = next
+	try {
+		const res = await updateCommunityPrivacy(payload)
+		if (!res.success || res.data == null) throw new Error('privacy update rejected')
+		// 以服务端返回值为准回填，避免出现"显示已修改但实际未生效"。
+		const saved = res.data as any
+		const savedProfile = saved.profile_visibility != null ? '' + saved.profile_visibility : ''
+		const savedMessage = saved.message_privacy != null ? '' + saved.message_privacy : ''
+		if (savedProfile != '') profilePrivacy.value = savedProfile
+		if (savedMessage != '') messagePrivacy.value = savedMessage
+		uni.showToast({ title: '已保存', icon: 'none' })
+	} catch (e) {
+		if (type === 'profile') profilePrivacy.value = previous
+		else messagePrivacy.value = previous
+		uni.showToast({ title: '保存失败，已保留原设置', icon: 'none' })
+	} finally {
+		privacySaving.value = false
+	}
+}
+
 
 // 修改手机号
 const handleChangePhone = () => {

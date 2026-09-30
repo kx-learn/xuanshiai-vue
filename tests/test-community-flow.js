@@ -352,8 +352,8 @@ if (
   else fail(`api/index 未导出 ${fn}`)
 })
 
-// 4. 认证门槛：常规互动、话题参与/带话题发布均仅实名
-console.log('\n4. 认证门槛（常规互动与话题均仅实名）...')
+// 4. 认证门槛：常规互动/申请/话题仅实名；发布动态（含带话题）实名 + 人脸
+console.log('\n4. 认证门槛（互动仅实名，发布需实名 + 人脸）...')
 if (exists('utils/realNameGate.uts')) ok('utils/realNameGate.uts 存在')
 else fail('缺少 realNameGate')
 
@@ -361,12 +361,13 @@ const gate = read('utils/realNameGate.uts')
 if (gate.includes('guardRealName') && gate.includes('resolveRealNameStatus')) ok('导出 guardRealName / resolveRealNameStatus')
 else fail('门槛工具导出不完整')
 if (
-  gate.includes('常规社区互动、申请认识、参与话题及带话题发布均仅要求实名通过') &&
-  gate.includes('双重认证（实名 + 学历过审）仅作展示加分，不作为话题门槛')
+  gate.includes('仅实名通过：常规社区互动') &&
+  gate.includes('实名通过 + 人脸通过：发布动态') &&
+  gate.includes('不作为任何操作门槛')
 ) {
-  ok('认证边界：话题与常规互动统一为仅实名')
+  ok('认证边界：互动仅实名，发布实名 + 人脸，学历仅展示')
 } else {
-  fail('认证边界文案未同步为话题仅实名')
+  fail('认证边界文案未同步为互动仅实名 / 发布实名 + 人脸')
 }
 if (
   gate.includes("'passed'") &&
@@ -663,10 +664,19 @@ if (communityPublishPage.includes('onLoad') && communityPublishPage.includes('qu
   fail('发布页未解析 topicId')
 }
 if (
-  communityPublishPage.includes("guardRealName(topicId.value > 0 ? 'topicJoin' : 'publish')") &&
+  communityPublishPage.includes('guardCommunityVerification()') &&
   !communityPublishPage.includes('guardDualVerification')
 ) {
-  ok('带话题发布与普通发布均仅要求实名')
+  const gateSource = read('utils/realNameGate.uts')
+  if (
+    gateSource.includes('export async function guardCommunityVerification') &&
+    gateSource.includes('Number(profile.face_verified) == 1') &&
+    gateSource.includes("!realnamePassed ? 'realname' : 'face'")
+  ) {
+    ok('发布动态（含带话题）要求实名 + 人脸')
+  } else {
+    fail('发布门槛未收敛为实名 + 人脸')
+  }
 } else {
   fail('发布流程认证门槛不完整')
 }
@@ -810,13 +820,18 @@ if (
   fail('发布页缺少表情')
 }
 if (
-	  publishSrc.includes("guardRealName(topicId") ||
-	  publishSrc.includes("topicId.value > 0 ? 'topicJoin'")
-	) {
-	  ok('带话题发布走 topicJoin 门槛')
-	} else {
-	  fail('发布门槛未区分 topicJoin')
-	}
+  publishSrc.includes('guardCommunityVerification') ||
+  publishSrc.includes('guardRealName')
+) {
+  ok('发布页接入认证门槛')
+} else {
+  fail('发布门槛缺失')
+}
+if (read('utils/realNameGate.uts').includes("!realnamePassed ? 'realname' : 'face'")) {
+  ok('发布门槛未通过时按缺失项跳转实名 / 人脸认证')
+} else {
+  fail('发布门槛未区分实名与人脸跳转')
+}
 	if (
 	  publishSrc.includes('getTopicDetail') &&
 	  (publishSrc.includes('话题标题加载失败') || publishSrc.includes('话题 #'))
@@ -1193,6 +1208,24 @@ contract('settings sends UTS-compatible privacy payloads and shows appeal histor
   assert.match(settings, /appeals/)
   assert.match(settings, /appealReason/)
   assert.match(settings, /submitAppeal/)
+})
+
+contract('settings reads and writes real profile/message privacy instead of claiming no API', () => {
+  const settings = read('pagesSub/profileExtra/settings.uvue')
+  // 必须真实读写后端字段
+  assert.match(settings, /p\.profile_visibility/)
+  assert.match(settings, /p\.message_privacy/)
+  assert.match(settings, /profile_visibility' : 'message_privacy'/)
+  // 读取成功前不得宣称“所有人”
+  assert.match(settings, /let profilePrivacy = ref\(''\)/)
+  assert.match(settings, /let messagePrivacy = ref\(''\)/)
+  assert.match(settings, /if \(!privacyLoaded\.value\) return '读取中…'/)
+  // 失败必须回滚到上一次确认值
+  assert.match(settings, /profilePrivacy\.value = previous/)
+  assert.match(settings, /messagePrivacy\.value = previous/)
+  // 不得再以“接口暂未提供”替代资料/消息权限
+  assert.doesNotMatch(settings, /const field = type === 'profile' \? '资料可见性' : '消息权限'/)
+  assert.doesNotMatch(settings, /field \+ '接口暂未提供'/)
 })
 contract('settings keeps notification preferences consistent and recovers failed safety actions', () => {
   const settings = read('pagesSub/profileExtra/settings.uvue')

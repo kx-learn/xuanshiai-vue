@@ -5,63 +5,239 @@
 		<view class="quota-card"><view class="quota-top"><view class="quota-avatar"><text class="ic ic-social ic-touxiang"></text></view><view class="quota-copy"><text class="quota-label">剩余申请次数</text><view class="quota-count"><text>{{ quotaRemain }}</text><text class="quota-unit">次</text></view><text class="quota-validity">{{ quotaValidity }}</text></view></view><view class="quota-actions"><view class="quota-action" @tap="goVip"><text class="ic ic-vip ic-huiyuan"></text><text>开通VIP会员</text></view><view class="quota-action" @tap="showPackage"><text class="ic ic-vip ic-jinbi"></text><text>申请次数获取</text></view></view><text class="quota-note">{{ quotaNote }}</text></view>
 		<view class="application-tabs"><view class="application-tab" :class="{ active: activeTab === 0 }" @tap="selectTab(0)"><text>我申请的认识</text></view><view class="application-tab" :class="{ active: activeTab === 1 }" @tap="selectTab(1)"><text>向我申请的认识</text></view></view>
 		<scroll-view class="application-scroll" scroll-y>
-			<text class="section-title">{{ activeTab === 0 ? '共 ' + applications.length + ' 条申请' : '共有 ' + receivedApplications.length + ' 人申请认识你' }}</text>
-			<view v-if="activeTab === 0" class="application-card" v-for="item in applications" :key="item.applicationId"><view class="application-top"><image class="application-avatar" :src="item.avatar" mode="aspectFill"></image><view class="application-info"><text class="application-name">{{ item.name }} · {{ item.age }}岁</text><text class="application-meta">{{ item.city }}</text><text class="application-meta">{{ item.salary }}</text></view></view><view class="application-status"><text>申请状态</text><view class="status-badge" :class="item.statusClass"><text class="ic ic-sys ic-tijiaoqueren"></text><text>{{ item.status }}</text></view></view></view>
-			<view v-else class="application-card" v-for="item in receivedApplications" :key="item.applicationId"><view class="application-top"><image class="application-avatar" :src="item.avatar" mode="aspectFill"></image><view class="application-info"><text class="application-name">{{ item.name }} · {{ item.age }}岁</text><text class="application-meta">{{ item.city }}</text><text class="application-meta">{{ item.salary }}</text></view></view><view class="received-actions"><view class="reject-button" @tap="rejectApplication(item.applicationId)"><text>拒绝</text></view><view class="agree-button" @tap="agreeApplication(item.applicationId)"><text>同意</text></view></view></view>
+			<text class="section-title">{{ activeTab === 0 ? '共 ' + outgoingTotal + ' 条申请' : '共有 ' + incomingTotal + ' 人申请认识你' }}</text>
+			<view v-if="loadError != ''" class="application-state"><text class="state-text">{{ loadError }}</text><view class="state-action" @tap="loadApplications"><text>重试</text></view></view>
+			<view v-else-if="loading && currentApplications.length == 0" class="application-state"><text class="state-text">正在加载申请...</text></view>
+			<view v-else-if="currentApplications.length == 0" class="application-state"><text class="state-text">{{ activeTab === 0 ? '还没有发出申请' : '暂时没有待回应的申请' }}</text><text class="state-desc">{{ activeTab === 0 ? '认真了解后再向合适的人发出申请' : '收到新的认识申请后会显示在这里' }}</text></view>
+			<view v-else-if="activeTab === 0">
+				<view class="application-card" v-for="item in applications" :key="item.applicationId">
+					<view class="application-top" @tap="openProfile(item.userId)"><image class="application-avatar" :src="item.avatar" mode="aspectFill"></image><view class="application-info"><text class="application-name">{{ item.name }}{{ item.age != '' ? ' · ' + item.age + '岁' : '' }}</text><text class="application-meta">{{ item.city }}</text><text class="application-meta">{{ item.salary }}</text></view></view>
+					<text class="application-message">{{ item.message }}</text>
+					<view class="application-status"><text>申请状态</text><view class="status-badge" :class="item.statusClass"><text class="ic ic-sys ic-tijiaoqueren"></text><text>{{ item.status }}</text></view></view>
+					<view v-if="item.statusCode == 'accepted'" class="single-action"><view class="agree-button" @tap="startChat(item)"><text>开始聊天</text></view></view>
+				</view>
+			</view>
+			<view v-else-if="currentApplications.length > 0">
+				<view class="application-card" v-for="item in receivedApplications" :key="item.applicationId">
+					<view class="application-top" @tap="openProfile(item.userId)"><image class="application-avatar" :src="item.avatar" mode="aspectFill"></image><view class="application-info"><text class="application-name">{{ item.name }}{{ item.age != '' ? ' · ' + item.age + '岁' : '' }}</text><text class="application-meta">{{ item.city }}</text><text class="application-meta">{{ item.salary }}</text></view></view>
+					<text class="application-message">{{ item.message }}</text>
+					<view v-if="item.statusCode == 'pending'" class="received-actions"><view class="reject-button" :class="{ disabled: actionId != 0 }" @tap="rejectApplication(item)"><text>拒绝</text></view><view class="agree-button" :class="{ disabled: actionId != 0 }" @tap="agreeApplication(item)"><text>{{ actionId == item.applicationId ? '处理中...' : '同意' }}</text></view></view>
+					<view v-else class="application-status"><text>申请状态</text><view class="status-badge" :class="item.statusClass"><text class="ic ic-sys ic-tijiaoqueren"></text><text>{{ item.status }}</text></view></view>
+					<view v-if="item.statusCode == 'accepted'" class="single-action"><view class="agree-button" @tap="startChat(item)"><text>开始聊天</text></view></view>
+				</view>
+			</view>
+			<view v-if="currentHasMore" class="load-more-action" @tap="loadMoreApplications"><text>{{ loading ? '正在加载...' : '加载更多' }}</text></view>
 		</scroll-view>
 	</view>
 </template>
 
 <script setup lang="uts">
-import { getOutgoingApplications, getIncomingApplications, acceptDiscoveryApplication, rejectDiscoveryApplication, getCommunityQuotas } from '@/api'
-import { resolveMediaUrl } from '@/api/config.uts'
+import { getApplicationPage, acceptDiscoveryApplication, rejectDiscoveryApplication, getCommunityQuotas, getChatSessionId } from '@/api'
+
 const applications = ref<any[]>([])
 const receivedApplications = ref<any[]>([])
 const activeTab = ref(0)
 const quotaRemain = ref('')
 const quotaValidity = ref('')
 const quotaNote = ref('')
+const outgoingTotal = ref(0)
+const incomingTotal = ref(0)
+const outgoingCursor = ref('')
+const incomingCursor = ref('')
+const outgoingHasMore = ref(false)
+const incomingHasMore = ref(false)
+const loading = ref(false)
+const loadError = ref('')
+const actionId = ref(0)
+let requestSequence = 0
+let mounted = false
+
+const currentApplications = computed(() => activeTab.value == 0 ? applications.value : receivedApplications.value)
+const currentHasMore = computed(() => activeTab.value == 0 ? outgoingHasMore.value : incomingHasMore.value)
+
 const goBack = () => { uni.navigateBack({}) }
 const goVip = () => { uni.navigateTo({ url: '/pagesSub/profileExtra/vip' }) }
 const showPackage = () => { uni.showToast({ title: '申请次数获取功能即将开放', icon: 'none' }) }
 const selectTab = (index: number) => { activeTab.value = index }
-const statusText = (status: number) => status == 1 ? '已同意' : (status == 2 ? '已拒绝' : (status == 3 ? '已过期' : '等待回应'))
-const statusClass = (status: number) => status == 1 ? 'approved' : (status == 2 ? 'rejected' : 'pending')
-const loadApplications = async () => {
-	const outgoing = await getOutgoingApplications(1, 20)
-	const incoming = await getIncomingApplications(1, 20)
-	const mapRows = async (res: any, incomingMode: boolean) => {
-		const rows = res.success && res.data != null && Array.isArray(res.data.items) ? res.data.items as any[] : []
-		const result: any[] = []
-		for (let i = 0; i < rows.length; i++) {
-			const row = rows[i]
-			const userId = incomingMode ? Number(row.from_user_id) : Number(row.to_user_id)
-			const card = incomingMode ? (row.from_user != null ? row.from_user : {}) : (row.to_user != null ? row.to_user : {})
-			result.push({ id: row.id, name: card.nickname != null ? card.nickname : '用户 ' + userId, age: card.age != null ? card.age : '', city: card.city_code != null ? card.city_code : '未填写', salary: card.income != null ? '收入 ' + card.income : '收入未填写', status: statusText(Number(row.status)), statusClass: statusClass(Number(row.status)), avatar: resolveMediaUrl(card.avatar), applicationId: Number(row.id) })
-		}
-		return result
+
+const normalizeStatus = (value: any): string => {
+	const raw = value != null ? '' + value : ''
+	if (raw == 'accepted' || raw == 'rejected' || raw == 'expired' || raw == 'pending') return raw
+	const code = Number(value)
+	if (code == 1) return 'accepted'
+	if (code == 2) return 'rejected'
+	if (code == 3) return 'expired'
+	return 'pending'
+}
+const statusText = (value: any): string => {
+	const status = normalizeStatus(value)
+	if (status == 'accepted') return '已同意'
+	if (status == 'rejected') return '已拒绝'
+	if (status == 'expired') return '已过期'
+	return '等待回应'
+}
+const statusClass = (value: any): string => normalizeStatus(value) == 'accepted' ? 'approved' : (normalizeStatus(value) == 'rejected' || normalizeStatus(value) == 'expired' ? 'rejected' : 'pending')
+
+const mapRow = (row: any): any => {
+	const statusCode = normalizeStatus(row.status)
+	return {
+		applicationId: Number(row.id),
+		userId: Number(row.userId),
+		name: row.name != null && row.name != '' ? '' + row.name : '用户',
+		age: row.age != null ? '' + row.age : '',
+		city: row.city != null && row.city != '' ? '' + row.city : '未填写城市',
+		salary: '',
+		avatar: row.avatar != null ? '' + row.avatar : '',
+		message: row.message != null && row.message != '' ? '' + row.message : '未填写附言',
+		statusCode: statusCode,
+		status: statusText(row.status),
+		statusClass: statusClass(statusCode)
 	}
-	applications.value = await mapRows(outgoing, false)
-	receivedApplications.value = await mapRows(incoming, true)
 }
+
+const applyPage = (direction: string, response: any, append: boolean) => {
+	if (response == null || response.success != true || response.data == null) {
+		throw new Error(response != null && response.message != null ? '' + response.message : '申请列表加载失败')
+	}
+	const data = response.data as any
+	const rows = Array.isArray(data.list) ? data.list as any[] : []
+	const mapped = rows.map((row: any) => mapRow(row))
+	if (direction == 'incoming') {
+		receivedApplications.value = append ? (receivedApplications.value as any[]).concat(mapped) : mapped
+		incomingTotal.value = Number(data.total != null ? data.total : receivedApplications.value.length)
+		incomingCursor.value = data.nextCursor != null ? '' + data.nextCursor : ''
+		incomingHasMore.value = data.hasMore == true
+	} else {
+		applications.value = append ? (applications.value as any[]).concat(mapped) : mapped
+		outgoingTotal.value = Number(data.total != null ? data.total : applications.value.length)
+		outgoingCursor.value = data.nextCursor != null ? '' + data.nextCursor : ''
+		outgoingHasMore.value = data.hasMore == true
+	}
+}
+
+const loadApplications = async () => {
+	if (loading.value) return
+	const sequence = ++requestSequence
+	loading.value = true
+	loadError.value = ''
+	try {
+		const outgoing = await getApplicationPage('outgoing', '', 20)
+		const incoming = await getApplicationPage('incoming', '', 20)
+		if (sequence != requestSequence) return
+		applyPage('outgoing', outgoing, false)
+		applyPage('incoming', incoming, false)
+	} catch (error) {
+		if (sequence == requestSequence) loadError.value = error instanceof Error && error.message != '' ? error.message : '申请列表加载失败，请重试'
+	} finally {
+		if (sequence == requestSequence) loading.value = false
+	}
+}
+
+const loadMoreApplications = async () => {
+	if (loading.value || !currentHasMore.value) return
+	const direction = activeTab.value == 0 ? 'outgoing' : 'incoming'
+	const cursor = activeTab.value == 0 ? outgoingCursor.value : incomingCursor.value
+	loading.value = true
+	loadError.value = ''
+	try {
+		const response = await getApplicationPage(direction, cursor, 20)
+		applyPage(direction, response, true)
+	} catch (error) {
+		loadError.value = error instanceof Error && error.message != '' ? error.message : '加载更多失败，请重试'
+	} finally {
+		loading.value = false
+	}
+}
+
 const loadQuota = async () => {
-	const res = await getCommunityQuotas()
-	if (!res.success || res.data == null || res.data.applyDaily == null) return
-	const quota = res.data.applyDaily
-	quotaRemain.value = quota.remain != null ? '' + quota.remain : ''
-	quotaNote.value = quota.total != null ? '每日申请额度 ' + quota.total + ' 次，次数每日刷新' : ''
+	try {
+		const res = await getCommunityQuotas()
+		if (!res.success || res.data == null || res.data.applyDaily == null) return
+		const quota = res.data.applyDaily
+		quotaRemain.value = quota.remain != null ? '' + quota.remain : ''
+		quotaNote.value = quota.total != null ? '每日申请额度 ' + quota.total + ' 次，次数每日刷新' : ''
+	} catch (error) {
+		quotaRemain.value = '—'
+		quotaNote.value = '额度暂时无法读取，请以提交结果为准'
+	}
 }
-const rejectApplication = async (applicationId: number) => { const res = await rejectDiscoveryApplication(Number(applicationId)); if (res.success) { const item = receivedApplications.value.find((row: any) => Number(row.applicationId) == Number(applicationId)); if (item != null) { item.status = '已拒绝'; item.statusClass = 'rejected' } } else uni.showToast({ title: res.message || '拒绝失败', icon: 'none' }) }
-const agreeApplication = async (applicationId: number) => { const res = await acceptDiscoveryApplication(Number(applicationId)); if (res.success) { const item = receivedApplications.value.find((row: any) => Number(row.applicationId) == Number(applicationId)); const name = item != null ? item.name : '该用户'; if (item != null) { item.status = '已同意'; item.statusClass = 'approved' }; uni.showToast({ title: '已同意' + name + '的申请', icon: 'success' }) } else uni.showToast({ title: res.message || '同意失败', icon: 'none' }) }
+
+const openProfile = (userId: number) => {
+	if (Number(userId) <= 0) return
+	uni.navigateTo({ url: '/pages/user/detail?userId=' + Number(userId) })
+}
+
+const startChat = async (item: any) => {
+	const peerId = Number(item != null ? item.userId : 0)
+	if (peerId <= 0) {
+		uni.showToast({ title: '暂时无法定位对方', icon: 'none' })
+		return
+	}
+	const session = await getChatSessionId(peerId)
+	if (session != null && session.success == true && session.data != null && Number(session.data.id) > 0) {
+		uni.navigateTo({ url: '/pagesSub/chat/detail?userId=' + peerId + '&userName=' + encodeURIComponent(item.name != null ? '' + item.name : '') })
+		return
+	}
+	uni.showToast({ title: session != null && session.message != null ? '' + session.message : '聊天会话暂时不可用，请稍后重试', icon: 'none' })
+}
+
+const rejectApplication = async (item: any) => {
+	if (actionId.value != 0) return
+	const applicationId = Number(item != null ? item.applicationId : 0)
+	if (applicationId <= 0) return
+	actionId.value = applicationId
+	try {
+		const res = await rejectDiscoveryApplication(applicationId)
+		if (res.success) {
+			item.statusCode = 'rejected'
+			item.status = '已拒绝'
+			item.statusClass = 'rejected'
+			uni.showToast({ title: '已拒绝', icon: 'none' })
+		} else {
+			if (Number(res.code) == 409) await loadApplications()
+			uni.showToast({ title: res.message != null ? '' + res.message : '拒绝失败，请重试', icon: 'none' })
+		}
+	} catch (error) {
+		uni.showToast({ title: '拒绝失败，请重试', icon: 'none' })
+	} finally {
+		actionId.value = 0
+	}
+}
+
+const agreeApplication = async (item: any) => {
+	if (actionId.value != 0) return
+	const applicationId = Number(item != null ? item.applicationId : 0)
+	if (applicationId <= 0) return
+	actionId.value = applicationId
+	try {
+		const res = await acceptDiscoveryApplication(applicationId)
+		if (!res.success) {
+			if (Number(res.code) == 409) await loadApplications()
+			uni.showToast({ title: res.message != null ? '' + res.message : '同意失败，请重试', icon: 'none' })
+			return
+		}
+		item.statusCode = 'accepted'
+		item.status = '已同意'
+		item.statusClass = 'approved'
+		uni.showToast({ title: '已同意，可开始聊天', icon: 'success' })
+	} catch (error) {
+		uni.showToast({ title: '同意失败，请重试', icon: 'none' })
+	} finally {
+		actionId.value = 0
+	}
+}
+
 onLoad((options: any) => {
 	if (options == null || options.tab == null) return
 	const targetTab = '' + options.tab
 	if (targetTab == 'received' || targetTab == '1') activeTab.value = 1
 })
-onMounted(() => { loadApplications(); loadQuota() })
+onMounted(() => { mounted = true; loadApplications(); loadQuota() })
+onShow(() => { if (mounted) loadApplications() })
 </script>
 
 <style>
 page { background: #F7F4F0; }.applications-page { min-height: 100vh; background: #F7F4F0; color: #2C2C2C; }.status-bar { height: 62px; padding: 20px 16px 0; box-sizing: border-box; display: flex; flex-direction: row; align-items: flex-start; justify-content: space-between; color: #2C2C2C; font-size: 14px; font-weight: 600; }.application-nav { height: 52px; padding: 0 16px; display: flex; flex-direction: row; align-items: center; justify-content: space-between; }.back-button,.nav-placeholder { width: 40px; height: 40px; }.back-button { display: flex; align-items: center; justify-content: center; border-radius: 20px; background: #FFFFFF; }.nav-title { font-size: 17px; font-weight: 600; }.quota-card { margin: 12px 16px 0; padding: 16px; border-radius: 16px; background: #FFFFFF; }.quota-top { display: flex; flex-direction: row; align-items: center; gap: 12px; }.quota-avatar { display: flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 26px; background: #E9E6E0; color: #8FA88A; font-size: 26px; }.quota-copy { flex: 1; display: flex; flex-direction: column; gap: 3px; }.quota-label,.quota-validity { color: #8E8E8A; font-size: 12px; }.quota-count { display: flex; flex-direction: row; align-items: baseline; gap: 4px; font-size: 28px; font-weight: 700; }.quota-unit { color: #8E8E8A; font-size: 12px; font-weight: 400; }.quota-validity { font-size: 11px; }.quota-actions { display: flex; flex-direction: row; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #E7E3DD; }.quota-action { flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 6px; height: 46px; border-radius: 23px; background: #F7E5E2; color: #B47770; font-size: 12px; }.quota-action + .quota-action { background: #F7F4F0; color: #8FA88A; }.quota-note { display: block; margin-top: 12px; color: #8E8E8A; font-size: 11px; line-height: 1.5; }.application-tabs { display: flex; flex-direction: row; margin-top: 12px; padding: 0 16px; border-bottom: 1px solid #E5E1DA; }.application-tab { flex: 1; padding: 14px 8px 11px; color: #A9A6A0; text-align: center; font-size: 13px; }.application-tab.active { color: #2C2C2C; font-weight: 600; border-bottom: 3px solid #D4A89E; }.application-scroll { height: calc(100vh - 332px); padding: 16px; box-sizing: border-box; }.section-title { display: block; margin-bottom: 10px; color: #8E8E8A; font-size: 12px; }.application-card { margin-bottom: 12px; padding: 16px; border-radius: 14px; background: #FFFFFF; }.application-top { display: flex; flex-direction: row; align-items: center; gap: 12px; }.application-avatar { width: 56px; height: 56px; border-radius: 28px; }.application-info { flex: 1; display: flex; flex-direction: column; gap: 5px; }.application-name { font-size: 15px; font-weight: 600; }.application-meta { color: #8E8E8A; font-size: 12px; }.application-status { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-top: 14px; padding-top: 12px; border-top: 1px solid #E7E3DD; color: #8E8E8A; font-size: 12px; }.status-badge { display: flex; flex-direction: row; align-items: center; gap: 4px; padding: 5px 9px; border-radius: 12px; font-size: 11px; }.received-actions { display: flex; flex-direction: row; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #E7E3DD; }.reject-button,.agree-button { flex: 1; display: flex; align-items: center; justify-content: center; height: 38px; border-radius: 19px; font-size: 13px; font-weight: 600; }.reject-button { color: #B47770; background: #F7E5E2; }.agree-button { color: #FFFFFF; background: #8FA88A; }
 @font-face { font-family: "iconfont-sys"; src: url('/static/婚恋小程序图标/系统通用/iconfont.woff2') format('woff2'); } @font-face { font-family: "iconfont-social"; src: url('/static/婚恋小程序图标/社区互动与信息/iconfont.woff2') format('woff2'); } @font-face { font-family: "iconfont-vip"; src: url('/static/婚恋小程序图标/会员支付与任务/iconfont.woff2') format('woff2'); }.ic{font-style:normal}.ic-sys{font-family:"iconfont-sys"}.ic-social{font-family:"iconfont-social"}.ic-vip{font-family:"iconfont-vip"}.ic-fanhui:before{content:"\e606"}.ic-tijiaoqueren:before{content:"\e627"}.ic-huiyuan:before{content:"\e65d"}.ic-jinbi:before{content:"\e64a"}.ic-touxiang:before{content:"\e632"}
+.application-message { display: block; margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: #F7F4F0; color: #5F625D; font-size: 13px; line-height: 1.6; overflow-wrap: break-word; }.application-state { min-height: 128px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; }.state-text { color: #62645F; font-size: 14px; }.state-desc { max-width: 280px; color: #8E8E8A; font-size: 12px; line-height: 1.5; }.state-action,.load-more-action { display: flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 14px; color: #697F65; font-size: 13px; }.load-more-action { margin: 4px 0 18px; }.single-action { display: flex; flex-direction: row; margin-top: 12px; padding-top: 12px; border-top: 1px solid #E7E3DD; }.disabled { opacity: .5; }
 </style>

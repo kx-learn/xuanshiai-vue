@@ -202,7 +202,7 @@ import XsaTabBar from '@/components/XsaTabBar.uvue'
 		followUserFromCommunity,
 		unfollowUserFromCommunity
 	} from '@/api'
-	import { guardRealName } from '@/utils/realNameGate.uts'
+	import { guardCommunityVerification, guardRealName } from '@/utils/realNameGate.uts'
 
 	// 主 Tab：follow | city | discover
 	// 二级筛选：
@@ -803,7 +803,8 @@ const handleLike = async (dynamicId: number) => {
 	}
 
 	const handlePublish = async () => {
-		const ok = await guardRealName('publish')
+		// 发布动态（含带话题发布）要求实名 + 人脸，见 PRODUCT.md §互动门槛
+		const ok = await guardCommunityVerification()
 		if (!ok) return
 		uni.navigateTo({ url: '/pagesSub/community/publish' })
 	}

@@ -82,7 +82,11 @@ export {
   getConversationPage,
   getApplicationPage,
   getChatPermission,
-  markAllMessagesRead
+  markAllMessagesRead,
+  markConversationRead,
+  setChatSessionPinned,
+  hideChatSession,
+  restoreChatSession
 } from './message.uts'
 export {
   ADVISOR_SCENARIOS,

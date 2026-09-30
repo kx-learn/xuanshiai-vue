@@ -84,6 +84,10 @@ for (const name of [
   'getMessageList',
   'getChatMessages',
   'sendMessage',
+  'markConversationRead',
+  'setChatSessionPinned',
+  'hideChatSession',
+  'restoreChatSession',
   'uploadChatMedia',
   'revokeMessage',
   'getContactExchanges',
@@ -406,3 +410,43 @@ const messageItem = fs.readFileSync(path.join(root, 'components/XsaMessageItem.u
 includes(messageItem, 'v-if="protectPhoto"', 'parent conversations render a protected avatar placeholder')
 
 console.log('消息闭环行为与契约测试通过')
+
+// P0-02：真实环境不得用示例申请或演示同意掩盖真实状态
+const indexPageSource = fs.readFileSync(path.join(root, 'pages/index/index.uvue'), 'utf8')
+excludes(indexPageSource, '演示对方同意', 'home page must not offer a demo "other side agrees" action')
+excludes(indexPageSource, 'simulateMatch', 'home page must not simulate a match locally')
+excludes(indexPageSource, 'matchedVisible', 'home page must not render a locally forged match state')
+includes(indexPageSource, 'closeApplySuccess', 'apply success modal must only acknowledge the real pending state')
+assert.match(
+  indexPageSource,
+  /const onApplySheetSuccess = \(payload: any\) => \{\s*\n\s*applyVisible\.value = false/,
+  'apply success must not mutate any local relationship state'
+)
+excludes(messagePage, '苏晚晴', 'application load failure must not fall back to a hardcoded sample application')
+excludes(messagePage, '给演示数据', 'application load failure must not fabricate demo applications')
+includes(messagePage, 'applicationsError', 'application load failure must surface a retryable error state')
+assert.match(
+  messagePage,
+  /applicationsError\.value = '申请列表加载失败，请重试'/,
+  'thrown application load errors must be reported instead of silently ignored'
+)
+assert.match(
+  messagePage,
+  /if \(applicationsError\.value != ''\) return applicationsError\.value/,
+  'a failed application load must not be displayed as "暂无新申请"'
+)
+
+
+const applicationsPage = fs.readFileSync(path.join(root, 'pagesSub/profileExtra/applications.uvue'), 'utf8')
+includes(applicationsPage, "getApplicationPage('incoming'", 'incoming applications use the shared paged API')
+includes(applicationsPage, "getApplicationPage('outgoing'", 'outgoing applications use the shared paged API')
+includes(applicationsPage, 'incomingTotal.value = Number(data.total', 'incoming count uses backend total')
+includes(applicationsPage, 'outgoingTotal.value = Number(data.total', 'outgoing count uses backend total')
+includes(applicationsPage, 'item.message', 'application card preserves the backend note')
+includes(applicationsPage, "item.statusCode == 'pending'", 'only pending applications expose response actions')
+includes(applicationsPage, "item.statusCode = 'accepted'", 'accept response updates the normalized status')
+includes(applicationsPage, "Number(res.code) == 409) await loadApplications()", 'stale response conflicts reload authoritative status')
+includes(applicationsPage, 'getChatSessionId(peerId)', 'chat action resolves a server-owned session first')
+includes(applicationsPage, 'openProfile(item.userId)', 'application cards open the full profile')
+excludes(applicationsPage, 'createMatchedConversation(', 'application response must not create a local conversation')
+excludes(applicationsPage, 'userId=' + ' + Number(session.data.id)', 'chat navigation must not treat a session id as a peer id')

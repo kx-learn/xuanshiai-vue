@@ -644,7 +644,6 @@
 			:other-mbti="aiOtherMbti"
 			:score="aiScore"
 			@close="aiVisible = false"
-			@close="aiVisible = false"
 		/>
 		<XsaZhiyuHub
 			:visible="zhiyuHubVisible"
@@ -661,19 +660,15 @@
 			@success="onApplySheetSuccess"
 		/>
 
-		<XsaModal :visible="successVisible" title="申请已送达" :icon="true" icon-type="success" cancel-text="查看申请" confirm-text="演示对方同意" @close="successVisible = false" @cancel="goMessages" @confirm="simulateMatch">
+		<XsaModal :visible="successVisible" title="申请已送达" :icon="true" icon-type="success" cancel-text="查看申请" confirm-text="知道了" @close="successVisible = false" @cancel="goMessages" @confirm="closeApplySuccess">
 			<view class="apply-body">
 				<text>平台已保护双方联系方式。只有双方都愿意，聊天才会开启。</text>
 				<view class="apply-note">
 					<text class="apply-desc">1. 申请已通过平台安全检查</text>
-					<text class="apply-desc">2. 等待对方回应，通常在 24 小时内</text>
+					<text class="apply-desc">2. 需要对方回应，回应前不会开启聊天</text>
 					<text class="apply-desc">3. 双方同意后开放聊天</text>
 				</view>
 			</view>
-		</XsaModal>
-
-		<XsaModal :visible="matchedVisible" title="你们都愿意认识彼此" :icon="true" icon-type="success" :show-cancel="false" confirm-text="开始聊天" @close="matchedVisible = false" @confirm="startChat">
-			<view class="apply-body"><text>认真关系从一段真诚对话开始。请注意保护隐私与财产安全。</text></view>
 		</XsaModal>
 
 		<view v-if="blockVisible" class="block-mask" @tap="blockVisible = false">
@@ -1266,10 +1261,10 @@
 	}
 
 	// ========== 申请认识 ==========
+	// 申请成功只呈现真实待回应状态：不得提供“模拟对方同意”或本地开启聊天。
 	const applyVisible = ref(false)
 	const applyUserId = ref(0)
 	const successVisible = ref(false)
-	const matchedVisible = ref(false)
 	const toastVisible = ref(false)
 	const toastMessage = ref('')
 
@@ -1284,16 +1279,15 @@
 
 	const onApplySheetSuccess = (payload: any) => {
 		applyVisible.value = false
-		// 产品规则：申请后不直接进入聊天
+		// 产品规则：申请后不直接进入聊天，也不改变本地关系状态。
 		successVisible.value = true
 		if (payload != null && payload.code == 'ALREADY_PENDING') {
 			showToast('申请已发送，请等待对方回应')
-}
+		}
 	}
 
 	const goMessages = () => { successVisible.value = false; uni.switchTab({ url: '/pages/message/message' }) }
-	const simulateMatch = () => { successVisible.value = false; matchedVisible.value = true }
-	const startChat = () => { matchedVisible.value = false; const user = currentRecommendUser.value as any; uni.navigateTo({ url: '/pagesSub/chat/detail?userId=' + Number(user.id || 0) + '&userName=' + encodeURIComponent(user.name != null ? '' + user.name : '') }) }
+	const closeApplySuccess = () => { successVisible.value = false }
 
 	// ========== 通用操作 ==========
 	const recommendUserId = computed(() => Number(currentRecommendUser.value.id || 0))

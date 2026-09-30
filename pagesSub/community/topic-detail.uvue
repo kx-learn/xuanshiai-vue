@@ -84,7 +84,7 @@ import {
 			followUserFromCommunity,
 			unfollowUserFromCommunity
 		} from '@/api'
-		import { guardRealName } from '@/utils/realNameGate.uts'
+		import { guardCommunityVerification, guardRealName } from '@/utils/realNameGate.uts'
 
 		const topicId = ref(0)
 		const topic = ref(null)
@@ -317,7 +317,8 @@ const applyParticipation = (joined: boolean, participantCount: any) => {
 
 		const goPublish = async () => {
 			if (topicId.value <= 0 || topic.value == null || topicError.value) return
-			const ok = await guardRealName('topicJoin')
+			// 带话题发布同样属于发布动态，要求实名 + 人脸
+			const ok = await guardCommunityVerification()
 			if (!ok) return
 			uni.navigateTo({ url: `/pagesSub/community/publish?topicId=${topicId.value}` })
 		}
