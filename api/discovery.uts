@@ -2,7 +2,8 @@ import { request } from './request.uts'
 import { resolveMediaUrl } from './config.uts'
 import { mockRecommendUsers, mockSquareUsers } from '@/mock/user.uts'
 
-function mapCard(row: any): any {
+// 只适配服务端公开候选卡；详情 profile/画像/择偶偏好由各自接口处理。
+export function mapCard(row: any, fallbackName: string = '用户'): any {
   const source = row != null && row.target != null ? row.target : row
   const card = source != null ? source : {}
   const tags = Array.isArray(card.personal_tags) ? card.personal_tags : card.interest_tags != null && Array.isArray(card.interest_tags)
@@ -23,8 +24,8 @@ function mapCard(row: any): any {
   return {
     id: Number(card.user_id != null ? card.user_id : (card.id != null ? card.id : 0)),
     userId: Number(card.user_id != null ? card.user_id : 0),
-    name: card.nickname != null ? '' + card.nickname : (card.name != null ? '' + card.name : '用户'),
-    nickname: card.nickname != null ? '' + card.nickname : (card.name != null ? '' + card.name : '用户'),
+    name: card.nickname != null ? '' + card.nickname : (card.name != null ? '' + card.name : fallbackName),
+    nickname: card.nickname != null ? '' + card.nickname : (card.name != null ? '' + card.name : fallbackName),
     avatar: photo,
     photos,
     age: card.age != null ? Number(card.age) : 0,
@@ -42,6 +43,7 @@ function mapCard(row: any): any {
     city: card.city_code != null ? '' + card.city_code : (card.city != null ? '' + card.city : '未填写'),
     cityCode: card.city_code != null ? '' + card.city_code : '',
     distance: card.distance_km != null ? Number(card.distance_km) : null,
+    detailLocked: card.detail_locked === true,
     online: card.online_status != null ? card.online_status == 1 : (card.online === true || onlineText.indexOf('在线') >= 0),
     mbti: card.mbti != null ? '' + card.mbti : '',
     interestTags: tags,

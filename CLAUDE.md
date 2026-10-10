@@ -1,6 +1,6 @@
 # 宣誓爱项目 — CLAUDE.md
 
-本文件是 xuanshiai-vue/ 的开发导航和运行入口。实现约束以 AGENTS.md 为准；产品与设计参考以 PRODUCT.md、DESIGN.md 为准。
+本文件是 xuanshiai-vue/ 的开发导航和运行入口。实现约束以 AGENTS.md 为准；产品与设计参考以 [权威产品快照](docs/authoritative/PRODUCT.md)、[权威设计快照](docs/authoritative/DESIGN.md) 及其来源摘要为准。完整导航见 [docs/README.md](docs/README.md)。
 
 ## 1. 项目目录
 
@@ -15,14 +15,14 @@ xuanshiai-vue/
 ├─ docs/：运行说明、排障与项目文档。
 ├─ tests/：自动化检查。
 ├─ uni.scss：全局视觉 Token。
-├─ PRODUCT.md、DESIGN.md：项目产品与设计参考。
+├─ docs/authoritative/：权威产品/设计快照与来源摘要；根 PRODUCT.md、DESIGN.md 是历史镜像。
 └─ unpackage/：HBuilderX 生成产物。
 
 ## 2. 推荐阅读顺序
 
 1. AGENTS.md：确认实现边界、保护文件和验证要求。
 2. 相关 pages/、components/、api/、mock/ 源码。
-3. PRODUCT.md、DESIGN.md、uni.scss。
+3. docs/authoritative/PRODUCT.md、docs/authoritative/DESIGN.md、uni.scss；运行 `node scripts/authoritative-docs.cjs --check` 校验来源/摘要。
 4. docs/HOW_TO_RUN.md 与 docs/TROUBLESHOOTING.md。
 
 ## 3. 微信小程序运行与刷新
@@ -36,7 +36,7 @@ xuanshiai-vue/
 
 ## 4. 常用定位
 
-- 全局 Token 与视觉规则：uni.scss、App.uvue、DESIGN.md。
+- 全局 Token 与视觉规则：uni.scss、App.uvue、docs/authoritative/DESIGN.md。
 - Tab 与路由：pages.json。
 - Mock 开关与接口边界：api/config.uts、api/、mock/。
 - 社区闭环：pages/community/*、api/community.uts、mock/community.uts、utils/realNameGate.uts、XsaApplySheet / XsaReportSheet / XsaDynamicCard。
@@ -48,4 +48,5 @@ xuanshiai-vue/
 
 - AGENTS.md：可执行约束、保护文件与验证要求。
 - CLAUDE.md：目录导航、阅读顺序与运行入口。
-- PRODUCT.md、DESIGN.md：项目产品与设计参考。
+- docs/authoritative/PRODUCT.md、DESIGN.md 与 manifest.json：当前产品/设计快照及来源摘要；仓内根镜像只供历史参考。
+- 发布验收：[docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md#发布验收门禁)。源码 CI 不代替 HBuilderX 产物和微信端侧记录。

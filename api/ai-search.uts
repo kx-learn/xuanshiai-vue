@@ -4,6 +4,7 @@
  */
 
 import { request } from './request.uts'
+import { mapCard } from './discovery.uts'
 import { pollTaskUntilTerminal } from './ai-profile.uts'
 
 function createSearchIdempotencyKey(prefix: string = 'search'): string {
@@ -72,7 +73,7 @@ export function searchResultItems(response: any): any[] {
   return rows.map((item: any) => ({
     id: item.user_id,
     user_id: item.user_id,
-    profile: item.card != null ? item.card : {},
+    profile: mapCard({ ...(item.card != null ? item.card : {}), user_id: item.user_id }, '认真生活的人'),
     card: item.card != null ? item.card : {},
     matchedConditions: Array.isArray(item.matched_conditions) ? item.matched_conditions : [],
     unknownConditions: Array.isArray(item.unknown_conditions) ? item.unknown_conditions : [],

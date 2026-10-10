@@ -38,6 +38,7 @@ const core = [
   'test-moxiang-build-confirmation.js',
   'test-search-retry-idempotency.js',
   'test-home-recommend-display.js',
+  'test-public-candidate-card.js',
   // 本轮遗漏的源码级契约：首页状态诚实性、匹配固定话术、文档一致性、兴趣标签。
   'test-home-profile-state-honesty.js',
   'test-home-no-profile-completion-banner.js',
