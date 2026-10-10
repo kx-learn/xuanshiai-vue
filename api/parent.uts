@@ -1,28 +1,27 @@
 import { request } from './request.uts'
 import { CURRENT_USER_ID_KEY, USE_MOCK, clearAuthTokens, getAccessToken } from './config.uts'
+import {
+	applyToMeet,
+	getLikedUsers,
+	getParentMockCandidateSource,
+	getUserDetail,
+	likeUser
+} from './user.uts'
 import { getApplications, getMessageList } from './message.uts'
 import type { MessageSubject } from './message.uts'
 import { getCustomMatchmakers, getServiceMatchmakers } from './matchmaker.uts'
-import { blockUser, reportContent } from './community.uts'
 import {
-	getMockParentCandidateDetailData,
-	getMockParentCandidatesData,
-	getMockParentLikedCandidatesData,
-	getMockParentMatchmakersData,
-  getMockParentContextData,
-	submitMockParentIntroductionData,
-  syncMockParentRemainingApplicationsData,
-	toggleMockParentLikeData,
-  updateMockParentChildProfileData
+	getMockParentContextData,
+	updateMockParentChildProfileData,
+	getParentMockSubjectKey,
+	blockMockParentCandidate,
+	reportMockParentCandidate,
+	getMockParentStateData,
+	saveMockParentStateData
 } from '@/mock/parent.uts'
 
-/**
- * The first parent slice is an internal-review adapter. Do not turn this off
- * until the relationship-aware parent backend has been implemented and tested.
- */
-export const PARENT_USE_MOCK = true
-export const PARENT_RELATIONSHIP_BACKEND_READY = false
-export const PARENT_SERVER_PRIVACY_FILTER_READY = false
+/** 父母端与本人端使用同一个环境开关。 */
+export const PARENT_USE_MOCK = USE_MOCK
 
 export type ParentRealNameStatus = 'missing' | 'reviewing' | 'passed' | 'rejected'
 export type ChildAuthorizationStatus = 'pending' | 'granted' | 'revoked' | 'expired'
@@ -66,6 +65,7 @@ export type ParentContext = {
 	child: ParentChildProfile | null
 	quota: ParentQuota
 	releaseGate?: ParentReleaseGate
+    messageNotifications?: boolean
 }
 
 export type ParentAccessGate = {
@@ -138,13 +138,6 @@ function failureResponse(message: string, code: any, data: any = null): any {
 	}
 }
 
-function relationshipBackendFailure(): any {
-	return failureResponse(
-		'父母端服务暂不可用，请稍后再试。',
-		'PARENT_RELATIONSHIP_BACKEND_REQUIRED'
-	)
-}
-
 /** Local parent Mock data is still account-bound and must never be readable anonymously. */
 export function getParentAuthenticationGate(): any {
 	const token = getAccessToken()
@@ -205,13 +198,8 @@ function parentInternalMockScope(context: ParentContext | null): string {
 		context.dataMode == 'mock' &&
 		context.child != null &&
 		context.child.id > 0
-	) return 'parent:' + context.child.id
+	) return getParentMockSubjectKey(context.child.id)
 	return ''
-}
-
-function subjectGated(context: ParentContext | null): any {
-	const gate = getParentSubjectApiGate(context, parentInternalMockScope(context))
-	return gate.allowed == true ? null : failureResponse(gate.message, gate.code, gate)
 }
 
 export function getParentAccessGate(context: ParentContext | null): ParentAccessGate {
@@ -236,68 +224,33 @@ export function getParentAccessGate(context: ParentContext | null): ParentAccess
 
 	const isDemo = context != null && context.dataMode == 'mock'
 	const releaseReady =
-		PARENT_RELATIONSHIP_BACKEND_READY &&
-		PARENT_SERVER_PRIVACY_FILTER_READY &&
 		context != null &&
 		context.releaseGate != null &&
 		context.releaseGate.productionReady == true
 
+	let code = 'OK'
+	let message = '父母端访问条件已满足'
 	if (!roleValid) {
-		return {
-			allowed: false,
-			parentVerified: parentVerified,
-			childAuthorized: childAuthorized,
-			isDemo: isDemo,
-			releaseReady: releaseReady,
-			code: 'PARENT_ROLE_REQUIRED',
-			message: '当前账号不是父母身份'
-		}
+		code = 'PARENT_ROLE_REQUIRED'
+		message = '当前账号不是父母身份'
+	} else if (!parentVerified) {
+		code = 'PARENT_REALNAME_REQUIRED'
+		message = '请先完成父母实名认证'
+	} else if (!childAuthorized) {
+		code = authorizationExpired ? 'CHILD_AUTHORIZATION_EXPIRED' : 'CHILD_AUTHORIZATION_REQUIRED'
+		message = authorizationExpired ? '子女授权已过期，请重新取得授权' : '请先取得子女授权'
+	} else if (context != null && context.dataMode == 'http' && !releaseReady) {
+		code = 'PARENT_RELEASE_BLOCKED'
+		message = '父母与子女关系服务尚未达到发布条件'
 	}
-
-	if (!parentVerified) {
-		return {
-			allowed: false,
-			parentVerified: false,
-			childAuthorized: childAuthorized,
-			isDemo: isDemo,
-			releaseReady: releaseReady,
-			code: 'PARENT_REALNAME_REQUIRED',
-			message: '请先完成父母实名认证'
-		}
-	}
-
-	if (!childAuthorized) {
-		return {
-			allowed: false,
-			parentVerified: true,
-			childAuthorized: false,
-			isDemo: isDemo,
-			releaseReady: releaseReady,
-			code: authorizationExpired ? 'CHILD_AUTHORIZATION_EXPIRED' : 'CHILD_AUTHORIZATION_REQUIRED',
-			message: authorizationExpired ? '子女授权已过期，请重新取得授权' : '请先取得子女授权'
-		}
-	}
-
-	if (context != null && context.dataMode == 'http' && !releaseReady) {
-		return {
-			allowed: false,
-			parentVerified: true,
-			childAuthorized: true,
-			isDemo: false,
-			releaseReady: false,
-			code: 'PARENT_RELEASE_BLOCKED',
-			message: '父母与子女关系服务尚未达到发布条件'
-		}
-	}
-
 	return {
-		allowed: true,
-		parentVerified: true,
-		childAuthorized: true,
+		allowed: code == 'OK',
+		parentVerified: parentVerified,
+		childAuthorized: childAuthorized,
 		isDemo: isDemo,
 		releaseReady: releaseReady,
-		code: 'OK',
-		message: '父母端访问条件已满足'
+		code: code,
+		message: message
 	}
 }
 
@@ -332,16 +285,27 @@ function gateFailure(gate: ParentAccessGate): any {
 }
 
 function gated(context: ParentContext | null): any {
-	const authBlocked = authenticationGated()
+	const authBlocked = parentRoleGated(context)
 	if (authBlocked != null) return authBlocked
+    if (PARENT_USE_MOCK) {
+        const currentGate = getParentAccessGate(getMockParentContextData() as ParentContext)
+        if (!currentGate.allowed) return gateFailure(currentGate)
+    }
 	const gate = getParentAccessGate(context)
-	return gate.allowed ? null : gateFailure(gate)
+	if (!gate.allowed) return gateFailure(gate)
+	const subjectGate = getParentSubjectApiGate(context, parentInternalMockScope(context))
+	return subjectGate.allowed ? null : failureResponse(subjectGate.message, subjectGate.code, subjectGate)
 }
 
 function parentRoleGated(context: ParentContext | null): any {
 	const authBlocked = authenticationGated()
 	if (authBlocked != null) return authBlocked
-	if (context != null && context.mode == 'parent') return null
+	if (context != null && context.mode == 'parent') {
+        if (String(context.parent.id) != String(uni.getStorageSync(CURRENT_USER_ID_KEY))) {
+            return failureResponse('账号已切换，请重新加载父母端', 'PARENT_SUBJECT_CHANGED')
+        }
+        return null
+    }
 	return failureResponse('当前账号不是父母身份', 'PARENT_ROLE_REQUIRED')
 }
 
@@ -410,7 +374,7 @@ function candidateLiked(raw: any): boolean {
 }
 
 /** Select only the fields allowed in the privacy-safe parent candidate view. */
-function toParentCandidate(raw: any, forceLiked: boolean = false): ParentCandidate | null {
+function toParentCandidate(raw: any): ParentCandidate | null {
 	if (raw == null) return null
 	const gender = genderText(raw)
 	const city = raw.city != null && String(raw.city).trim().length > 0
@@ -448,18 +412,9 @@ function toParentCandidate(raw: any, forceLiked: boolean = false): ParentCandida
 		introduction: introduction,
 		datingNotes: '平台仅协助呈现资料，是否继续由双方本人决定。',
 		expectations: expectationList(raw),
-		liked: forceLiked || candidateLiked(raw),
+		liked: candidateLiked(raw),
 		canViewClearPhoto: false
 	}
-}
-
-function toParentCandidateList(source: any[], forceLiked: boolean = false): ParentCandidate[] {
-	const candidates: ParentCandidate[] = []
-	for (let i = 0; i < source.length; i++) {
-		const candidate = toParentCandidate(source[i], forceLiked)
-		if (candidate != null && candidate.id > 0) candidates.push(candidate)
-	}
-	return candidates
 }
 
 function responseList(data: any): any[] {
@@ -523,7 +478,6 @@ export async function getParentContext() {
 	const authBlocked = authenticationGated()
 	if (authBlocked != null) return authBlocked
 	if (PARENT_USE_MOCK) return okResponse(getMockParentContextData() as ParentContext)
-	if (!PARENT_RELATIONSHIP_BACKEND_READY) return relationshipBackendFailure()
 	return request({
 		url: '/parent/context',
 		method: 'GET'
@@ -551,7 +505,7 @@ export async function updateParentChildProfile(
 	if (displayName.length == 0 || city.length == 0) {
 		return failureResponse('请完整填写称呼和所在城市', 'INVALID_CHILD_PROFILE')
 	}
-	if (isNaN(year) || year < 1940 || year > currentYear - 18) {
+	if (!Number.isFinite(year) || Math.floor(year) != year || year < 1940 || year > currentYear - 18) {
 		return failureResponse('请填写有效的出生年份', 'INVALID_BIRTH_YEAR')
 	}
 
@@ -564,7 +518,6 @@ export async function updateParentChildProfile(
 	}
 
 	if (PARENT_USE_MOCK) return okResponse(updateMockParentChildProfileData(payload))
-	if (!PARENT_RELATIONSHIP_BACKEND_READY) return relationshipBackendFailure()
 	if (context == null || context.child == null) {
 		return failureResponse('尚未关联已授权子女', 'CHILD_RELATIONSHIP_REQUIRED')
 	}
@@ -580,62 +533,68 @@ export async function updateParentChildProfile(
 	return result
 }
 
-export async function getParentCandidates(context: ParentContext | null) {
-	const blocked = gated(context)
-	if (blocked != null) return blocked
-	const subjectBlocked = subjectGated(context)
-	if (subjectBlocked != null) return subjectBlocked
-	if (PARENT_USE_MOCK && context != null && context.dataMode == 'mock') {
-		return okResponse(toParentCandidateList(getMockParentCandidatesData()))
-	}
-	if (!PARENT_RELATIONSHIP_BACKEND_READY) return relationshipBackendFailure()
-	const result = await request({
-		url: '/parent/children/' + String(context != null && context.child != null ? context.child.id : 0) + '/candidates',
-		method: 'GET'
-	})
-	if (result == null || result.success != true) return result
-	return okResponse(toParentCandidateList(responseList(result.data)))
+function candidatePageResponse(response: any): any {
+    if (response.success && response.data != null) {
+        const page = response.data
+        response.page = page.page
+        response.total = page.total
+        response.hasMore = page.hasMore == true
+        response.data = page.items
+    }
+    return response
 }
 
-export async function getParentLikedCandidates(context: ParentContext | null) {
+function mockCandidatePage(candidates: ParentCandidate[], page: number): any {
+    const response = okResponse(candidates.slice((page - 1) * 20, page * 20))
+    response.page = page
+    response.total = candidates.length
+    response.hasMore = page * 20 < candidates.length
+    return response
+}
+
+export async function getParentCandidates(context: ParentContext | null, page: number = 1) {
 	const blocked = gated(context)
 	if (blocked != null) return blocked
-	const subjectBlocked = subjectGated(context)
-	if (subjectBlocked != null) return subjectBlocked
-	if (PARENT_USE_MOCK && context != null && context.dataMode == 'mock') {
-		return okResponse(toParentCandidateList(getMockParentLikedCandidatesData(), true))
-	}
-	if (!PARENT_RELATIONSHIP_BACKEND_READY) return relationshipBackendFailure()
-	const result = await request({
-		url: '/parent/children/' + String(context != null && context.child != null ? context.child.id : 0) + '/likes',
-		method: 'GET'
-	})
+    if (!PARENT_USE_MOCK && context != null && context.child != null) {
+        return candidatePageResponse(await request({ url: '/parent/children/' + context.child.id + '/candidates', method: 'GET', data: { page: page, pageSize: 20 } }))
+    }
+	const result = okResponse(getParentMockCandidateSource().filter((item: any) => getMockParentStateData().blockedUserIds.indexOf(item.id) < 0))
 	if (result == null || result.success != true) return result
-	return okResponse(toParentCandidateList(responseList(result.data), true))
+	const source = responseList(result.data)
+
+	const candidates: ParentCandidate[] = []
+	for (let i = 0; i < source.length; i++) {
+		const candidate = toParentCandidate(source[i])
+		if (candidate != null && candidate.id > 0) candidates.push(candidate)
+	}
+    return mockCandidatePage(candidates, page)
+}
+
+export async function getParentLikedCandidates(context: ParentContext | null, page: number = 1) {
+	const blocked = gated(context)
+	if (blocked != null) return blocked
+    if (!PARENT_USE_MOCK && context != null && context.child != null) {
+        return candidatePageResponse(await request({ url: '/parent/children/' + context.child.id + '/candidates', method: 'GET', data: { liked: true, page: page, pageSize: 20 } }))
+    }
+	const result = await getLikedUsers(parentInternalMockScope(context))
+	if (result == null || result.success != true) return result
+	const source = responseList(result.data)
+	const candidates: ParentCandidate[] = []
+	for (let i = 0; i < source.length; i++) {
+		const candidate = toParentCandidate({ ...source[i], liked: true })
+		if (candidate != null && candidate.id > 0) candidates.push(candidate)
+	}
+    return mockCandidatePage(candidates, page)
 }
 
 export async function getParentCandidateDetail(context: ParentContext | null, candidateId: number) {
 	const blocked = gated(context)
 	if (blocked != null) return blocked
 	if (!validCandidateId(candidateId)) return candidateIdFailure()
-	const subjectBlocked = subjectGated(context)
-	if (subjectBlocked != null) return subjectBlocked
-	if (PARENT_USE_MOCK && context != null && context.dataMode == 'mock') {
-		const mockDetail = getMockParentCandidateDetailData(candidateId)
-		if (mockDetail == null) return failureResponse('未找到该候选资料', 'CANDIDATE_NOT_FOUND')
-		const candidate = toParentCandidate(mockDetail)
-		if (candidate == null) return failureResponse('候选资料格式无效', 'INVALID_CANDIDATE_RESPONSE')
-		if (canParentViewClearPhoto(context, mockDetail)) {
-			candidate.canViewClearPhoto = true
-			candidate.clearAvatar = clearPhotoUrl(mockDetail)
-		}
-		return okResponse(candidate)
-	}
-	if (!PARENT_RELATIONSHIP_BACKEND_READY) return relationshipBackendFailure()
-	const result = await request({
-		url: '/parent/children/' + String(context != null && context.child != null ? context.child.id : 0) + '/candidates/' + String(candidateId),
-		method: 'GET'
-	})
+    if (!PARENT_USE_MOCK && context != null && context.child != null) {
+        return request({ url: '/parent/children/' + context.child.id + '/candidates/' + candidateId, method: 'GET' })
+    }
+	const result = await getUserDetail(candidateId, parentInternalMockScope(context))
 	if (result == null || result.success != true || result.data == null) return result
 	const source = result.data
 	const candidate = toParentCandidate(source)
@@ -670,35 +629,24 @@ export async function getParentMessages(context: ParentContext | null) {
 export async function getParentMatchmakers(context: ParentContext | null) {
 	const blocked = gated(context)
 	if (blocked != null) return blocked
-	if (PARENT_USE_MOCK && context != null && context.dataMode == 'mock') {
-		return okResponse(toParentMatchmakerList(getMockParentMatchmakersData('service')))
-	}
-	return parentMatchmakerResponse(await getServiceMatchmakers())
+	return parentMatchmakerResponse(await getServiceMatchmakers(parentInternalMockScope(context) != ''))
 }
 
 export async function getParentCustomMatchmakers(context: ParentContext | null) {
 	const blocked = gated(context)
 	if (blocked != null) return blocked
-	if (PARENT_USE_MOCK && context != null && context.dataMode == 'mock') {
-		return okResponse(toParentMatchmakerList(getMockParentMatchmakersData('custom')))
-	}
-	return parentMatchmakerResponse(await getCustomMatchmakers())
+	return parentMatchmakerResponse(await getCustomMatchmakers(parentInternalMockScope(context) != ''))
 }
 
-export async function toggleParentLike(context: ParentContext | null, candidateId: number) {
+export async function toggleParentLike(context: ParentContext | null, candidateId: number, desiredLiked: boolean | null = null) {
 	const blocked = gated(context)
 	if (blocked != null) return blocked
 	if (!validCandidateId(candidateId)) return candidateIdFailure()
-	const subjectBlocked = subjectGated(context)
-	if (subjectBlocked != null) return subjectBlocked
-	if (PARENT_USE_MOCK && context != null && context.dataMode == 'mock') {
-		return okResponse(toggleMockParentLikeData(candidateId))
-	}
-	if (!PARENT_RELATIONSHIP_BACKEND_READY) return relationshipBackendFailure()
-	return request({
-		url: '/parent/children/' + String(context != null && context.child != null ? context.child.id : 0) + '/candidates/' + String(candidateId) + '/like',
-		method: 'POST'
-	})
+    if (!PARENT_USE_MOCK && context != null && context.child != null) {
+        if (desiredLiked == null) return failureResponse('请刷新资料后设置喜欢状态', 'LIKE_STATE_REQUIRED')
+        return request({ url: '/parent/children/' + context.child.id + '/likes/' + candidateId, method: 'PUT', data: { liked: desiredLiked } })
+    }
+	return likeUser(candidateId, parentInternalMockScope(context), desiredLiked)
 }
 
 export async function applyParentIntroduction(
@@ -712,21 +660,11 @@ export async function applyParentIntroduction(
 	if (note == null || String(note).trim().length == 0) {
 		return failureResponse('请填写申请说明', 'APPLICATION_NOTE_REQUIRED')
 	}
-	const subjectBlocked = subjectGated(context)
-	if (subjectBlocked != null) return subjectBlocked
+    if (String(note).trim().length > 120) return failureResponse('申请说明最多 120 字', 'APPLICATION_NOTE_TOO_LONG')
 
-	let result: any = null
-	if (PARENT_USE_MOCK && context != null && context.dataMode == 'mock') {
-		const remaining = context.quota != null ? Number(context.quota.remainingApplications) : 0
-		result = submitMockParentIntroductionData(candidateId, isNaN(remaining) ? 0 : remaining)
-	} else {
-		if (!PARENT_RELATIONSHIP_BACKEND_READY) return relationshipBackendFailure()
-		result = await request({
-			url: '/parent/children/' + String(context != null && context.child != null ? context.child.id : 0) + '/candidates/' + String(candidateId) + '/applications',
-			method: 'POST',
-			data: { note: String(note).trim() }
-		})
-	}
+	const result = !PARENT_USE_MOCK && context != null && context.child != null
+        ? await request({ url: '/parent/children/' + context.child.id + '/applications/' + candidateId, method: 'POST', data: { note: String(note).trim() } })
+        : await applyToMeet(candidateId, String(note).trim(), parentInternalMockScope(context))
 	syncRemainingApplications(context, result)
 	return result
 }
@@ -742,7 +680,6 @@ function syncRemainingApplications(context: ParentContext | null, result: any) {
 	) return
 
 	const total = Math.max(0, Number(context.quota.dailyTotal))
-	const current = Number(context.quota.remainingApplications)
 	const rawReported = result.data.remainingApplications != null
 		? result.data.remainingApplications
 		: result.data.remain
@@ -750,20 +687,9 @@ function syncRemainingApplications(context: ParentContext | null, result: any) {
 	if (!isNaN(reported)) {
 		const remaining = Math.min(total, Math.max(0, reported))
 		context.quota.remainingApplications = remaining
-		if (PARENT_USE_MOCK && context.dataMode == 'mock') {
-			syncMockParentRemainingApplicationsData(remaining)
-		}
 		return
 	}
-	if (result.data.quotaRefreshFailed == true || result.data.quotaSyncFailed == true) return
-	const remaining = Math.min(
-		total,
-		Math.max(0, isNaN(current) ? 0 : current - 1)
-	)
-	context.quota.remainingApplications = remaining
-	if (PARENT_USE_MOCK && context.dataMode == 'mock') {
-		syncMockParentRemainingApplicationsData(remaining)
-	}
+    // Only the state transition may debit quota; a retry never guesses a decrement.
 }
 
 export async function reportParentCandidate(
@@ -779,30 +705,65 @@ export async function reportParentCandidate(
 		return failureResponse('请选择举报原因', 'REPORT_REASON_REQUIRED')
 	}
 	if (PARENT_USE_MOCK && context != null && context.dataMode == 'mock') {
-		return okResponse({
-			success: true,
-			internalDemo: true,
-			message: '举报已提交。'
-		})
+        return okResponse(reportMockParentCandidate(candidateId, String(reasonId).trim(), String(detail).trim()))
 	}
-	return reportContent(
-		'user',
-		candidateId,
-		String(reasonId).trim(),
-		detail != null ? String(detail).trim() : ''
-	)
+    if (context == null || context.child == null) return failureResponse('尚未关联子女', 'CHILD_RELATIONSHIP_REQUIRED')
+    return request({ url: '/parent/children/' + context.child.id + '/reports/' + candidateId, method: 'POST', data: { reasonId: reasonId, detail: detail } })
 }
 
 export async function blockParentCandidate(context: ParentContext | null, candidateId: number) {
-	const blocked = parentRoleGated(context)
+	const blocked = gated(context)
 	if (blocked != null) return blocked
 	if (!validCandidateId(candidateId)) return candidateIdFailure()
 	if (PARENT_USE_MOCK && context != null && context.dataMode == 'mock') {
-		return okResponse({
-			success: true,
-			internalDemo: true,
-			message: '已屏蔽该用户。'
-		})
+        return okResponse(blockMockParentCandidate(candidateId))
 	}
-	return blockUser(candidateId)
+    if (context == null || context.child == null) return failureResponse('尚未关联子女', 'CHILD_RELATIONSHIP_REQUIRED')
+    return request({ url: '/parent/children/' + context.child.id + '/blocks/' + candidateId, method: 'PUT' })
+}
+
+export async function getParentPreferences() {
+    const blocked = authenticationGated()
+    if (blocked != null) return blocked
+    if (PARENT_USE_MOCK) return okResponse({ messageNotifications: getMockParentStateData().messageNotifications, allowParentPhoto: false })
+    return request({ url: '/parent/preferences', method: 'GET' })
+}
+
+export async function updateParentPreferences(payload: any) {
+    const blocked = authenticationGated()
+    if (blocked != null) return blocked
+    if (PARENT_USE_MOCK) {
+        const state = getMockParentStateData()
+        if (payload.messageNotifications != null) state.messageNotifications = payload.messageNotifications == true
+        saveMockParentStateData()
+        return okResponse({ messageNotifications: state.messageNotifications, allowParentPhoto: false })
+    }
+    return request({ url: '/parent/preferences', method: 'PATCH', data: payload })
+}
+
+export async function getParentAlerts(context: ParentContext | null) {
+    const blocked = gated(context)
+    if (blocked != null) return blocked
+    if (context == null || context.child == null) return failureResponse('尚未关联子女', 'CHILD_RELATIONSHIP_REQUIRED')
+    if (PARENT_USE_MOCK) {
+        const state = getMockParentStateData()
+        const source = state.messageState
+        const unread = source != null ? source.messageList.reduce((total: number, item: any) => total + Number(item.unreadCount || 0), 0) : 0
+        const pending = source != null ? source.applications.filter((item: any) => item.direction == 'in' && item.status == 'pending').length : 0
+        return okResponse({ enabled: state.messageNotifications, latestEventId: source != null ? source.messageIdSeed : 0, unreadCount: unread, pendingCount: pending })
+    }
+    return request({ url: '/parent/children/' + context.child.id + '/alerts', method: 'GET' })
+}
+
+/** Consent always uses authenticated real accounts; demo mode never simulates someone else's acceptance. */
+export async function parentAuthorizationRequest(action: string, payload: any = null) {
+    const blocked = authenticationGated()
+    if (blocked != null) return blocked
+    if (PARENT_USE_MOCK) return failureResponse('请在真实账号联调环境管理家人授权', 'PARENT_CONSENT_HTTP_REQUIRED')
+    if (action == 'create') return request({ url: '/parent/invitations', method: 'POST' })
+    if (action == 'preview') return request({ url: '/parent/invitations/preview', method: 'POST', data: { code: payload.code } })
+    if (action == 'accept') return request({ url: '/parent/invitations/accept', method: 'POST', data: payload })
+    if (action == 'list') return request({ url: '/parent/relationships', method: 'GET' })
+    if (action == 'revoke' && payload != null && validCandidateId(Number(payload.parentId))) return request({ url: '/parent/relationships/' + payload.parentId, method: 'DELETE' })
+    return failureResponse('无效的授权操作', 'INVALID_PARENT_ACTION')
 }

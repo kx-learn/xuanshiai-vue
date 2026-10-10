@@ -1,0 +1,90 @@
+<template>
+  <view class="live-card" v-if="state.can_read_actions">
+    <text class="live-subtitle">工作人员界面</text>
+    <text class="live-copy live-muted">控场：{{nameOf(state.controller_id)}}。这里只显示本人权限，不显示单方意愿，也不能代选。</text>
+    <view class="live-row">
+      <XsaButton v-if="can('rehearse') && !demo && state.media_mode == 'trtc'" :disabled="busy" size="small" @click="act('rehearse')">开启真机连麦演练</XsaButton>
+      <XsaButton v-if="can('start')" :disabled="busy" size="small" @click="act('start')">{{state.media_mode == 'disabled' && !demo ? '开始业务演练' : '正式开场'}}</XsaButton>
+      <XsaButton v-if="can('pause')" :disabled="busy" size="small" @click="act('pause')">暂停流程</XsaButton>
+      <XsaButton v-if="can('resume')" :disabled="busy" size="small" @click="act('resume')">恢复流程</XsaButton>
+      <XsaButton v-if="can('extend')" :disabled="busy" size="small" @click="act('extend')">延长 1 分钟</XsaButton>
+      <XsaButton v-if="can('advance')" :disabled="busy" size="small" @click="act('advance')">推进下一环节</XsaButton>
+      <XsaButton v-if="can('skip_round')" :disabled="busy" size="small" variant="secondary" @click="withReason('skip_round','确认跳过本轮')">主嘉宾已离场，确认跳轮</XsaButton>
+    </view>
+    <view class="live-row">
+      <XsaButton v-if="can('take_control')" :disabled="busy" size="small" @click="withReason('take_control','运营接管流程')">接管主持流程</XsaButton>
+      <XsaButton v-if="can('return_control')" :disabled="busy" size="small" @click="withReason('return_control','交还主持流程')">交还主持</XsaButton>
+      <XsaButton v-if="can('schedule')" class="live-schedule" :disabled="busy" size="small" @click="act('schedule')">确认排期</XsaButton>
+      <XsaButton v-if="state.can_edit" class="live-edit" :disabled="busy" size="small" variant="secondary" @click="edit">修改场次与名单</XsaButton>
+      <XsaButton v-if="can('end')" :disabled="busy" variant="secondary" size="small" @click="finish('end')">结束本场</XsaButton>
+      <XsaButton v-if="can('cancel')" :disabled="busy" variant="secondary" size="small" @click="finish('cancel')">取消场次</XsaButton>
+    </view>
+    <XsaButton v-if="can('remove') || can('stage')" size="small" variant="secondary" @click="rosterOpen = !rosterOpen">{{rosterOpen ? '收起发言与名单' : '查看名单与人员操作'}}</XsaButton>
+    <view v-if="rosterOpen">
+      <view v-for="person in state.members" :key="person.user_id" class="live-choice">
+        <text class="live-copy">{{person.display_name}} · {{liveLabel(person.role)}} · {{liveLabel(person.attendance)}}{{person.hand ? ' · 等待发言' : ''}}</text>
+        <text class="live-copy live-muted">账号 #{{person.user_id}} · {{liveLabel(person.invitation)}}{{person.checked_in ? ' · 已签到' : ' · 未签到'}}</text>
+        <view class="live-row">
+          <XsaButton v-if="state.allowed_targets.stage_ids.indexOf(person.user_id)>=0" size="small" variant="secondary" :disabled="busy" @click="stage(person.user_id,!person.on_stage)">{{person.on_stage ? '下台' : '安排上台'}}</XsaButton>
+          <XsaButton v-if="state.allowed_targets.speaker_ids.indexOf(person.user_id)>=0" size="small" :disabled="busy" @click="speaker(person.user_id)">请TA发言</XsaButton>
+          <XsaButton v-if="state.allowed_targets.remove_ids.indexOf(person.user_id)>=0" size="small" variant="text" :disabled="busy" @click="withReason('remove','移出场次',person.user_id)">移出并记录原因</XsaButton>
+        </view>
+      </view>
+    </view>
+    <view class="live-row">
+      <XsaButton v-if="state.me.role=='host' || state.me.role=='operator'" size="small" variant="secondary" @click="loadReports">查看本场举报</XsaButton>
+      <XsaButton size="small" variant="secondary" @click="loadActions(1)">查看操作记录</XsaButton>
+    </view>
+    <text v-if="error.length>0" class="live-copy">{{error}}</text>
+    <view v-for="item in reports" :key="item.id" class="live-choice">
+      <text class="live-copy">举报 #{{item.id}} · {{nameOf(item.target_id)}}：{{item.reason}}</text>
+      <text v-if="item.status=='resolved'" class="live-copy">处置记录：{{item.resolution}}</text>
+      <XsaButton v-else size="small" @click="resolve(item.id)">填写处置结果</XsaButton>
+    </view>
+    <view v-if="actions!=null">
+      <text class="live-copy live-muted">仅动作、处置原因和执行结果，不含单方选择或凭证。</text>
+      <text v-if="actions!.items.length==0" class="live-copy">暂无操作记录</text>
+      <text v-for="item in actions!.items" :key="item.id" class="live-copy">{{nameOf(item.user_id)}} · {{liveLabel(item.action)}} · {{item.outcome=='rejected'?'已拒绝执行':'已执行'}}{{item.reason.length>0?' · '+item.reason:''}}</text>
+      <view class="live-row"><XsaButton v-if="actions!.page>1" size="small" @click="loadActions(actions!.page-1)">上一页</XsaButton><XsaButton v-if="actions!.has_more" size="small" @click="loadActions(actions!.page+1)">下一页</XsaButton></view>
+    </view>
+  </view>
+</template>
+<script setup lang="uts">
+import XsaButton from '../../components/XsaButton.uvue'
+import { liveCommand, liveLabel } from '../../api/live-v2.uts'
+import { getCurrentAccountKey } from '../../api/request.uts'
+import { createLiveClient, livePageUrl } from './client.uts'
+import type { LiveSnapshot, LiveCommand, LiveReport, LiveActionList } from '../../api/live-v2.uts'
+const props=defineProps<{state:LiveSnapshot,busy:boolean,demo?:boolean}>()
+const emit=defineEmits<{command:[body:LiveCommand]}>()
+const rosterOpen=ref(false), reports=ref<LiveReport[]>([]), actions=ref<LiveActionList|null>(null), error=ref('')
+let active=true
+const account=getCurrentAccountKey()
+const current=():boolean=>active && (props.demo==true || account==getCurrentAccountKey())
+onUnmounted(()=>{active=false})
+const can=(action:string):boolean=>props.state.allowed_actions.indexOf(action)>=0
+const nameOf=(uid:number):string=>props.state.members.find((m)=>m.user_id==uid)?.display_name ?? '场内成员'
+const act=(action:string)=>emit('command',liveCommand(action,props.state.revision))
+const stage=(uid:number,value:boolean)=>{const cmd=liveCommand('stage',props.state.revision);cmd.target_id=uid;cmd.value=value;emit('command',cmd)}
+const speaker=(uid:number)=>{const cmd=liveCommand('speaker',props.state.revision);cmd.target_id=uid;emit('command',cmd)}
+const edit=()=>uni.navigateTo({url:livePageUrl('manage',props.state.id,props.demo==true)})
+const withReason=(action:string,title:string,uid:number=0)=>{
+  const cmd=liveCommand(action,props.state.revision)
+  if(uid>0)cmd.target_id=uid
+  uni.showModal({title:title,editable:true,placeholderText:'请填写操作原因',success:(res)=>{
+    if(!res.confirm || !current() || (res.content??'').trim().length==0)return
+    cmd.reason=res.content??'';emit('command',cmd)
+  }})
+}
+const finish=(action:string)=>{
+  const cmd=liveCommand(action,props.state.revision)
+  uni.showModal({title:action=='end'?'确认结束本场？':'确认取消场次？',content:'仅已完成的交流保留场后机会，不自动申请认识。',success:(res)=>{if(res.confirm&&current())emit('command',cmd)}})
+}
+const loadReports=async()=>{error.value='';try{const result=await createLiveClient(props.demo==true).reports(props.state.id);if(current())reports.value=result}catch(e){if(current())error.value=(e as Error).message}}
+const loadActions=async(page:number)=>{error.value='';try{const result=await createLiveClient(props.demo==true).actions(props.state.id,page);if(current())actions.value=result}catch(e){if(current())error.value=(e as Error).message}}
+const resolve=(id:number)=>uni.showModal({title:'填写处置结果',editable:true,placeholderText:'填写处理结果及理由',success:async(res)=>{
+  if(!res.confirm||!current())return
+  try{await createLiveClient(props.demo==true).resolve(props.state.id,id,res.content??'');if(current())await loadReports()}catch(e){if(current())error.value=(e as Error).message}
+}})
+</script>
+<style>@import './live.css';</style>

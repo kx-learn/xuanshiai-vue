@@ -1,0 +1,44 @@
+<template>
+  <view class="live-page">
+    <LiveDemoPanel v-if="demo" class="live-demo-controls" @change="load" />
+    <text class="live-title">直播相亲 · 受邀场次</text>
+    <text class="live-copy">主持引导，红娘提问，认真了解彼此。亮灯免费，选择由你自己决定。</text>
+    <view v-if="error.length > 0" class="live-error"><text class="live-copy">{{ error }}</text><XsaButton size="small" @click="load">重新加载</XsaButton></view>
+    <text v-if="loading" class="live-copy">正在加载你的受邀场次…</text>
+    <view v-if="!loading && error.length == 0 && items.length == 0" class="live-card"><text class="live-copy">暂时没有受邀场次。试点由工作人员提前邀请，预约观看不等于获得嘉宾资格。</text></view>
+    <view v-for="item in items" :key="item.id" class="live-card">
+      <text class="live-subtitle">{{ item.title }}</text>
+      <text v-if="!demo && item.media_mode=='disabled'" class="live-badge">业务演练 · 无音视频</text>
+      <text class="live-copy">{{ liveTime(item.scheduled_at) }} · {{ liveLabel(item.status) }}</text>
+      <text class="live-copy live-muted">本场身份：{{ liveLabel(item.role) }} · 四轮约 80 分钟</text>
+      <XsaButton class="live-open" @click="open(item.id)">查看场次</XsaButton>
+    </view>
+    <XsaButton v-if="canManage" variant="secondary" @click="manage">创建与安排场次</XsaButton>
+  </view>
+</template>
+<script setup lang="uts">
+import XsaButton from '../../components/XsaButton.uvue'
+import LiveDemoPanel from './LiveDemoPanel.uvue'
+import { createLiveClient, livePageUrl } from './client.uts'
+import { liveTime, liveLabel } from '../../api/live-v2.uts'
+import type { LiveSummary } from '../../api/live-v2.uts'
+import { getCurrentAccountKey } from '../../api/request.uts'
+const items = ref<LiveSummary[]>([])
+const loading = ref(false)
+const error = ref('')
+const canManage = ref(false)
+const demo = ref(false)
+let client = createLiveClient(false)
+const load = async () => {
+  const account = getCurrentAccountKey()
+  loading.value = true; error.value = ''; items.value = []; canManage.value = false
+  try { const result = await client.list(); if (demo.value || account == getCurrentAccountKey()) { items.value = result.items; canManage.value = result.can_manage } }
+  catch (e) { error.value = '' + (e as Error).message }
+  finally { loading.value = false }
+}
+const open = (id: number) => { uni.navigateTo({ url: livePageUrl('detail', id, demo.value) }) }
+const manage = () => { uni.navigateTo({ url: livePageUrl('manage', 0, demo.value) }) }
+onLoad((options) => { demo.value = options?.['mode'] == 'demo'; client = createLiveClient(demo.value) })
+onShow(load)
+</script>
+<style>@import './live.css';</style>

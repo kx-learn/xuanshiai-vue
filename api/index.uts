@@ -3,6 +3,8 @@
  * import { getRecommendUser, getMessageList } from '@/api'
  */
 
+export { getCurrentAccountKey } from './request.uts'
+
 // 认证相关
 export {
   getProfileCompletion,
@@ -140,6 +142,10 @@ export type {
 // 父母端相关
 export {
   getParentContext,
+  getParentPreferences,
+  updateParentPreferences,
+  getParentAlerts,
+  parentAuthorizationRequest,
   getParentAuthenticationGate,
   updateParentChildProfile,
   getParentAccessGate,

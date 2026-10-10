@@ -1,0 +1,147 @@
+<template>
+    <XsaSheet :visible="visible" title="家人协助授权" :tall="true" @close="close">
+        <scroll-view scroll-y class="authorization-scroll">
+            <view class="authorization-body">
+                <text class="authorization-copy">由成年子女本人确认后，家人可协助完善资料、查看推荐、申请认识及处理申请，并在双方同意后文字聊天。子女可随时撤销，每次授权最长 90 天。</text>
+                <text v-if="error.length > 0" class="authorization-error">{{ error }}</text>
+                <button v-if="error.length > 0" :disabled="busy" @tap="loadRecords">重新加载</button>
+                <view v-if="mode == 'parent'" class="authorization-group">
+                    <button :disabled="busy" @tap="createInvite">{{ busy ? '处理中' : '生成子女授权邀请' }}</button>
+                    <text v-if="invitationCode.length > 0" class="authorization-copy">邀请码有效期 24 小时。请交给子女，在其“我的—家人协助授权”中输入并确认。</text>
+                    <text v-if="invitationCode.length > 0" selectable class="authorization-code">{{ invitationCode }}</text>
+                    <button v-if="invitationCode.length > 0" @tap="copyInvite">复制邀请码</button>
+                </view>
+                <view v-else class="authorization-group">
+                    <input class="authorization-input" :value="code" :disabled="busy" maxlength="128" placeholder="输入家人提供的邀请码" @input="onCodeInput" />
+                    <button :disabled="busy || code.length < 32" @tap="previewInvite">查看邀请与授权范围</button>
+                    <view v-if="preview != null" class="authorization-group">
+                        <text class="authorization-copy">授权给：{{ preview.parentName }}</text>
+                        <text v-for="scope in preview.scopes" :key="scope" class="authorization-copy">{{ scope }}</text>
+                        <checkbox-group @change="onConfirmation">
+                            <label class="authorization-confirm"><checkbox value="confirmed" :checked="confirmed" /><text>我已阅读以上范围，自愿授权 30 天，知道可以随时撤销。</text></label>
+                        </checkbox-group>
+                        <button :disabled="busy || !confirmed" @tap="acceptInvite">确认授权 30 天</button>
+                    </view>
+                    <view class="authorization-confirm">
+                        <text>允许有有效授权的父母查看我的清晰头像</text>
+                        <switch :checked="allowPhoto" :disabled="busy" color="var(--accent)" @change="changePhotoConsent" />
+                    </view>
+                    <text class="authorization-copy">默认关闭。开启后仅在父母详情页显示头像；列表和聊天仍保护照片。</text>
+                </view>
+                <text class="authorization-title">我的授权记录</text>
+                <text v-if="busy" class="authorization-copy">正在加载或保存…</text>
+                <text v-else-if="records.length == 0" class="authorization-copy">暂时没有授权关系</text>
+                <view v-for="record in records" :key="record.parentId" class="authorization-record">
+                    <text>{{ record.parentName }} · {{ statusLabel(record.status) }}</text>
+                    <text v-if="record.expiresAt" class="authorization-copy">有效期至 {{ record.expiresAt.slice(0, 10) }}</text>
+                    <button v-if="record.status != 'revoked'" :disabled="busy" @tap="revoke(record.parentId)">撤销授权</button>
+                </view>
+            </view>
+        </scroll-view>
+    </XsaSheet>
+</template>
+
+<script setup lang="uts">
+import XsaSheet from '@/components/XsaSheet.uvue'
+import { parentAuthorizationRequest, getParentPreferences, updateParentPreferences } from '@/api'
+import { CURRENT_USER_ID_KEY } from '@/api/config.uts'
+
+const props = withDefaults(defineProps<{ visible: boolean, mode?: string }>(), { visible: false, mode: 'child' })
+const emit = defineEmits<{ close: [], changed: [] }>()
+const busy = ref(false)
+const error = ref('')
+const records = ref([] as any[])
+const invitationCode = ref('')
+const code = ref('')
+const preview = ref(null as any)
+const confirmed = ref(false)
+const allowPhoto = ref(false)
+let generation = 0
+const account = (): string => String(uni.getStorageSync(CURRENT_USER_ID_KEY))
+const statusLabel = (status: string): string => status == 'granted' ? '已授权' : status == 'revoked' ? '已撤销' : status == 'expired' ? '已到期' : '等待子女确认'
+const invoke = async (action: string, payload: any = null): Promise<any> => {
+    if (busy.value) return null
+    const version = ++generation
+    const userId = account()
+    busy.value = true
+    error.value = ''
+    try {
+        const result = await parentAuthorizationRequest(action, payload)
+        if (version != generation || !props.visible || userId != account()) return null
+        if (!result.success || result.data == null) { error.value = result.message || '操作失败，请重试'; return null }
+        return result.data
+    } catch (failure) {
+        if (version == generation && userId == account()) error.value = '网络异常，请重试'
+        return null
+    } finally { if (version == generation) busy.value = false }
+}
+const loadRecords = async () => {
+    const data = await invoke('list')
+    if (data != null) records.value = data.items || []
+}
+const createInvite = async () => {
+    const data = await invoke('create')
+    if (data != null) { invitationCode.value = data.code; await loadRecords() }
+}
+const copyInvite = () => uni.setClipboardData({ data: invitationCode.value })
+const onCodeInput = (event: any) => { code.value = String(event.detail.value).trim(); preview.value = null; confirmed.value = false }
+const previewInvite = async () => { preview.value = await invoke('preview', { code: code.value }); confirmed.value = false }
+const onConfirmation = (event: any) => { confirmed.value = event.detail.value.indexOf('confirmed') >= 0 }
+const acceptInvite = async () => {
+    if (!confirmed.value || preview.value == null) return
+    const result = await invoke('accept', { code: code.value, confirmed: true, consentVersion: preview.value.consentVersion, days: 30 })
+    if (result != null) { preview.value = null; code.value = ''; confirmed.value = false; emit('changed'); await loadRecords() }
+}
+const revoke = (parentId: number) => {
+    const actor = account()
+    uni.showModal({ title: '撤销家人协助授权？', content: '撤销后家人将不能继续查看和操作子女资料、申请或聊天。已有申请和消息由子女本人继续管理。',
+        confirmText: '撤销授权', success: async (response: any) => {
+            if (!response.confirm || !props.visible || actor != account()) return
+            const result = await invoke('revoke', { parentId: parentId })
+            if (result != null) { emit('changed'); await loadRecords() }
+        } })
+}
+const changePhotoConsent = async (event: any) => {
+    if (busy.value) return
+    const actor = account()
+    const version = generation
+    busy.value = true
+    try {
+        const response = await updateParentPreferences({ allowParentPhoto: event.detail.value == true })
+        if (actor != account() || version != generation) return
+        if (response.success) allowPhoto.value = response.data.allowParentPhoto == true
+        else error.value = response.message || '保存失败'
+    } catch (failure) { if (version == generation) error.value = '保存失败，请重试' }
+    finally { if (version == generation) busy.value = false }
+}
+const close = () => { generation += 1; busy.value = false; invitationCode.value = ''; code.value = ''; preview.value = null; confirmed.value = false; emit('close') }
+watch(() => props.visible, async (visible: boolean) => {
+    generation += 1
+    busy.value = false
+    records.value = []
+    error.value = ''
+    if (visible) {
+        await loadRecords()
+        const actor = account()
+        const version = generation
+        try {
+            const preference = await getParentPreferences()
+            if (props.visible && actor == account() && version == generation && preference.success) allowPhoto.value = preference.data.allowParentPhoto == true
+        } catch (failure) {}
+    } else { invitationCode.value = ''; preview.value = null; code.value = ''; confirmed.value = false }
+})
+onUnmounted(() => { generation += 1 })
+</script>
+
+<style scoped>
+.authorization-scroll { height: 65vh; }
+.authorization-body, .authorization-group, .authorization-record { display: flex; flex-direction: column; gap: 16rpx; }
+.authorization-body { padding: 24rpx 28rpx 64rpx; color: var(--ink); }
+.authorization-copy { font-size: 26rpx; line-height: 1.7; color: var(--muted); }
+.authorization-title { font-size: 32rpx; font-weight: 600; }
+.authorization-input { padding: 20rpx; min-height: 48rpx; background: var(--surface); border: 1px solid var(--line); border-radius: 12rpx; }
+.authorization-code { word-break: break-all; font-size: 26rpx; }
+.authorization-confirm { display: flex; align-items: center; gap: 16rpx; font-size: 28rpx; line-height: 1.6; }
+.authorization-error { color: var(--accent); font-size: 28rpx; }
+.authorization-record { border-top: 1px solid var(--line); padding-top: 20rpx; }
+</style>

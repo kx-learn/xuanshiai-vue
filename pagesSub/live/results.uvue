@@ -1,0 +1,52 @@
+<template>
+  <view class="live-page">
+    <LiveDemoPanel v-if="demo" class="live-demo-controls" @change="load" />
+    <text class="live-title">本人场后结果</text>
+    <text class="live-copy">互选且完成交流的双方，各对共享一次免费申请机会。场次结束后 72 小时内由任一方自主发起；对方同意后才可以聊天。</text>
+    <text class="live-copy live-muted">特别心动不增加机会。婉拒不恢复本次机会，也不会退还没有扣过的日常次数。</text>
+    <view v-if="error.length > 0" class="live-error"><text class="live-copy">{{ error }}</text><XsaButton @click="load">重新加载</XsaButton></view>
+    <text v-if="loading" class="live-copy">正在读取本人结果…</text>
+    <LiveDemoFollowUp v-if="demo" class="live-demo-follow-up" :key="viewer" />
+    <view v-if="!demo && result != null">
+      <text v-if="result!.media_mode=='disabled'" class="live-badge">业务演练 · 无音视频</text>
+      <text v-if="!result!.session_ended" class="live-copy">场次尚未结束，主持结束后再查看专属申请机会。</text>
+      <text v-else-if="result!.items.length == 0" class="live-copy">本场没有可领取的场后专属机会。你仍可以按日常规则自主认识他人。</text>
+      <view v-for="item in result!.items" :key="item.id" class="live-card">
+        <text class="live-subtitle">{{ item.peer_name }}</text>
+        <text class="live-copy">有效至 {{ liveTime(item.expires_at) }}</text>
+        <XsaButton v-if="item.status == 'available'" :loading="sending == item.id" :disabled="sending != 0" @click="apply(item)">使用免费机会申请认识</XsaButton>
+        <text v-else class="live-copy">{{ item.status == 'used' ? '机会已使用，可在消息中查看双方申请及答复' : '本次免费机会已过期' }}</text>
+      </view>
+      <XsaButton variant="secondary" @click="messages">前往消息查看申请</XsaButton>
+    </view>
+  </view>
+</template>
+<script setup lang="uts">
+import XsaButton from '../../components/XsaButton.uvue'
+import LiveDemoPanel from './LiveDemoPanel.uvue'
+import LiveDemoFollowUp from './LiveDemoFollowUp.uvue'
+import { createLiveClient } from './client.uts'
+import { demoSnapshot } from './demo.uts'
+import { liveTime } from '../../api/live-v2.uts'
+import { getCurrentAccountKey } from '../../api/request.uts'
+import type { LiveResults, LiveOpportunity } from '../../api/live-v2.uts'
+const id = ref(0), result = ref<LiveResults | null>(null), loading = ref(false), sending = ref(0), error = ref('')
+const demo=ref(false),viewer=ref(0)
+let client=createLiveClient(false)
+let active=true
+const load = async () => { if (id.value == 0) return; loading.value = true; error.value = ''; result.value = null
+  try { result.value = await client.results(id.value); if(demo.value)viewer.value=demoSnapshot().me.user_id } catch(e) { error.value = (e as Error).message } finally { loading.value = false } }
+const apply = (item: LiveOpportunity) => {
+  if (sending.value != 0) return
+  const account=getCurrentAccountKey()
+  uni.showModal({title:'向 ' + item.peer_name + ' 申请认识？',content:'双方共享的本次免费机会将被使用。对方仍可婉拒；未同意前不能聊天。',confirmText:'自主申请',
+    success: async (res) => { if (!res.confirm || !active || account!=getCurrentAccountKey()) return; sending.value = item.id
+      try { await client.apply(item, '感谢本场交流，希望在场后继续认真了解彼此。'); await load(); uni.showToast({title:'申请已提交',icon:'success'}) }
+      catch(e) { error.value = (e as Error).message } finally { sending.value = 0 } } })
+}
+const messages = () => { uni.switchTab({url:'/pages/message/message'}) }
+onLoad((options) => { demo.value=options?.['mode']=='demo';client=createLiveClient(demo.value);id.value = Number(options?.['id'] ?? (demo.value?1:0)) })
+onShow(load)
+onUnload(()=>{active=false})
+</script>
+<style>@import './live.css';</style>

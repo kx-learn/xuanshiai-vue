@@ -1,13 +1,5 @@
-import {
-  mockMeProfile,
-  mockRecommendUsers,
-  mockSquareUsers,
-  mockUserDetail
-} from './user.uts'
-import {
-  mockCustomMatchmakers,
-  mockServiceMatchmakers
-} from './matchmaker.uts'
+import { mockMeProfile } from './user.uts'
+import { CURRENT_USER_ID_KEY, getAccessToken } from '@/api/config.uts'
 
 const ordinaryProfile = mockMeProfile as any
 const childBirthYear = new Date().getFullYear() - Number(ordinaryProfile.age != null ? ordinaryProfile.age : 29)
@@ -63,6 +55,81 @@ function cloneChild(child: any): any {
 }
 
 export function getMockParentContextData(): any {
+    const state = getMockParentStateData()
+	return JSON.parse(JSON.stringify(state.context))
+}
+
+const parentStates: { [key: string]: any } = {}
+
+export function getParentMockSubjectKey(childId: number = 9201): string {
+    const userId = String(uni.getStorageSync(CURRENT_USER_ID_KEY)).trim()
+    if (getAccessToken() == '' || userId == '' || !Number.isFinite(childId) || childId <= 0) {
+        throw new Error('PARENT_AUTH_REQUIRED: 请重新登录')
+    }
+    return 'parent:' + encodeURIComponent(userId) + ':' + childId
+}
+
+export function getMockParentStateData(scope: string = ''): any {
+    const key = scope == '' ? getParentMockSubjectKey() : scope
+    if (key != getParentMockSubjectKey()) throw new Error('PARENT_SUBJECT_CHANGED: 父母账号或子女已变更')
+    if (parentStates[key] == null) {
+        const stored = uni.getStorageSync('xsa_parent_state_v2:' + key)
+        const seed = seedParentContext()
+        seed.parent.id = Number(uni.getStorageSync(CURRENT_USER_ID_KEY))
+        seed.id = key
+        parentStates[key] = stored != null && stored.schemaVersion == 2 && stored.context != null
+            ? JSON.parse(JSON.stringify(stored))
+            : { schemaVersion: 2, context: seed, likedUserIds: [], blockedUserIds: [], reports: [],
+                messageState: null, quotaDate: new Date().toISOString().slice(0, 10), messageNotifications: true }
+    }
+    const state = parentStates[key]
+    const today = new Date().toISOString().slice(0, 10)
+    if (state.quotaDate != today) {
+        state.context.quota.remainingApplications = state.context.quota.dailyTotal
+        state.quotaDate = today
+    }
+    return state
+}
+
+export function saveMockParentStateData(scope: string = ''): void {
+    const key = scope == '' ? getParentMockSubjectKey() : scope
+    const state = getMockParentStateData(key)
+    try {
+        uni.setStorageSync('xsa_parent_state_v2:' + key, JSON.parse(JSON.stringify(state)))
+    } catch (error) {
+        delete parentStates[key]
+        throw new Error('PARENT_STORAGE_FAILED: 保存失败，请重试')
+    }
+}
+
+export function isMockParentCandidateBlocked(candidateId: number, scope: string = ''): boolean {
+    return getMockParentStateData(scope).blockedUserIds.indexOf(candidateId) >= 0
+}
+
+export function blockMockParentCandidate(candidateId: number): any {
+    const state = getMockParentStateData()
+    if (state.blockedUserIds.indexOf(candidateId) < 0) state.blockedUserIds.push(candidateId)
+    state.likedUserIds = state.likedUserIds.filter((id: number) => id != candidateId)
+    if (state.messageState != null) {
+        state.messageState.messageList = state.messageState.messageList.filter((item: any) => item.userId != candidateId)
+        state.messageState.applications = state.messageState.applications.filter((item: any) => item.userId != candidateId)
+        delete state.messageState.chatMessagesByUser[String(candidateId)]
+    }
+    saveMockParentStateData()
+    return { success: true, internalDemo: true }
+}
+
+export function reportMockParentCandidate(candidateId: number, reasonId: string, detail: string): any {
+    const state = getMockParentStateData()
+    const existing = state.reports.find((item: any) => item.targetId == candidateId && item.reasonId == reasonId && item.detail == detail)
+    if (existing != null) return { success: true, reportId: existing.id, internalDemo: true, deduplicated: true }
+    const record = { id: state.reports.length + 1, targetId: candidateId, reasonId: reasonId, detail: detail, createdAt: Date.now(), status: 'pending' }
+    state.reports.push(record)
+    saveMockParentStateData()
+    return { success: true, reportId: record.id, internalDemo: true }
+}
+
+function seedParentContext(): any {
 	return {
 		id: mockParentContext.id,
 		mode: mockParentContext.mode,
@@ -75,7 +142,7 @@ export function getMockParentContextData(): any {
 }
 
 export function updateMockParentChildProfileData(profile: any): any {
-	const child = mockParentContext.child
+	const child = getMockParentStateData().context.child
 	child.displayName = profile.displayName
 	child.birthYear = profile.birthYear
 	child.city = profile.city
@@ -85,164 +152,6 @@ export function updateMockParentChildProfileData(profile: any): any {
 	if (profile.job.length > 0) progress += 20
 	if (profile.introduction.length > 0) progress += 20
 	child.profileProgress = progress
+    saveMockParentStateData()
 	return cloneChild(child)
-}
-
-export function syncMockParentRemainingApplicationsData(remainingApplications: number): number {
-  const total = Math.max(0, Number(mockParentContext.quota.dailyTotal))
-  const remaining = Math.min(total, Math.max(0, Number(remainingApplications)))
-  mockParentContext.quota.remainingApplications = remaining
-  return remaining
-}
-
-/**
- * 父母端候选数据必须留在父母专用 Mock 适配层，不能通过普通用户 API 的
- * “内部 Mock 参数”绕过当前登录主体。真实父母关系服务可用前，这里只供
- * PARENT_USE_MOCK 的隔离演示路径使用。
- */
-const parentLikedCandidateIds: number[] = [2]
-const parentApplicationStates: any = {}
-
-function cloneParentValue(value: any): any {
-  if (value == null || typeof value !== 'object') return value
-  if (Array.isArray(value)) {
-    const values: any[] = []
-    for (let index = 0; index < value.length; index++) values.push(cloneParentValue(value[index]))
-    return values
-  }
-  const cloned: any = {}
-  const keys = Object.keys(value)
-  for (let index = 0; index < keys.length; index++) {
-    const key = keys[index]
-    cloned[key] = cloneParentValue(value[key])
-  }
-  return cloned
-}
-
-function parentCandidateSource(): any[] {
-  const source: any[] = []
-  const lists = [mockRecommendUsers as any[], mockSquareUsers as any[]]
-  for (let listIndex = 0; listIndex < lists.length; listIndex++) {
-    const list = lists[listIndex]
-    for (let itemIndex = 0; itemIndex < list.length; itemIndex++) {
-      const item = list[itemIndex]
-      const id = item != null && item.id != null ? Number(item.id) : 0
-      if (!Number.isFinite(id) || id <= 0) continue
-      let known = false
-      for (let existingIndex = 0; existingIndex < source.length; existingIndex++) {
-        if (Number(source[existingIndex].id) == id) {
-          known = true
-          break
-        }
-      }
-      if (!known) source.push(item)
-    }
-  }
-  return source
-}
-
-function isParentCandidateLiked(candidateId: number): boolean {
-  for (let index = 0; index < parentLikedCandidateIds.length; index++) {
-    if (parentLikedCandidateIds[index] == candidateId) return true
-  }
-  return false
-}
-
-export function getMockParentCandidatesData(): any[] {
-  const rows: any[] = []
-  const source = parentCandidateSource()
-  for (let index = 0; index < source.length; index++) {
-    const item = cloneParentValue(source[index])
-    item.liked = isParentCandidateLiked(Number(item.id))
-    rows.push(item)
-  }
-  return rows
-}
-
-export function getMockParentLikedCandidatesData(): any[] {
-  return getMockParentCandidatesData().filter((item: any) => item.liked == true)
-}
-
-export function getMockParentCandidateDetailData(candidateId: number): any | null {
-  const source = parentCandidateSource()
-  let candidate: any = null
-  for (let index = 0; index < source.length; index++) {
-    if (Number(source[index].id) == candidateId) {
-      candidate = source[index]
-      break
-    }
-  }
-  if (candidate == null) return null
-  const detail = cloneParentValue(mockUserDetail)
-  const candidateCopy = cloneParentValue(candidate)
-  const introduction = candidateCopy.intro != null
-    ? String(candidateCopy.intro)
-    : (candidateCopy.introduction != null ? String(candidateCopy.introduction) : String(detail.introduction != null ? detail.introduction : ''))
-  return {
-    ...detail,
-    ...candidateCopy,
-    introduction: introduction,
-    genderText: Number(candidateCopy.gender) == 1 ? '男' : '女',
-    certList: ['实名', '学历', '头像', '单身'],
-    liked: isParentCandidateLiked(candidateId)
-  }
-}
-
-export function toggleMockParentLikeData(candidateId: number): any {
-  let index = -1
-  for (let itemIndex = 0; itemIndex < parentLikedCandidateIds.length; itemIndex++) {
-    if (parentLikedCandidateIds[itemIndex] == candidateId) {
-      index = itemIndex
-      break
-    }
-  }
-  const liked = index < 0
-  if (liked) parentLikedCandidateIds.push(candidateId)
-  else parentLikedCandidateIds.splice(index, 1)
-  return { success: true, liked: liked, userId: candidateId, internalDemo: true }
-}
-
-export function submitMockParentIntroductionData(
-  candidateId: number,
-  remainingApplications: number
-): any {
-  const key = String(candidateId)
-  if (parentApplicationStates[key] == 'pending') {
-    return {
-      success: false,
-      data: { success: false, applyStatus: 'pending', remainingApplications: remainingApplications },
-      code: 'ALREADY_PENDING',
-      message: '申请已发送，请等待对方回应。'
-    }
-  }
-  if (remainingApplications <= 0) {
-    return {
-      success: false,
-      data: { success: false, applyStatus: 'none', remainingApplications: 0 },
-      code: 'QUOTA_EXCEEDED',
-      message: '今日申请次数已用完。'
-    }
-  }
-  parentApplicationStates[key] = 'pending'
-  const nextRemaining = Math.max(0, remainingApplications - 1)
-  syncMockParentRemainingApplicationsData(nextRemaining)
-  return {
-    success: true,
-    data: {
-      success: true,
-      applyStatus: 'pending',
-      remainingApplications: nextRemaining,
-      internalDemo: true,
-      message: '申请已送达，等待对方回应。'
-    },
-    code: 0,
-    message: 'success'
-  }
-}
-
-export function getMockParentMatchmakersData(kind: 'service' | 'custom'): any[] {
-  const source = kind == 'service' ? (mockServiceMatchmakers as any[]) : (mockCustomMatchmakers as any[])
-  const rows: any[] = []
-  for (let index = 0; index < source.length; index++) rows.push(cloneParentValue(source[index]))
-  return rows
 }

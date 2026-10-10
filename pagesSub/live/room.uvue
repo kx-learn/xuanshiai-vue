@@ -1,0 +1,125 @@
+<template>
+  <view class="live-page">
+    <LiveDemoPanel v-if="demo" class="live-demo-controls" @change="refresh" />
+    <view v-if="error.length > 0" class="live-error"><text class="live-copy">{{ error }}</text><XsaButton size="small" @click="refresh">刷新当前状态</XsaButton></view>
+    <text v-if="state == null && error.length == 0" class="live-copy">正在读取场次…</text>
+    <view v-if="state != null">
+      <text class="live-title">{{ state!.title }}</text>
+      <text v-if="!demo && state!.media_mode == 'disabled'" class="live-copy">业务演练，无音视频 · 真实账号与服务端数据</text>
+      <text class="live-copy live-muted">当前控场：{{nameOf(state!.controller_id)}}{{state!.controller_id == state!.owner_id ? '（运营接管中）' : ''}}</text>
+      <text class="live-copy">第 {{state!.round_index + 1}} / 4 轮 · {{liveLabel(state!.phase)}} · {{liveLabel(state!.status)}}</text>
+      <text class="live-copy">{{state!.status == 'paused' ? '流程暂停，剩余时间已保存' : '本环节剩余 ' + countdown + ' 秒'}}。{{ demo ? '演示时钟，可手动跳过等待。' : '由主持推进，以服务端确认状态为准。' }}</text>
+      <text class="live-copy live-muted">{{connection}}</text>
+      <!-- #ifdef MP-WEIXIN -->
+      <live-stage v-if="!demo && state!.media_mode == 'trtc' && visible && media != null" :credentials="media" :allowed-audio="canSpeak" @mediaerror="mediaError" />
+      <!-- #endif -->
+      <!-- #ifndef MP-WEIXIN -->
+      <text class="live-copy">H5 只支持流程联调，真实连麦请使用微信小程序。</text>
+      <!-- #endif -->
+      <view class="live-row" v-if="!demo && (state!.me.checked_in || state!.me.role == 'operator') && state!.status != 'ended' && state!.status != 'cancelled'">
+        <XsaButton v-if="state!.media_mode == 'trtc'" :loading="mediaLoading" @click="connectMedia">{{media == null ? '连接音视频' : '重新连接音视频'}}</XsaButton>
+        <XsaButton v-if="state!.allowed_actions.indexOf('leave') >= 0" variant="secondary" :disabled="busy" @click="leave">离开本场</XsaButton>
+      </view>
+      <text v-if="mediaIssue.length > 0" class="live-copy">{{mediaIssue}}</text>
+      <LiveDemoStage v-if="demo" :state="state!" />
+      <view v-if="!demo" class="live-card">
+        <text class="live-subtitle">本轮主嘉宾：{{nameOf(state!.main_id)}}</text>
+        <text class="live-copy">{{introOf(state!.main_id)}}</text>
+        <text class="live-copy live-muted">当前发言：{{state!.speaker_id == null ? '由主持安排' : nameOf(state!.speaker_id!)}}</text>
+        <view v-for="person in visibleGuests" :key="person.user_id" class="live-choice">
+          <text class="live-copy">{{person.seat}} 号 · {{person.display_name}} · {{liveLabel(person.attendance)}}</text>
+          <text class="live-copy live-muted">{{person.introduction}}</text>
+          <text v-if="person.light_target != null" class="live-copy">亮灯 → {{nameOf(person.light_target!)}}</text>
+          <text v-if="person.special_target != null" class="live-copy">特别心动 → {{nameOf(person.special_target!)}}（不改变选择或顺序）</text>
+        </view>
+      </view>
+      <view v-if="state!.exchanges.length > 0" class="live-card">
+        <text class="live-subtitle">公开交流队列</text>
+        <text v-for="pair in state!.exchanges" :key="pair.candidate_id" class="live-copy">{{nameOf(pair.main_id)}} 与 {{nameOf(pair.candidate_id)}} · {{liveLabel(pair.status)}}</text>
+      </view>
+      <view v-if="state!.phase == 'transition' && state!.exchanges.length == 0" class="live-card"><text class="live-subtitle">本轮没有互选组合</text><text class="live-copy">尊重每个人的决定。不安排替代配对，主持可以进入下一轮。</text></view>
+      <LiveRoundActions :key="state!.me.user_id + ':' + state!.controller_id" class="live-round-controls" :state="state!" :demo="demo" :busy="busy" :expired="state!.status == 'paused' || countdown == 0" @command="send" />
+      <view v-if="state!.me.role == 'matchmaker'" class="live-card"><text class="live-copy">请围绕已授权公开资料提问，不代替用户做选择。</text>
+        <text class="live-copy live-muted">{{mine?.hand ? '已申请，等待控场者安排发言' : state!.speaker_id == state!.me.user_id ? '已获安排，可以发言' : '问答环节可申请提问'}}</text>
+        <XsaButton v-if="state!.allowed_actions.indexOf('hand') >= 0" size="small" :disabled="busy || countdown == 0" @click="requestQuestion">{{mine?.hand ? '撤回提问申请' : '举手申请提问'}}</XsaButton></view>
+      <LiveStaffPanel :key="state!.me.user_id + ':' + state!.controller_id" class="live-staff-controls" :state="state!" :demo="demo" :busy="busy" @command="send" />
+      <XsaButton v-if="demo && state!.me.checked_in && state!.status != 'ended'" variant="secondary" @click="leave">离开本场演示</XsaButton>
+      <view class="live-row"><picker mode="selector" :range="reportNames" @change="report"><view class="live-choice"><text class="live-copy">举报场内问题</text></view></picker><XsaButton size="small" @click="results">本人场后结果</XsaButton></view>
+    </view>
+  </view>
+</template>
+<script setup lang="uts">
+import XsaButton from '../../components/XsaButton.uvue'
+import LiveRoundActions from './LiveRoundActions.uvue'
+import LiveStaffPanel from './LiveStaffPanel.uvue'
+import LiveDemoPanel from './LiveDemoPanel.uvue'
+import LiveDemoStage from './LiveDemoStage.uvue'
+import { createLiveClient, livePageUrl } from './client.uts'
+import { liveCommand, liveLabel } from '../../api/live-v2.uts'
+import { getCurrentAccountKey } from '../../api/request.uts'
+import type { LiveSnapshot, LiveCredentials, LiveCommand } from '../../api/live-v2.uts'
+const id=ref(0),state=ref<LiveSnapshot|null>(null),media=ref<LiveCredentials|null>(null),error=ref(''),mediaIssue=ref(''),connection=ref('正在同步场次')
+const busy=ref(false),mediaLoading=ref(false),visible=ref(true),now=ref(0)
+const demo=ref(false)
+let client=createLiveClient(false)
+let offset=0,stopSubscription:(()=>void)|null=null,timer:number|null=null,poller:number|null=null,account=''
+const countdown=computed(()=>Math.max(0, (state.value?.deadline ?? 0)-now.value))
+const mine=computed(()=>state.value?.members.find((m)=>m.user_id==state.value!.me.user_id))
+const visibleGuests=computed(()=>state.value?.members.filter((m)=>m.role=='guest') ?? [])
+const reportMembers=computed(()=>state.value?.members.filter((m)=>m.user_id!=state.value!.me.user_id) ?? [])
+const reportNames=computed(()=>reportMembers.value.map((m)=>m.display_name+' · '+liveLabel(m.role)))
+const canSpeak=computed(()=>state.value!=null && (state.value!.me.role=='host' || state.value!.speaker_id==state.value!.me.user_id || state.value!.exchanges.some((p)=>p.status=='active'&&(p.main_id==state.value!.me.user_id||p.candidate_id==state.value!.me.user_id))))
+const nameOf=(uid:number):string=>state.value?.members.find((m)=>m.user_id==uid)?.display_name ?? '嘉宾'
+const introOf=(uid:number):string=>state.value?.members.find((m)=>m.user_id==uid)?.introduction ?? ''
+const receive=(value:LiveSnapshot)=>{
+  if (!visible.value || (!demo.value && account!=getCurrentAccountKey())) return
+  if(!demo.value && state.value!=null && value.revision<state.value!.revision)return
+  offset=value.server_time-Math.floor(Date.now()/1000);now.value=value.server_time
+  const reconnect=media.value!=null && value.media_epoch!=media.value!.media_epoch
+  state.value=value
+  if(value.status=='ended'||value.status=='cancelled'||value.me.removed){media.value=null;return}
+  if(reconnect){media.value=null;connectMedia()}
+}
+const refresh=async()=>{if(id.value==0)return;try{receive(await client.session(id.value));error.value=''}catch(e){error.value=(e as Error).message;media.value=null;state.value=null}}
+const connectMedia=async()=>{if(demo.value || state.value?.media_mode!='trtc' || mediaLoading.value)return;mediaLoading.value=true;mediaIssue.value='';media.value=null
+  try{const next=await client.credentials(id.value);if(visible.value&&account==getCurrentAccountKey())media.value=next}
+  catch(e){mediaIssue.value=(e as Error).message}finally{mediaLoading.value=false}}
+const send=async(cmd:LiveCommand)=>{if(busy.value)return;busy.value=true;error.value=''
+  try{receive(await client.command(id.value,cmd));uni.showToast({title:'操作已确认',icon:'success'})}
+  catch(e){await refresh();error.value=(e as Error).message}
+  finally{busy.value=false}}
+const sameActor=(uid:number,key:string):boolean=>visible.value && state.value?.me.user_id==uid && (demo.value || key==getCurrentAccountKey())
+const leave=()=>{
+  if(state.value==null)return
+  const uid=state.value!.me.user_id,key=getCurrentAccountKey(),cmd=liveCommand('leave',state.value!.revision)
+  uni.showModal({title:'离开本场？',content:'未完成的本轮交流将退出，不会因此自动申请认识。',success:async(res)=>{
+    if(!res.confirm||!sameActor(uid,key))return
+    await send(cmd)
+    if(!sameActor(uid,key))return
+    media.value=null;if(error.value=='')uni.navigateBack()
+  }})
+}
+const requestQuestion=()=>{if(state.value==null)return;const cmd=liveCommand('hand',state.value!.revision);cmd.value=mine.value?.hand!=true;send(cmd)}
+const mediaError=(e:any)=>{mediaIssue.value=e.detail.message}
+const results=()=>{uni.navigateTo({url:livePageUrl('results',id.value,demo.value)})}
+const report=(choice:any)=>{
+    if(state.value==null)return
+    const uid=state.value!.me.user_id,key=getCurrentAccountKey(),target=reportMembers.value[Number(choice.detail.value)]
+    uni.showModal({title:'举报 '+target.display_name,editable:true,placeholderText:'请说明场内问题',success:async(res)=>{
+      if(!res.confirm||!sameActor(uid,key))return
+      try{await client.report(id.value,target.user_id,res.content ?? '');if(sameActor(uid,key))uni.showToast({title:'举报已提交',icon:'success'})}
+      catch(e){if(sameActor(uid,key))error.value=(e as Error).message}
+    }})
+}
+const stop=()=>{visible.value=false;media.value=null;if(stopSubscription!=null)stopSubscription!();stopSubscription=null
+  if(timer!=null)clearInterval(timer!);if(poller!=null)clearInterval(poller!);timer=null;poller=null}
+onLoad((options)=>{demo.value=options?.['mode']=='demo';client=createLiveClient(demo.value);id.value=Number(options?.['id'] ?? (demo.value ? 1 : 0))})
+onShow(async()=>{visible.value=true;account=getCurrentAccountKey();state.value=null;await refresh();if(!visible.value)return
+  stopSubscription=client.subscribe(id.value,receive,(value)=>{connection.value=value})
+  timer=setInterval(()=>{now.value=Math.floor(Date.now()/1000)+offset;if(!demo.value && account!=getCurrentAccountKey()){stop();state.value=null;error.value='账号已切换，请重新进入场次'}},1000)
+  if(!demo.value) poller=setInterval(()=>{refresh();if(media.value!=null && media.value!.mode=='cdn' && media.value!.expires_at-now.value<15)connectMedia()},5000)
+})
+onHide(stop)
+onUnload(stop)
+</script>
+<style>@import './live.css';</style>

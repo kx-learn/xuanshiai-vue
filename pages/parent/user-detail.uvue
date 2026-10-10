@@ -102,10 +102,12 @@
 		getParentCandidateDetail,
 		getParentContext,
 		reportParentCandidate,
-		toggleParentLike
+		toggleParentLike,
+		getCurrentAccountKey
 	} from '@/api'
 
 		const loading = ref(false)
+		let pageAccountKey = ''
 		const loadError = ref('')
 		const candidateId = ref(0)
 		const parentContext = ref(null as ParentContext | null)
@@ -132,6 +134,7 @@
 
 			onShow(() => {
 				detailPageActive = true
+				pageAccountKey = getCurrentAccountKey()
 				startParentRoleMonitor()
 				if (ensureParentRole()) loadDetail()
 			})
@@ -168,7 +171,7 @@
 
 			const hasStoredParentRole = (): boolean => {
 				const storedMode = uni.getStorageSync('xsa_onboarding_mode')
-				return storedMode != null && String(storedMode) == 'parent'
+				return storedMode != null && String(storedMode) == 'parent' && pageAccountKey == getCurrentAccountKey()
 			}
 
 			const invalidateDetailRequest = () => {
@@ -325,7 +328,7 @@
 
 		const handleGateAction = (gate: any) => {
 			if (gate != null && gate.code == 'PARENT_REALNAME_REQUIRED') {
-				uni.navigateTo({ url: '/pages/profile/certification' })
+				uni.navigateTo({ url: '/pagesSub/profileExtra/certification' })
 				return
 			}
 			if (
@@ -350,7 +353,7 @@
 			const requestContext = parentContext.value
 			const targetId = candidate.value.id
 			if (requestContext == null || !isDetailRequestCurrent(requestId)) return
-			const res = await toggleParentLike(requestContext, targetId)
+			const res = await toggleParentLike(requestContext, targetId, candidate.value.liked != true)
 			if (!isDetailRequestCurrent(requestId) || candidate.value == null || candidate.value.id != targetId) return
 				if (res.success && res.data != null && res.data.success == true) {
 					candidate.value.liked = res.data.liked == true

@@ -75,7 +75,7 @@ function loadProtectedMessageSanitizer() {
 console.log('消息闭环行为与契约测试')
 
 // Public API and compatibility exports.
-includes(apiSource, 'export const MESSAGE_USE_MOCK = false', 'ordinary message center uses the authenticated FastAPI backend')
+includes(apiSource, 'export const MESSAGE_USE_MOCK = USE_MOCK', 'ordinary message center uses the authenticated FastAPI backend')
 for (const name of [
   'getConversationPage',
   'getApplicationPage',
@@ -105,7 +105,7 @@ includes(apiSource, "senderAvatar: ''", 'protected responses clear sender avatar
 includes(apiSource, "content: protectedContent ? '' : item.content", 'protected responses clear media content')
 includes(apiSource, 'protectedItem[PROTECTED_MEDIA_OBJECT_FIELDS[j]] = null', 'protected responses clear nested attachments')
 includes(apiSource, 'photoScope: photoScope', 'legacy message requests carry the effective privacy scope')
-includes(apiSource, 'export const CHAT_USE_MOCK = false', 'ordinary text chat uses the authenticated FastAPI backend')
+includes(apiSource, 'export const CHAT_USE_MOCK = USE_MOCK', 'ordinary text chat uses the authenticated FastAPI backend')
 includes(apiSource, "url: '/chat/sessions'", 'chat permission resolves sessions from the authenticated session list')
 includes(apiSource, 'const peerId = Number(item?.target?.user_id ?? 0)', 'session lookup matches the requested peer')
 includes(apiSource, 'const sessionId = Number(item?.id ?? 0)', 'session lookup uses the server-owned session id')

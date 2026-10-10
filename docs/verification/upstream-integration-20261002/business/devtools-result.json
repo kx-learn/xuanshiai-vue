@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "date": "2026-10-02T10:38:11.270Z",
+  "width": 390,
+  "scope": "Real SMS-provider login, real HTTP account search/create/schedule/edit on temporary MySQL and Redis; media disabled",
+  "errors": []
+}

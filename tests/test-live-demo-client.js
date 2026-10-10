@@ -1,0 +1,30 @@
+const assert = require('node:assert/strict');
+const { load, calls } = require('./live-demo-loader.cjs')();
+async function main() {
+  const {createLiveClient,livePageUrl}=load('pagesSub/live/client.uts');
+  const c=createLiveClient(true), d=load('pagesSub/live/demo.uts');
+  const real=load('api/live-v2.uts'), actual=createLiveClient(false);
+  assert.equal(actual.session,real.getLiveSession);
+  assert.equal(actual.credentials,real.getLiveCredentials);
+  assert.equal(actual.apply,real.applyFromLive);
+  assert.equal(actual.subscribe,real.subscribeLive);
+  const config=load('api/config.uts'); const mockBefore=config.USE_MOCK;
+  assert.equal((await c.list()).items[0].id,1);
+  assert.equal((await c.resources()).ready,false);
+  let events=0;
+  const stop=c.subscribe(1,()=>events++,()=>{});
+  d.demoSwitchActor(1); assert.equal(events,1); stop(); d.demoSwitchActor(2); assert.equal(events,1);
+  assert.equal((await c.session(1)).me.user_id,2);
+  assert.equal((await c.results(1)).items.length,0);
+  await assert.rejects(c.credentials(1),/演示/);
+  assert.equal(livePageUrl('room',1,true),'/pagesSub/live/room?id=1&mode=demo');
+  assert.equal(livePageUrl('room',1,false),'/pagesSub/live/room?id=1');
+  assert.equal(config.USE_MOCK,mockBefore); assert.equal(calls.length,0);
+  const {isLiveDemoRoute}=load('utils/liveDemoRoute.uts');
+  assert.equal(isLiveDemoRoute('pagesSub/live/room',{mode:'demo'}),true);
+  assert.equal(isLiveDemoRoute('pagesSub/live/room',{}),false);
+  assert.equal(isLiveDemoRoute('pages/profile/profile',{mode:'demo'}),false);
+  assert.equal(isLiveDemoRoute('pagesSub/live/unknown',{mode:'demo'}),false);
+  console.log('PASS demo client: explicit mode, zero HTTP/socket/storage writes, subscriptions, route isolation');
+}
+main().catch(e=>{console.error(e);process.exitCode=1});

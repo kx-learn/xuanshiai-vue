@@ -102,6 +102,9 @@
 						<text class="state-title">正在寻找合拍的人</text>
 					</view>
 
+					<view v-else-if="matchesError != ''" class="match-card">
+						<text class="match-hint">{{ matchesError }}</text>
+					</view>
 					<view v-else-if="matches.length == 0" class="match-card">
 						<text class="match-hint">还没有可推荐的人，稍后再来看看</text>
 					</view>
@@ -142,7 +145,7 @@
 					<button class="history-circle-btn" @click="openHistory">
 						<text class="ic ic-home ic-history"></text>
 					</button>
-						<button class="primary-button flex-button" :disabled="matchesLoading" @click="refreshMatches">
+						<button v-if="!matchesUnavailable" class="primary-button flex-button" :disabled="matchesLoading" @click="refreshMatches">
 							{{ matchesLoading ? '正在更换...' : '换一批' }}
 						</button>
 					</view>
@@ -379,6 +382,8 @@
 	const discarding = ref(false)
 	const savingProfile = ref(false)
 	const matchesLoading = ref(false)
+	const matchesError = ref('')
+	const matchesUnavailable = ref(false)
 	const errorMessage = ref('')
 	const summary = ref(null as any)
 	const viewState = ref('intro')
@@ -968,23 +973,30 @@
 	}
 
 	const loadMatches = async () => {
+		matchesError.value = ''
+		matchesUnavailable.value = false
 		if (currentMbtiType.value == '') {
 			matches.value = []
-			return
+			return false
 		}
 		matchesLoading.value = true
 		try {
 			const res = await getEmotionLabMatches(currentMbtiType.value)
 			if (res.success == true && res.data != null && Array.isArray(res.data.items)) {
 				matches.value = res.data.items as any[]
+				return true
 			} else {
 				matches.value = []
+				matchesUnavailable.value = res.code == 'EMOTION_MATCHES_UNAVAILABLE'
+				matchesError.value = responseMessage(res, '推荐加载失败，请重试')
 			}
 		} catch (error) {
 			matches.value = []
+			matchesError.value = '推荐加载失败，请检查网络后重试'
 		} finally {
 			matchesLoading.value = false
 		}
+		return false
 	}
 
 	const loadSummary = async () => {
@@ -1318,8 +1330,7 @@
 
 	const refreshMatches = async () => {
 		if (matchesLoading.value) return
-		await loadMatches()
-		uni.showToast({ title: '已换一批', icon: 'none' })
+		if (await loadMatches()) uni.showToast({ title: '已换一批', icon: 'none' })
 	}
 
 	const openHistory = () => {

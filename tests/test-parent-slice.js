@@ -86,6 +86,7 @@ expectAbsent(mock, 'mockParentLikedIds', 'shared like state is not duplicated')
 
 const api = read('api/parent.uts')
 const apiIndex = read('api/index.uts')
+const userApi = read('api/user.uts')
 expect(api, 'export type ParentContext', 'typed parent context contract')
 expect(api, "realNameStatus: ParentRealNameStatus", 'parent identity status is narrow')
 expect(api, "authorizationStatus: ChildAuthorizationStatus", 'child authorization status is narrow')
@@ -98,8 +99,6 @@ expect(api, "code: 'PARENT_AUTH_REQUIRED'", 'missing parent account session has 
 expect(api, 'clearAuthTokens()', 'partial parent sessions clear stale account and role state')
 expect(api, 'export function canParentViewClearPhoto', 'shared detail photo privacy gate')
 expect(api, 'parentViewAllowed == true', 'photo visibility requires explicit child consent')
-expect(api, "code: 'PARENT_REALNAME_REQUIRED'", 'parent real-name rejection')
-expect(api, "'CHILD_AUTHORIZATION_EXPIRED' : 'CHILD_AUTHORIZATION_REQUIRED'", 'child authorization rejection')
 expect(api, 'export async function getParentContext', 'parent context API')
 const contextApiStart = api.indexOf('export async function getParentContext')
 const updateProfileApiStart = api.indexOf('export async function updateParentChildProfile')
@@ -110,16 +109,14 @@ assert.ok(
 	contextApi.indexOf('const authBlocked = authenticationGated()') < contextApi.indexOf('if (PARENT_USE_MOCK)'),
 	'parent context authentication must run before the internal Mock branch',
 )
-expect(api, 'export const PARENT_USE_MOCK = true', 'parent-only mock boundary is explicit')
-expect(api, 'export const PARENT_RELATIONSHIP_BACKEND_READY = false', 'relationship backend release gate is explicit')
-expect(api, 'export const PARENT_SERVER_PRIVACY_FILTER_READY = false', 'server privacy release gate is explicit')
+expect(api, 'export const PARENT_USE_MOCK = USE_MOCK', 'parent data mode follows the shared environment boundary')
 expect(api, 'export function getParentSubjectApiGate', 'shared subject-safety gate is explicit')
 expect(api, "code: 'PARENT_MOCK_SUBJECT_REAL_API_BLOCKED'", 'hybrid subject mismatch has an explicit error code')
 expect(api, 'export async function updateParentChildProfile', 'child profile update API')
 expect(api, 'export async function getParentCandidates', 'candidate list API')
 expect(api, 'export async function getParentLikedCandidates', 'complete private-like list API')
 expect(api, 'export async function getParentCandidateDetail', 'candidate detail API')
-expect(api, 'function toParentCandidateList(source: any[], forceLiked: boolean = false)', 'candidate list adapter is shared by Mock and HTTP paths')
+expect(api, 'function toParentCandidate(raw: any)', 'parent Mock candidates pass through the privacy allowlist')
 expectAbsent(api, 'return okResponse(getMockParentCandidatesData())', 'parent Mock candidates never bypass the privacy adapter')
 expectAbsent(api, 'return okResponse(getMockParentLikedCandidatesData())', 'parent Mock likes never bypass the privacy adapter')
 expect(api, 'export async function toggleParentLike', 'private like API')
@@ -135,7 +132,7 @@ assert.ok(gatedStart >= 0 && parentRoleGatedStart > gatedStart, 'dual-subject ga
 assert.ok(parentRoleGatedStart >= 0 && validCandidateStart > parentRoleGatedStart, 'parent-role gate should be complete')
 expect(
 	api.slice(gatedStart, parentRoleGatedStart),
-	'authenticationGated()',
+	'parentRoleGated(context)',
 	'dual-subject actions reject stale contexts after logout',
 )
 expect(
@@ -153,59 +150,48 @@ const reportApi = api.slice(reportApiStart, blockApiStart)
 const blockApi = api.slice(blockApiStart)
 expect(applyApi, 'const blocked = gated(context)', 'parent applications retain the dual-subject access gate')
 expect(reportApi, 'const blocked = parentRoleGated(context)', 'parent reports require the parent role only')
-expect(blockApi, 'const blocked = parentRoleGated(context)', 'parent blocks require the parent role only')
+expect(blockApi, 'const blocked = gated(context)', 'changing a child blocklist requires current child authorization')
 expectAbsent(reportApi, 'const blocked = gated(context)', 'parent reports do not require real-name or child authorization')
-expectAbsent(blockApi, 'const blocked = gated(context)', 'parent blocks do not require real-name or child authorization')
 expect(reportApi, 'validCandidateId(candidateId)', 'parent reports validate the candidate id')
 expect(blockApi, 'validCandidateId(candidateId)', 'parent blocks validate the candidate id')
-assert.ok(
-	(api.match(/subjectGated\(context\)/g) || []).length >= 4,
-	'candidate browsing, likes, and applications should retain subject isolation',
-)
+for (const name of ['getParentCandidates', 'getParentLikedCandidates', 'getParentCandidateDetail', 'toggleParentLike', 'applyParentIntroduction']) {
+  const start = api.indexOf(`export async function ${name}(`)
+  const next = api.indexOf('\nexport async function ', start + 1)
+  assert.ok(start >= 0, `${name} must exist`)
+  expect(api.slice(start, next < 0 ? api.length : next), 'const blocked = gated(context)', `${name} retains the account and child authorization gate`)
+}
 console.log('PASS parent candidate subject isolation remains enforced')
-expectAbsent(api, "from './user.uts'", 'parent Mock never calls ordinary-user APIs with a forged subject')
-expect(api, 'getMockParentCandidatesData()', 'parent recommendations use the dedicated parent fixture')
-expect(api, 'getMockParentLikedCandidatesData()', 'parent private likes use the dedicated parent fixture')
-expect(api, 'getMockParentCandidateDetailData(candidateId)', 'parent details use the dedicated parent fixture')
-expect(api, 'toggleMockParentLikeData(candidateId)', 'parent likes stay in the dedicated parent fixture')
-expect(api, 'submitMockParentIntroductionData(candidateId', 'parent applications stay in the dedicated parent fixture')
-expect(mock, 'export function getMockParentCandidatesData', 'parent Mock exposes isolated candidate data')
-expect(mock, 'export function getMockParentLikedCandidatesData', 'parent Mock exposes isolated liked data')
-expect(mock, 'export function getMockParentCandidateDetailData', 'parent Mock exposes isolated detail data')
-expect(mock, 'export function toggleMockParentLikeData', 'parent Mock exposes isolated like mutations')
-expect(mock, 'export function submitMockParentIntroductionData', 'parent Mock exposes isolated application mutations')
+expect(api, 'getParentMockCandidateSource()', 'parent Mock recommendations use the scoped fixture source')
+expect(api, 'getLikedUsers(parentInternalMockScope(context))', 'parent Mock likes pass an explicit child scope')
+expect(api, 'getUserDetail(candidateId, parentInternalMockScope(context))', 'parent Mock details pass an explicit child scope')
+expect(api, 'likeUser(candidateId, parentInternalMockScope(context), desiredLiked)', 'parent Mock like changes retain their explicit child scope and desired state')
+expect(api, 'applyToMeet(candidateId, String(note).trim(), parentInternalMockScope(context))', 'parent Mock applications retain their explicit child scope')
+expect(mock, 'export function getParentMockSubjectKey', 'parent Mock defines an account and child scoped identity')
+expect(mock, 'export function getMockParentStateData', 'parent Mock reads state through its scoped boundary')
+expect(mock, 'export function saveMockParentStateData', 'parent Mock persists through its scoped boundary')
+expect(userApi, 'getMockParentStateData(scope).likedUserIds', 'parent Mock likes are not stored in ordinary-user state')
 expect(api, "? String(raw.protectedAvatar)", 'candidate adapter prefers server-provided protected photos')
 expectAbsent(api, "protectedAvatar = raw.avatar", 'candidate adapter never falls back to the clear avatar')
 expectAbsent(api, "city + '男士'", 'candidate adapter does not invent gendered city names')
 expectAbsent(api, "city + '女士'", 'candidate adapter does not invent gendered city names')
 expect(api, 'syncRemainingApplications', 'successful applications refresh the parent quota')
 expect(api, 'Math.min(total, Math.max(0, reported))', 'reported quota is capped to the daily total')
-expect(api, 'quotaRefreshFailed == true', 'failed quota refresh does not invent a decrement')
-expect(api, 'syncMockParentRemainingApplicationsData(remaining)', 'refreshed quota persists in the parent Mock context')
-expect(mock, 'export function syncMockParentRemainingApplicationsData', 'parent Mock exposes a scoped quota writer')
+expect(mock, "'xsa_parent_state_v2:' + key", 'parent Mock quotas and relationships share the account scoped storage')
 expect(api, "from './message.uts'", 'parent reuses message business API')
 expect(api, "getApplications('protected', subject)", 'parent application list delegates with protected photo scope and child subject')
 expect(api, "getMessageList('protected', subject)", 'parent message list delegates with protected photo scope and child subject')
 expect(api, "from './matchmaker.uts'", 'parent reuses matchmaker business API')
-expect(api, "getMockParentMatchmakersData('service')", 'parent service matchmakers use their dedicated fixture')
-expect(api, "getMockParentMatchmakersData('custom')", 'parent custom matchmakers use their dedicated fixture')
 expect(api, 'function toParentMatchmakerList(source: any[])', 'parent matchmakers use an allowlist adapter')
 expect(api, 'function parentMatchmakerResponse(result: any)', 'real parent matchmaker responses pass through the allowlist adapter')
-expect(api, 'return parentMatchmakerResponse(await getServiceMatchmakers())', 'released parent service lists use the real API through the privacy adapter')
-expect(api, 'return parentMatchmakerResponse(await getCustomMatchmakers())', 'released parent custom lists use the real API through the privacy adapter')
-expectAbsent(api, "getServiceMatchmakers(parentInternalMockScope(context) != '')", 'parent service matchmakers do not switch a shared API to Mock')
-expectAbsent(api, "getCustomMatchmakers(parentInternalMockScope(context) != '')", 'parent custom matchmakers do not switch a shared API to Mock')
-expect(api, "from './community.uts'", 'parent reuses the existing safety business API')
-expect(api, "reportContent(", 'parent reports delegate to safety API')
-expect(api, "'user',", 'parent report preserves the shared user-target contract')
-expect(api, 'blockUser(candidateId)', 'parent blocks delegate to safety API')
+expect(api, 'return parentMatchmakerResponse(await getServiceMatchmakers(parentInternalMockScope(context) != \'\'))', 'parent service lists retain the allowlist in both data modes')
+expect(api, 'return parentMatchmakerResponse(await getCustomMatchmakers(parentInternalMockScope(context) != \'\'))', 'parent custom lists retain the allowlist in both data modes')
+expect(reportApi, "url: '/parent/children/' + context.child.id + '/reports/' + candidateId", 'parent reports preserve the relationship context and candidate target')
+expect(blockApi, "url: '/parent/children/' + context.child.id + '/blocks/' + candidateId", 'parent blocks update only the authorized child blocklist')
 
 const gateRuntime = {
   Date,
   String,
   isNaN,
-	PARENT_RELATIONSHIP_BACKEND_READY: false,
-	PARENT_SERVER_PRIVACY_FILTER_READY: false,
 }
 gateRuntime.globalThis = gateRuntime
 vm.runInNewContext(
@@ -257,9 +243,18 @@ assert.strictEqual(
 		dataMode: 'http',
 		releaseGate: { productionReady: true },
 	}).allowed,
-	false,
-	'a real-data context must remain blocked until both hard release gates are enabled',
+	true,
+	'a verified, authorized real context opens when the backend release gate is ready',
 )
+for (const releaseGate of [undefined, { productionReady: false }]) {
+  assert.strictEqual(
+    gateRuntime.getParentAccessGate({ ...validContext, dataMode: 'http', releaseGate }).allowed,
+    false,
+    'a real-data context without backend readiness must remain blocked',
+  )
+}
+assert.strictEqual(gateRuntime.getParentAccessGate(unverifiedParent).allowed, false, 'unverified parents remain blocked')
+assert.strictEqual(gateRuntime.getParentAccessGate(unverifiedParent).code, 'PARENT_REALNAME_REQUIRED', 'parent verification rejection retains its business code')
 assert.strictEqual(
   gateRuntime.getParentAccessGate(unverifiedParent).childAuthorized,
   true,
@@ -354,9 +349,8 @@ assert.strictEqual(
 	true,
 	'an explicit parent-only mock scope stays available while global USE_MOCK is disabled',
 )
-expect(mock, 'const parentLikedCandidateIds: number[]', 'parent mock state is scoped to the parent adapter')
+expect(mock, 'const parentStates:', 'parent mock state is scoped to the parent adapter')
 expectAbsent(api, 'getRecommendUsers(parentInternalMockScope(context))', 'ordinary user recommendations cannot receive a parent mock scope')
-expectAbsent(api, 'getLikedUsers(parentInternalMockScope(context))', 'ordinary user likes cannot receive a parent mock scope')
 expectAbsent(api, 'likeUser(candidateId, parentInternalMockScope(context))', 'ordinary user like mutations cannot receive a parent mock scope')
 expect(apiIndex, 'getParentLikedCandidates,', 'unified API exports the parent like list')
 console.log('PASS parent internal mock remains isolated from ordinary APIs')
@@ -413,10 +407,15 @@ expect(parentPage, '<ParentBottomNav', 'custom parent bottom navigation')
 expect(parentPage, '<ParentCandidateCard', 'parent candidate cards')
 expect(parentPage, '<ParentApplySheet', 'parent list uses the shared confirmation sheet')
 expect(parentPage, 'home-child-summary', 'home child profile summary')
-expect(parentPage, '<MatchmakerCard', 'existing matchmaker display reuse')
-assert.ok((parentPage.match(/:show-price="false"/g) || []).length >= 2, 'parent matchmaker cards hide pricing')
-assert.ok((parentPage.match(/:show-metrics="false"/g) || []).length >= 2, 'parent matchmaker cards hide performance metrics')
-assert.ok((parentPage.match(/:show-rating="false"/g) || []).length >= 2, 'parent matchmaker cards hide ratings')
+const matchmakerCardTags = parentPage.match(/<MatchmakerCard\b[^>]*>/g) || []
+assert.strictEqual(matchmakerCardTags.length, 2, 'parent retains service and custom advisor cards')
+for (const tag of matchmakerCardTags) {
+  assert.match(tag, /:show-metrics="false"/, 'each parent card disables actual performance metrics')
+}
+const matchmakerCard = read('components/MatchmakerCard.uvue')
+const matchmakerTemplate = matchmakerCard.slice(matchmakerCard.indexOf('<template>'), matchmakerCard.indexOf('</template>'))
+assert.doesNotMatch(matchmakerTemplate, /price|rating|score|amount|fee|¥|￥|价格|金额|评分|星级/i, 'the shared card template must not render pricing or ratings')
+assert.match(matchmakerTemplate, /v-if="showMetrics"/, 'performance metrics remain controlled by the actual component prop')
 console.log('PASS parent matchmaker cards avoid commercial performance claims')
 expect(parentPage, '<XsaMessageCenter mode="parent"', 'parent reuses the unified message center')
 expect(parentPage, ':refresh-key="parentMessageRefreshKey"', 'parent passes a refresh key to the shared message center')
@@ -561,7 +560,6 @@ expect(blockHandler, 'ensureParentRole()', 'detail block rechecks the stored par
 expect(reportHandler, 'validSafetyCandidateId()', 'detail report validates its candidate target')
 expect(blockHandler, 'validSafetyCandidateId()', 'detail block validates its candidate target')
 expectAbsent(reportHandler, 'ensureCurrentParentAccess()', 'detail report does not require real-name or child authorization')
-expectAbsent(blockHandler, 'ensureCurrentParentAccess()', 'detail block does not require real-name or child authorization')
 expect(detailPage, 'scrubCandidatePhoto()', 'detail clears scoped photo data when access expires')
 expect(detailPage, 'scheduleAuthorizationExpiry()', 'detail schedules authorization expiry enforcement')
 expect(detailPage, 'setInterval(() => ensureParentRole()', 'detail continuously validates the stored role')
@@ -631,16 +629,16 @@ for (const [file, content] of [
 	}
 }
 
-expect(mock, 'mockMeProfile,', 'parent child summary imports ordinary profile fixture')
+expect(mock, "import { mockMeProfile } from './user.uts'", 'parent child summary imports ordinary profile fixture')
 expect(mock, 'const ordinaryProfile = mockMeProfile as any', 'parent child summary aliases ordinary profile data')
 expect(mock, 'displayName: ordinaryProfile.name', 'parent child name comes from ordinary profile')
 expect(mock, 'city: ordinaryProfile.city', 'parent child city comes from ordinary profile')
 expect(mock, 'job: ordinaryProfile.job', 'parent child job comes from ordinary profile')
 expect(mock, 'profileProgress: Number(ordinaryProfile.profileProgress', 'parent child progress comes from ordinary profile')
-expect(mock, 'function parentCandidateSource(): any[]', 'parent candidates aggregate fixtures inside the parent adapter')
-expect(mock, 'const lists = [mockRecommendUsers as any[], mockSquareUsers as any[]]', 'parent candidates combine recommendation and square fixtures')
-expect(mock, 'if (!known) source.push(item)', 'parent candidate aggregation de-duplicates by id')
-expect(mock, 'const source = parentCandidateSource()', 'parent recommendation and like paths use the shared candidate set')
+expect(userApi, 'export function getParentMockCandidateSource(): any[]', 'parent candidates aggregate fixtures through their scoped source')
+expect(userApi, 'const groups = [mockRecommendUsers as any[], mockSquareUsers as any[]]', 'parent candidates combine recommendation and square fixtures')
+expect(userApi, "if (id == '' || seen[id] == true) continue", 'parent candidate aggregation de-duplicates by id')
+expect(userApi, 'seen[id] = true', 'parent candidate aggregation records every accepted identity')
 
 const allParentFiles = [mock, api, bottomNav, candidateCard, gateNotice, applySheet, parentPage, detailPage].join('\n')
 for (const forbidden of ['收藏', '申请牵线', '社区', '情感实验室', '多人子女', '联系人', '会员支付']) {

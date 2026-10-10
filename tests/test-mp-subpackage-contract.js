@@ -14,7 +14,7 @@ const mainPages = pages.pages.map((page) => page.path)
 const subpackagePages = new Map(
   (pages.subPackages || []).map((subpackage) => [
     subpackage.root,
-    new Set(subpackage.pages.map((page) => page.path))
+    subpackage.pages.map((page) => page.path)
   ])
 )
 
@@ -38,6 +38,7 @@ assert.deepEqual(mainPages, [
 ])
 
 const expectedSubpackages = {
+  'pagesSub/live': ['lobby', 'detail', 'backstage', 'room', 'results', 'manage'],
   'pagesSub/community': [
     'publish',
     'topic-list',
@@ -64,7 +65,8 @@ const expectedSubpackages = {
     'become-promoter',
     'promoter-center',
     'application-success',
-    'custom'
+    'custom',
+    'my-account'
   ],
   'pagesSub/profileExtra': [
     'settings',
@@ -75,6 +77,8 @@ const expectedSubpackages = {
     'my-moments',
     'my-tasks',
     'my-registration',
+    'my-date',
+    'my-date-service',
     'my-posters',
     'my-poster-preview',
     'history',
@@ -86,7 +90,6 @@ const expectedSubpackages = {
     'spotlights',
     'support',
     'my-ai-avatar',
-    'my-portrait',
     'my-portrait-master',
     'my-portrait-result',
     'my-portrait-archive'
@@ -103,9 +106,10 @@ const expectedSubpackages = {
   ]
 }
 
-assert.equal(subpackagePages.size, Object.keys(expectedSubpackages).length)
+assert.deepEqual([...subpackagePages.keys()], Object.keys(expectedSubpackages), 'subpackage roots changed')
+assert.equal(pages.subPackages.length, subpackagePages.size, 'subpackage roots must not be duplicated')
 for (const [rootPath, expectedPages] of Object.entries(expectedSubpackages)) {
-  assert.deepEqual([...subpackagePages.get(rootPath)], expectedPages, `${rootPath} route set changed`)
+  assert.deepEqual(subpackagePages.get(rootPath), expectedPages, `${rootPath} route set changed`)
 }
 
 console.log('PASS mp-weixin subpackage contract')

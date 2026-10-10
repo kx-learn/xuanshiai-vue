@@ -1,0 +1,12 @@
+.live-page { min-height: 100vh; background: var(--canvas); color: var(--ink); padding: 16px 16px 40px; box-sizing: border-box; }
+.live-title { display: block; font-family: var(--serif); font-size: 22px; font-weight: 700; line-height: 1.4; margin-bottom: 8px; }
+.live-subtitle { display: block; font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.live-copy { display: block; font-size: 14px; line-height: 1.7; margin-bottom: 8px; white-space: pre-wrap; overflow-wrap: break-word; }
+.live-muted { color: var(--muted); font-size: 12px; }
+.live-card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+.live-row { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.live-input { box-sizing: border-box; width: 100%; min-height: 44px; border: 1px solid var(--line); background: var(--canvas); border-radius: 8px; padding: 10px; margin: 8px 0 16px; font-size: 14px; color: var(--ink); }
+textarea.live-input { height: 110px; }
+.live-choice { padding: 12px; border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; }
+.live-choice.selected { background: var(--accent-bg); border-color: var(--accent); }
+.live-error { color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; }

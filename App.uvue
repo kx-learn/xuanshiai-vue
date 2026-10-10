@@ -1,4 +1,5 @@
 <script setup lang="uts">
+	import { isLiveDemoRoute } from './utils/liveDemoRoute.uts'
 	import {
 		FASTAPI_AUTO_ENTER_COMMUNITY,
 		FASTAPI_DEV_ACCESS_TOKEN,
@@ -15,9 +16,10 @@
 		const pages = getCurrentPages()
 		const currentPage = pages.length > 0 ? pages[pages.length - 1] : null
 		const route = currentPage != null && currentPage.route != null ? String(currentPage.route) : ''
+		if (currentPage != null && isLiveDemoRoute(route, (currentPage as any).options as UTSJSONObject)) return
 		if (
 			route == '' || route == 'pages/parent/parent' || route == 'pages/parent/user-detail' ||
-			route == 'pages/profile/certification' || route == 'pagesSub/chat/detail' ||
+			route == 'pagesSub/profileExtra/certification' || route == 'pagesSub/chat/detail' ||
 			route == 'pages/auth/login' || route == 'pages/auth/register' ||
 			route == 'pagesSub/userExtra/onboarding/profile'
 		) return
@@ -66,8 +68,9 @@
 	let firstBackTime = 0
 	// #endif
 
-	onLaunch(() => {
+	onLaunch((options) => {
 		console.log('App Launch')
+		if (isLiveDemoRoute(options.path ?? '', options.query)) return
 		uni.setStorageSync('xsa_new_app_launch', true)
 		if (!tryAutoEnterFastApiCommunity()) tryAutoEnterMock()
 	})

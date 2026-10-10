@@ -1,0 +1,49 @@
+<template>
+  <view class="live-page">
+    <LiveDemoPanel v-if="demo" class="live-demo-controls" @change="resetCheck" />
+    <text class="live-title">签到候场</text>
+    <view v-if="error.length > 0" class="live-error"><text class="live-copy">{{ error }}</text><XsaButton @click="load">刷新</XsaButton></view>
+    <view v-if="state != null" class="live-card">
+      <text class="live-copy">{{ state!.title }} · {{ liveLabel(state!.me.role) }}</text>
+      <text v-if="!demo && state!.media_mode == 'disabled'" class="live-copy">业务演练，无音视频。这里只完成业务签到，未执行音视频检测。</text>
+      <text v-else class="live-copy">请在安静、网络稳定的环境使用耳机。设备检测的试听只在本机进行，不上传录音。</text>
+      <!-- #ifdef MP-WEIXIN -->
+      <live-stage v-if="!demo && state!.media_mode == 'trtc' && state!.me.role != 'spectator' && state!.me.role != 'operator' && visible" :preview="true" @devicecheck="checked" @mediaerror="mediaError" />
+      <!-- #endif -->
+      <!-- #ifndef MP-WEIXIN -->
+      <text v-if="!demo && state!.media_mode=='trtc'" class="live-copy">请使用微信小程序真机完成设备检测，H5 不能代替音视频验收。</text>
+      <!-- #endif -->
+      <text v-if="state!.me.role == 'spectator'" class="live-copy">观众无需开启摄像头或麦克风，只观看和举报。</text>
+      <view v-if="demo" class="live-choice"><text class="live-subtitle">模拟设备检查</text><text class="live-copy">不调用摄像头或麦克风。此步骤只演示签到操作，不代表真机检测通过。</text><XsaButton class="demo-device" variant="secondary" @click="simulateCheck">{{ devicePassed ? '模拟检查已完成' : '完成模拟设备检查' }}</XsaButton></view>
+      <checkbox-group v-if="!demo && state!.media_mode == 'trtc' && state!.me.role != 'spectator' && state!.me.role != 'operator'" @change="heard = $event.detail.value.length > 0"><label class="live-copy"><checkbox value="heard" />我能看清预览并听清自己的录音</label></checkbox-group>
+      <XsaButton v-if="state!.me.role != 'operator'" class="live-check-in" :loading="busy" :disabled="state!.allowed_actions.indexOf('check_in') < 0 || ((demo || state!.media_mode == 'trtc') && state!.me.role != 'spectator' && (!devicePassed || !heard))" @click="checkIn">确认签到</XsaButton>
+      <view class="live-row"><XsaButton :disabled="!state!.me.checked_in && state!.me.role != 'operator'" @click="enter">进入候场直播间</XsaButton></view>
+      <text class="live-copy live-muted">进入房间不代表立即上台。工作人员将依据当轮角色安排；你始终可以关闭设备或离场。</text>
+    </view>
+  </view>
+</template>
+<script setup lang="uts">
+import XsaButton from '../../components/XsaButton.uvue'
+import LiveDemoPanel from './LiveDemoPanel.uvue'
+import { createLiveClient, livePageUrl } from './client.uts'
+import { liveCommand, liveLabel } from '../../api/live-v2.uts'
+import type { LiveSnapshot } from '../../api/live-v2.uts'
+const id = ref(0), state = ref<LiveSnapshot | null>(null), error = ref(''), busy = ref(false), devicePassed = ref(false), heard = ref(false), visible = ref(true)
+const demo = ref(false)
+let client = createLiveClient(false)
+const load = async () => { if (id.value == 0) return; error.value = ''; state.value = null
+  try { state.value = await client.session(id.value) } catch(e) { error.value = (e as Error).message } }
+const resetCheck = () => { devicePassed.value=false; heard.value=false; load() }
+const simulateCheck = () => { devicePassed.value=true; heard.value=true }
+const checked = (e: any) => { devicePassed.value = e.detail.passed == true }
+const mediaError = (e: any) => { error.value = e.detail.message; devicePassed.value = false }
+const checkIn = async () => { if (state.value == null || busy.value) return; busy.value = true
+  try { const cmd = liveCommand('check_in', state.value!.revision); cmd.device_checked = devicePassed.value && heard.value
+    state.value = await client.command(id.value, cmd); uni.showToast({title:'已签到',icon:'success'}) }
+  catch(e) { error.value = (e as Error).message } finally { busy.value = false } }
+const enter = () => { uni.navigateTo({url:livePageUrl('room',id.value,demo.value)}) }
+onLoad((options) => { demo.value = options?.['mode'] == 'demo'; client = createLiveClient(demo.value); id.value = Number(options?.['id'] ?? (demo.value ? 1 : 0)) })
+onShow(() => { visible.value = true; devicePassed.value = false; heard.value = false; load() })
+onHide(() => { visible.value = false })
+</script>
+<style>@import './live.css';</style>

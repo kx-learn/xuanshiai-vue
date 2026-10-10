@@ -1,0 +1,4 @@
+// Only the six existing demo routes may bypass parent-mode routing; never change the stored identity.
+export function isLiveDemoRoute(path: string, query: UTSJSONObject | null): boolean {
+  return query?.['mode'] == 'demo' && ['lobby','detail','backstage','room','results','manage'].some((name) => path == 'pagesSub/live/' + name)
+}

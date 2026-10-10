@@ -22,6 +22,9 @@
 			>
 				<text class="tab-text">活动通知</text>
 			</view>
+			<view class="tab" :class="{ active: currentTab === 'live' }" @click="switchTab('live')">
+				<text class="tab-text">直播场次</text>
+			</view>
 		</view>
 		<view class="toolbar" v-if="list.length > 0">
 			<text class="mark-all text-accent" @click="markAll">全部已读</text>
@@ -86,6 +89,7 @@
 			const t = n.type != null ? ('' + n.type) : ''
 			if (currentTab.value == 'comment' && t == 'comment') out.push(n)
 			else if (currentTab.value == 'like' && t == 'like') out.push(n)
+			else if (currentTab.value == 'live' && n.targetType == 'live_v2_session') out.push(n)
 			else if (
 				currentTab.value == 'activity' &&
 				t == 'activity' &&
@@ -101,12 +105,14 @@
 		if (currentTab.value == 'comment') return '暂无评论'
 		if (currentTab.value == 'like') return '暂无点赞'
 		if (currentTab.value == 'activity') return '暂无活动通知'
+		if (currentTab.value == 'live') return '暂无直播场次通知'
 		return '暂无通知'
 	})
 
 	const emptyDesc = computed(() => {
 		if (currentTab.value == 'comment') return '收到的评论会出现在这里'
 		if (currentTab.value == 'like') return '收到的点赞会出现在这里'
+		if (currentTab.value == 'live') return '直播邀请、安排变更与场后结果会出现在这里'
 		return '官方活动报名、审核与签到进展会出现在这里'
 	})
 
@@ -137,7 +143,10 @@
 				await markNotificationRead(n.id as number)
 			} catch (e) {}
 		}
-		if (item.targetType == 'comment' && item.postId > 0 && item.commentId > 0) {
+		if (item.targetType == 'live_v2_session' && item.targetId > 0) {
+			const page = item.type == 'live_result' ? 'results' : 'detail'
+			uni.navigateTo({ url: '/pagesSub/live/' + page + '?id=' + item.targetId })
+		} else if (item.targetType == 'comment' && item.postId > 0 && item.commentId > 0) {
 			uni.navigateTo({ url: '/pagesSub/community/post-detail?id=' + item.postId + '&commentId=' + item.commentId })
 		} else if (item.targetType == 'comment' && item.payload != null && item.payload.post_id > 0 && item.payload.comment_id > 0) {
 			uni.navigateTo({ url: '/pagesSub/community/post-detail?id=' + item.payload.post_id + '&commentId=' + item.payload.comment_id })

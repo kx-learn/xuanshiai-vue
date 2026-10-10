@@ -1,0 +1,79 @@
+<template>
+  <view class="demo-follow-up">
+    <text v-if="!result.session_ended" class="live-copy">场次尚未结束。主持结束后，仅完成交流的组合会获得专属机会。</text>
+    <view v-else-if="result.items.length == 0" class="live-card"><text class="live-subtitle">本场暂无专属机会</text><text class="live-copy">可以切换到已完成交流的嘉宾查看结果。未互选或退出交流不会自动产生申请。</text></view>
+    <view class="live-card" v-for="item in result.items" :key="item.id">
+      <text class="live-subtitle">{{ item.peer_name }}</text>
+      <text class="live-copy">已完成本场交流 · 双方共享 1 次机会</text>
+      <text class="live-copy live-muted">有效至 {{ liveTime(item.expires_at) }} · 不占用日常次数</text>
+      <XsaButton v-if="item.status == 'available'" class="demo-apply" @click="prepare(item)">自主申请认识</XsaButton>
+      <text v-else class="live-copy">{{ item.status == 'expired' ? '本次机会已过期' : '机会已使用，请查看申请与答复' }}</text>
+    </view>
+    <XsaButton class="demo-applications" variant="secondary" @click="showApplications=true">查看演示申请与答复（{{ applications.length }}）</XsaButton>
+    <view v-for="app in accepted" :key="app.id" class="live-card demo-chat-card">
+      <text class="live-subtitle">已与 {{ peerName(app) }} 双方同意</text><text class="live-copy">现在可以继续交流。以下聊天仅保存在本次本机演示中。</text>
+      <XsaButton class="demo-open-chat" @click="openChat(app.opportunity_id)">打开演示聊天</XsaButton>
+    </view>
+    <text v-if="error.length > 0" class="live-copy">{{ error }}</text>
+    <XsaSheet class="demo-apply-sheet" :visible="applying != null" title="自主申请认识" @close="applying=null">
+      <text class="live-copy">向 {{ applying?.peer_name }} 发送申请。将使用双方共享的本次机会；对方可以婉拒，未同意前不能聊天。</text>
+      <textarea v-model="greeting" class="live-input" maxlength="200" placeholder="写一句你想继续了解对方的原因" />
+      <text class="live-copy live-muted">演示申请，不发送到真实用户。婉拒不恢复已使用的机会。</text>
+      <text v-if="error.length > 0" class="live-copy">{{ error }}</text>
+      <XsaButton class="demo-confirm-apply" @click="submit">确认发送演示申请</XsaButton>
+    </XsaSheet>
+    <XsaApplicationTabs class="demo-application-tabs" :visible="showApplications" :active-tab="tab" :tabs="['收到的申请','发出的申请']" :applications="applicationCards" :loading="false" :error="error" :action-id="0" :has-more="false" :protect-photos="true"
+      @close="showApplications=false" @change="tab=$event" @accept="reply($event.id,true)" @reject="reply($event.id,false)" />
+    <XsaSheet class="demo-chat-sheet" :visible="chatId != 0" title="演示聊天 · 双方已同意" @close="chatId=0">
+      <text class="live-copy live-muted">切换到另一方角色可回复。没有自动机器人代答，不写入真实消息。</text>
+      <scroll-view scroll-y class="demo-chat-messages">
+        <text v-if="messages.length == 0" class="live-copy">可以从刚才的共同话题开始。</text>
+        <view v-for="message in messages" :key="message.id" class="demo-bubble" :class="{ 'demo-bubble-mine': message.sender_id == state.me.user_id }">
+          <text class="live-copy live-muted">{{ nameOf(message.sender_id) }}</text><text class="live-copy">{{ message.text }}</text>
+        </view>
+      </scroll-view>
+      <input v-model="draft" class="live-input demo-chat-input" maxlength="500" placeholder="输入演示消息" @confirm="send" />
+      <text v-if="error.length > 0" class="live-copy">{{ error }}</text>
+      <XsaButton class="demo-send" :disabled="draft.trim().length == 0" @click="send">发送演示消息</XsaButton>
+    </XsaSheet>
+  </view>
+</template>
+<script setup lang="uts">
+import XsaButton from '../../components/XsaButton.uvue'
+import XsaSheet from '../../components/XsaSheet.uvue'
+import XsaApplicationTabs from '../../components/XsaApplicationTabs.uvue'
+import { liveTime } from '../../api/live-v2.uts'
+import type { LiveOpportunity } from '../../api/live-v2.uts'
+import { demoSnapshot, demoSubscribe, demoResults, demoApplications, demoApply, demoReply, demoMessages, demoSendMessage } from './demo.uts'
+import type { DemoApplication, DemoMessage } from './demo.uts'
+const state=ref(demoSnapshot()),result=ref(demoResults()),applications=ref<DemoApplication[]>(demoApplications()),messages=ref<DemoMessage[]>([])
+const applying=ref<LiveOpportunity|null>(null),showApplications=ref(false),tab=ref(0),chatId=ref(0),draft=ref(''),greeting=ref(''),error=ref('')
+let stop:(()=>void)|null=null
+const nameOf=(uid:number):string=>state.value.members.find((p)=>p.user_id==uid)?.display_name ?? '嘉宾'
+const peerName=(app:DemoApplication):string=>nameOf(app.sender_id==state.value.me.user_id?app.recipient_id:app.sender_id)
+const accepted=computed(()=>applications.value.filter((app)=>app.status=='accepted'))
+const applicationCards=computed(()=>applications.value.filter((app)=>tab.value==0?app.recipient_id==state.value.me.user_id:app.sender_id==state.value.me.user_id).map((app)=>({
+  id:app.id,name:peerName(app),avatar:'',message:app.message,status:app.status,statusText:app.status=='accepted'?'已同意':app.status=='rejected'?'已婉拒':app.status=='expired'?'答复已过期':'等待答复（48小时）'
+})))
+const refresh=()=>{
+  const next=demoSnapshot()
+  if(next.me.user_id!=state.value.me.user_id){applying.value=null;showApplications.value=false;tab.value=0;chatId.value=0;greeting.value='';draft.value='';error.value=''}
+  state.value=next;result.value=demoResults();applications.value=demoApplications()
+  if(!accepted.value.some((app)=>app.opportunity_id==chatId.value))chatId.value=0
+  messages.value=chatId.value==0?[]:demoMessages(chatId.value)
+}
+onMounted(()=>{stop=demoSubscribe(refresh)})
+onUnmounted(()=>{if(stop!=null)stop!()})
+const prepare=(item:LiveOpportunity)=>{error.value='';applying.value=item;greeting.value='感谢刚才的交流，希望继续认真了解彼此。'}
+const submit=()=>{if(applying.value==null)return;try{demoApply(applying.value!,greeting.value);applying.value=null;tab.value=1;showApplications.value=true;error.value=''}catch(e){error.value=(e as Error).message}}
+const reply=(id:number,accept:boolean)=>{try{demoReply(id,accept);error.value='';if(accept)showApplications.value=false}catch(e){error.value=(e as Error).message}}
+const openChat=(id:number)=>{try{messages.value=demoMessages(id);chatId.value=id;draft.value='';error.value=''}catch(e){error.value=(e as Error).message}}
+const send=()=>{try{demoSendMessage(chatId.value,draft.value);draft.value='';error.value=''}catch(e){error.value=(e as Error).message}}
+</script>
+<style>
+@import './live.css';
+.demo-chat-card { margin-top: 16px; }
+.demo-chat-messages { height: 240px; }
+.demo-bubble { background: var(--warm); border-radius: 12px; padding: 12px; margin: 8px 24px 8px 0; }
+.demo-bubble-mine { background: var(--accent-bg); margin: 8px 0 8px 24px; }
+</style>

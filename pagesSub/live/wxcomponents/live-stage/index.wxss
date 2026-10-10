@@ -1,0 +1,10 @@
+.stage { background: var(--paper); border-radius: 12px; padding: 8px; color: var(--ink); }
+.tiles { display: flex; flex-wrap: wrap; }
+.tile { width: 50%; padding: 4px; box-sizing: border-box; }
+.video { width: 100%; height: 230rpx; background: var(--canvas); border-radius: 8px; }
+.receive-only { position: absolute; width: 1px; height: 1px; overflow: hidden; padding: 0; }
+.receive-only .video { width: 1px; height: 1px; }
+.cdn { width: 100%; height: 620rpx; }
+.caption,.notice { display: block; font-size: 12px; line-height: 1.7; color: var(--muted); }
+.preview-tools,.controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+button { background: var(--canvas); color: var(--ink); }

@@ -1,0 +1,44 @@
+import * as real from '../../api/live-v2.uts'
+import type { LiveSnapshot, LiveList, LiveResources, LiveCreate, LiveUpdate, LiveAccountList, LiveActionList, LiveCommand, LiveCredentials, LiveResults, LiveOpportunity, LiveReport } from '../../api/live-v2.uts'
+import { demoSnapshot, demoCreate, demoUpdate, demoActions, demoCommand, demoSubscribe, demoResults, demoApply, demoReport, demoReports, demoResolveReport } from './demo.uts'
+
+export type LiveClient = {
+  list: () => Promise<LiveList>, resources: () => Promise<LiveResources>, session: (id: number) => Promise<LiveSnapshot>,
+  create: (body: LiveCreate) => Promise<LiveSnapshot>, command: (id: number, body: LiveCommand) => Promise<LiveSnapshot>,
+  update: (id: number, body: LiveUpdate) => Promise<LiveSnapshot>, accounts: (query: string, page: number) => Promise<LiveAccountList>,
+  actions: (id: number, page: number) => Promise<LiveActionList>,
+  credentials: (id: number) => Promise<LiveCredentials>, results: (id: number) => Promise<LiveResults>,
+  apply: (item: LiveOpportunity, message: string) => Promise<number>,
+  report: (id: number, target: number, reason: string) => Promise<LiveReport>, reports: (id: number) => Promise<LiveReport[]>,
+  resolve: (id: number, report: number, reason: string) => Promise<LiveReport>,
+  subscribe: (id: number, update: (value: LiveSnapshot) => void, status: (value: string) => void) => () => void
+}
+// Explicit transport selection. Errors on the real path never fall through to the demo.
+export function createLiveClient(demo: boolean): LiveClient {
+  if (!demo) return { list: real.getLiveList, resources: real.getLiveResources, session: real.getLiveSession, create: real.createLiveSession,
+    update: real.updateLiveSession, accounts: real.searchLiveAccounts, actions: real.getLiveActions,
+    command: real.sendLiveCommand, credentials: real.getLiveCredentials, results: real.getLiveResults, apply: real.applyFromLive,
+    report: real.reportLive, reports: real.getLiveReports, resolve: real.resolveLiveReport, subscribe: real.subscribeLive }
+  return {
+    list: async (): Promise<LiveList> => { const s=demoSnapshot(); return {items:[{id:s.id,title:s.title,scheduled_at:s.scheduled_at,status:s.status,role:s.me.role,media_mode:s.media_mode}],can_manage:s.me.role=='operator'} },
+    resources: async (): Promise<LiveResources> => ({ready:false,missing:['演示不验证云资源、设备权限及真实连麦'],provider:'local-demo',media_mode:'disabled',business_ready:false,business_missing:['本机虚构状态，不是后端业务验证'],media_ready:false,media_missing:['真实音视频未验证']}),
+    session: async (_id: number): Promise<LiveSnapshot> => demoSnapshot(),
+    create: async (body: LiveCreate): Promise<LiveSnapshot> => demoCreate(body),
+    update: async (_id: number, body: LiveUpdate): Promise<LiveSnapshot> => demoUpdate(body),
+    accounts: async (_query: string, _page: number): Promise<LiveAccountList> => { throw new Error('离线演示使用固定虚构名单，真实选人请进入测试环境') },
+    actions: async (_id: number, page: number): Promise<LiveActionList> => demoActions(page),
+    command: async (_id: number, body: LiveCommand): Promise<LiveSnapshot> => demoCommand(body),
+    credentials: async (_id: number): Promise<LiveCredentials> => { throw new Error('演示模式不签发音视频凭证') },
+    results: async (_id: number): Promise<LiveResults> => demoResults(),
+    apply: async (item: LiveOpportunity, message: string): Promise<number> => demoApply(item,message),
+    report: async (_id: number, target: number, reason: string): Promise<LiveReport> => demoReport(target,reason),
+    reports: async (_id: number): Promise<LiveReport[]> => demoReports(),
+    resolve: async (_id: number, report: number, reason: string): Promise<LiveReport> => demoResolveReport(report,reason),
+    subscribe: (_id: number, update: (value: LiveSnapshot) => void, status: (value: string) => void): (() => void) => {
+      status('本机演示状态 · 不连接真实直播'); return demoSubscribe(() => update(demoSnapshot()))
+    }
+  }
+}
+export function livePageUrl(page: string, id: number, demo: boolean): string {
+  return '/pagesSub/live/' + page + '?id=' + id + (demo ? '&mode=demo' : '')
+}

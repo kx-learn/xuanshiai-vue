@@ -105,6 +105,17 @@
   "uniIdRouter": {},
   "subPackages": [
     {
+      "root": "pagesSub/live",
+      "pages": [
+        { "path": "lobby", "style": { "navigationBarTitleText": "直播相亲" } },
+        { "path": "detail", "style": { "navigationBarTitleText": "直播场次" } },
+        { "path": "backstage", "style": { "navigationBarTitleText": "签到候场", "usingComponents": { "live-stage": "/pagesSub/live/wxcomponents/live-stage/index" } } },
+        { "path": "room", "style": { "navigationBarTitleText": "直播相亲", "usingComponents": { "live-stage": "/pagesSub/live/wxcomponents/live-stage/index" } } },
+        { "path": "results", "style": { "navigationBarTitleText": "本人场后结果" } },
+        { "path": "manage", "style": { "navigationBarTitleText": "场次管理" } }
+      ]
+    },
+    {
       "root": "pagesSub/community",
       "pages": [
         {

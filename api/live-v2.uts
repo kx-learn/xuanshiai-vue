@@ -1,0 +1,136 @@
+import { request, getCurrentAccountKey } from './request.uts'
+import { USE_MOCK, buildApiUrl, getAccessToken } from './config.uts'
+
+export type LiveMember = {
+  user_id: number, role: string, group: string, seat: number, display_name: string,
+  introduction: string, attendance: string, on_stage: boolean, hand: boolean,
+  light_target: number | null, special_target: number | null,
+  invitation: string, checked_in: boolean, removed: boolean
+}
+export type LiveMe = {
+  user_id: number, role: string, accepted: boolean, reserved: boolean, checked_in: boolean,
+  removed: boolean, special_remaining: number, selection: number[], invitation: string
+}
+export type LiveExchange = {
+  main_id: number, candidate_id: number, status: string, started_at: number | null, ended_at: number | null
+}
+export type LiveSnapshot = {
+  id: number, title: string, scheduled_at: number, status: string, revision: number,
+  server_time: number, notice: string, round_index: number, main_id: number, phase: string,
+  deadline: number | null, pause_remaining: number, speaker_id: number | null, media_epoch: number,
+  media_mode: string, controller_id: number, owner_id: number, main_order: number[], can_edit: boolean, can_read_actions: boolean,
+  members: LiveMember[], me: LiveMe, allowed_actions: string[], allowed_targets: LiveTargets, exchanges: LiveExchange[]
+}
+export type LiveTargets = { stage_ids: number[], speaker_ids: number[], remove_ids: number[], interest_ids: number[], choice_ids: number[] }
+export type LiveSummary = { id: number, title: string, scheduled_at: number, status: string, role: string, media_mode: string }
+export type LiveList = { items: LiveSummary[], can_manage: boolean }
+export type LiveResources = { ready: boolean, missing: string[], provider: string, media_mode: string,
+  business_ready: boolean, business_missing: string[], media_ready: boolean, media_missing: string[] }
+export type LiveAccount = { user_id: number, nickname: string, gender: number, eligible: boolean, missing: string[] }
+export type LiveAccountList = { items: LiveAccount[], page: number, page_size: number, total: number, has_more: boolean }
+export type LiveActionRecord = { id: number, user_id: number, action: string, revision: number, outcome: string, target_id: number | null, reason: string, created_at: number }
+export type LiveActionList = { items: LiveActionRecord[], page: number, page_size: number, total: number, has_more: boolean }
+export type LiveCommand = {
+  command_id: string, expected_revision: number, action: string,
+  target_id?: number, targets?: number[], value?: boolean, seconds?: number,
+  display_name?: string, introduction?: string, consent_version?: string, device_checked?: boolean, reason?: string
+}
+export type LiveCreate = {
+  title: string, scheduled_at: number, host_id: number, matchmaker_ids: number[], male_ids: number[],
+  female_ids: number[], main_order: number[], spectator_ids: number[], notice: string
+}
+export type LiveUpdate = LiveCreate & { expected_revision: number }
+export type LiveCredentials = {
+  mode: string, sdk_app_id: number, room_id: number, user_id: string, user_sig: string,
+  private_map_key: string, publish: boolean, playback_url: string, expires_at: number, media_epoch: number
+}
+export type LiveOpportunity = {
+  id: number, session_id: number, peer_id: number, peer_name: string, expires_at: number,
+  application_id: number | null, status: string
+}
+export type LiveResults = { items: LiveOpportunity[], session_ended: boolean, media_mode: string }
+export type LiveReport = { id: number, target_id: number, reason: string, status: string, resolution: string }
+
+// Live trials never fall through to successful mock responses without a backend.
+async function callLive(path: string, method: string = 'GET', data: any = null): Promise<any> {
+  if (USE_MOCK) throw new Error('直播试点需要连接真实后端，请关闭 Mock 后联调')
+  const result: any = await request({ url: path, method: method, data: data })
+  if (!result.success) throw new Error(result.message != null ? result.message : '请求未成功，请重试')
+  return result.data
+}
+export async function getLiveList(): Promise<LiveList> { return await callLive('/live/v2/sessions') as LiveList }
+export async function getLiveResources(): Promise<LiveResources> { return await callLive('/live/v2/resources') as LiveResources }
+export async function getLiveSession(id: number): Promise<LiveSnapshot> { return await callLive('/live/v2/sessions/' + id) as LiveSnapshot }
+export async function createLiveSession(body: LiveCreate): Promise<LiveSnapshot> { return await callLive('/live/v2/sessions', 'POST', body) as LiveSnapshot }
+export async function updateLiveSession(id: number, body: LiveUpdate): Promise<LiveSnapshot> { return await callLive('/live/v2/sessions/' + id, 'PUT', body) as LiveSnapshot }
+export async function searchLiveAccounts(query: string, page: number): Promise<LiveAccountList> {
+  return await callLive('/live/v2/accounts?q=' + encodeURIComponent(query) + '&page=' + page + '&page_size=20') as LiveAccountList
+}
+export async function getLiveActions(id: number, page: number): Promise<LiveActionList> {
+  return await callLive('/live/v2/sessions/' + id + '/actions?page=' + page + '&page_size=20') as LiveActionList
+}
+export async function sendLiveCommand(id: number, body: LiveCommand): Promise<LiveSnapshot> {
+  // UTS emits omitted optional fields as null; the HTTP contract uses absent fields for defaults.
+  const payload: UTSJSONObject = { command_id: body.command_id, expected_revision: body.expected_revision, action: body.action }
+  if (body.target_id != null) payload['target_id'] = body.target_id
+  if (body.targets != null) payload['targets'] = body.targets
+  if (body.value != null) payload['value'] = body.value
+  if (body.seconds != null) payload['seconds'] = body.seconds
+  if (body.display_name != null) payload['display_name'] = body.display_name
+  if (body.introduction != null) payload['introduction'] = body.introduction
+  if (body.consent_version != null) payload['consent_version'] = body.consent_version
+  if (body.device_checked != null) payload['device_checked'] = body.device_checked
+  if (body.reason != null) payload['reason'] = body.reason
+  return await callLive('/live/v2/sessions/' + id + '/commands', 'POST', payload) as LiveSnapshot
+}
+export function liveCommand(action: string, revision: number): LiveCommand {
+  return { action: action, expected_revision: revision,
+    command_id: 'live_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 12) }
+}
+export async function getLiveCredentials(id: number): Promise<LiveCredentials> {
+  return await callLive('/live/v2/sessions/' + id + '/credentials', 'POST') as LiveCredentials
+}
+export async function getLiveResults(id: number): Promise<LiveResults> { return await callLive('/live/v2/sessions/' + id + '/results') as LiveResults }
+export async function applyFromLive(item: LiveOpportunity, message: string): Promise<number> {
+  const result = await callLive('/discovery/applications/' + item.peer_id, 'POST', { live_opportunity_id: item.id, message: message })
+  return result.id as number
+}
+export async function reportLive(id: number, target: number, reason: string): Promise<LiveReport> {
+  return await callLive('/live/v2/sessions/' + id + '/reports', 'POST', { target_id: target, reason: reason }) as LiveReport
+}
+export async function getLiveReports(id: number): Promise<LiveReport[]> { return await callLive('/live/v2/sessions/' + id + '/reports') as LiveReport[] }
+export async function resolveLiveReport(id: number, reportId: number, reason: string): Promise<LiveReport> {
+  return await callLive('/live/v2/sessions/' + id + '/reports/' + reportId + '/resolve', 'POST', { reason: reason }) as LiveReport
+}
+
+export function subscribeLive(id: number, update: (value: LiveSnapshot) => void, status: (value: string) => void): () => void {
+  const account = getCurrentAccountKey()
+  const socket = uni.connectSocket({ url: buildApiUrl('/live/v2/sessions/' + id + '/events').replace('https:', 'wss:').replace('http:', 'ws:'),
+    header: { Authorization: 'Bearer ' + getAccessToken() }, complete: () => {} })
+  let closed = false
+  socket.onOpen(() => { if (!closed) status('实时同步已连接') })
+  socket.onMessage((event) => {
+    if (closed || getCurrentAccountKey() != account) { socket.close({}); return }
+    try {
+      const packet = JSON.parse(event.data as string)
+      if (packet.type == 'snapshot') update(packet.snapshot as LiveSnapshot)
+    } catch (_) { status('同步消息异常，请刷新') }
+  })
+  socket.onError(() => { if (!closed) status('实时连接中断，正在刷新快照') })
+  socket.onClose(() => { if (!closed) status('实时连接已断开，正在刷新快照') })
+  return () => { closed = true; socket.close({}) }
+}
+
+export function liveLabel(value: string): string {
+  const labels: any = { draft: '草稿', scheduled: '已排期', live: '进行中', paused: '已暂停', ended: '已结束', cancelled: '已取消',
+    intro: '自我介绍', question: '红娘问答', interest: '心动亮灯', choice: '私密选择', exchanges: '依次公开交流', transition: '轮换', completed: '已完成',
+    host: '主持', matchmaker: '红娘', guest: '嘉宾', spectator: '观众', operator: '场次运营', invited: '受邀', reserved: '已预约',
+    checked_in: '已签到', backstage: '候场', onstage: '台上', left: '已离场', queued: '待交流', active: '交流中', withdrawn: '已退出',
+    pending: '待确认', accepted: '已确认', declined: '已拒绝', take_control: '运营接管', return_control: '交还主持', skip_round: '确认跳轮',
+    edit_roster: '调整名单', rejected: '已拒绝执行', choose: '本人提交选择', hand: '申请或撤回发言', advance: '推进环节' }
+  return labels[value] != null ? labels[value] : value
+}
+export function liveTime(value: number): string {
+  const date = new Date(value * 1000)
+  return (date.getMonth() + 1) + '月' + date.getDate() + '日 ' + date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0')
+}

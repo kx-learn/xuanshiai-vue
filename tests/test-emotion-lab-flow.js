@@ -641,7 +641,7 @@ async function run() {
   assert.strictEqual(discarded.status, 'discarded')
 
   const api = fs.readFileSync(apiPath, 'utf8')
-  assert.ok(api.includes('export const EMOTION_LAB_USE_MOCK = true'), 'API should expose its module mock boundary')
+  assert.ok(api.includes('export const EMOTION_LAB_USE_MOCK = USE_MOCK'), 'API must follow the explicit project data-mode boundary')
   assert.ok(api.includes('configureEmotionLabMockRuntime'), 'API should configure the cross-platform storage boundary')
   assert.ok(
     api.includes('uni.getStorageSync(CURRENT_USER_ID_KEY)'),

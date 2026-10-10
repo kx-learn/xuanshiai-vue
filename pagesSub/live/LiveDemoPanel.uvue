@@ -1,0 +1,74 @@
+<template>
+  <view class="demo-panel">
+    <view class="demo-heading">
+      <view><text class="demo-mark">演示模式 · 虚构人物</text><text class="live-copy demo-identity">{{ actorName }}</text></view>
+      <XsaButton class="demo-toggle" size="small" variant="secondary" @click="expanded = !expanded">{{ expanded ? '收起控制' : '演示控制' }}</XsaButton>
+    </view>
+    <view v-if="expanded" class="demo-controls">
+      <text class="live-copy live-muted">仅本机模拟。手动切换身份与推进，不连接摄像头、不发送真实申请。</text>
+      <picker mode="selector" :range="names" :value="actorIndex" @change="switchRole"><view class="live-choice demo-role">切换角色：{{ actorName }} ▾</view></picker>
+      <view class="live-row">
+        <XsaButton v-if="state.status == 'scheduled' || state.status == 'draft'" class="demo-ready" size="small" variant="secondary" @click="run('ready')">模拟全员就绪</XsaButton>
+        <XsaButton v-if="state.status != 'ended' && state.status != 'cancelled'" class="demo-next" size="small" @click="run('next')">{{ state.status == 'scheduled' || state.status == 'draft' ? '切至控场者并开场' : state.phase == 'completed' ? '切至控场者并结束' : '切至控场者并推进' }}</XsaButton>
+        <XsaButton v-if="state.status == 'live' || state.status == 'paused'" class="demo-skip" size="small" variant="secondary" @click="run('skip')">跳过当前等待</XsaButton>
+        <XsaButton v-if="state.status == 'live' || state.status == 'paused'" class="demo-pause" size="small" variant="secondary" @click="run('pause')">{{ state.status == 'paused' ? '恢复流程' : '暂停流程' }}</XsaButton>
+      </view>
+      <view class="live-row" v-if="state.phase == 'choice' && state.status == 'live'">
+        <XsaButton class="demo-preset" size="small" @click="run('preset')">载入本轮其他人意愿</XsaButton>
+        <XsaButton size="small" variant="secondary" @click="run('none')">载入无人互选预设</XsaButton>
+      </view>
+      <text v-if="state.phase == 'choice'" class="live-copy live-muted">仅补齐尚未提交的人，不覆盖手动选择。截止后先看结果，不重放选择。</text>
+      <view class="live-row">
+        <XsaButton size="small" variant="text" @click="go('lobby')">大厅</XsaButton>
+        <XsaButton size="small" variant="text" @click="goManage">切至运营管理</XsaButton>
+        <XsaButton size="small" variant="text" @click="go('room')">直播间</XsaButton>
+        <XsaButton size="small" variant="text" @click="go('results')">场后结果</XsaButton>
+        <XsaButton class="demo-reset" size="small" variant="text" @click="reset">重新开始</XsaButton>
+      </view>
+      <text v-if="error.length > 0" class="live-copy">{{ error }}</text>
+    </view>
+  </view>
+</template>
+<script setup lang="uts">
+import XsaButton from '../../components/XsaButton.uvue'
+import { liveCommand } from '../../api/live-v2.uts'
+import { livePageUrl } from './client.uts'
+import { demoSnapshot, demoSubscribe, demoSwitchActor, demoReady, demoSkip, demoCommand, demoPreset, demoReset } from './demo.uts'
+const emit = defineEmits<{change:[]}>()
+const expanded = ref(false), state = ref(demoSnapshot()), error = ref('')
+const names = computed(() => state.value.members.map((p) => p.display_name))
+const actorIndex = computed(() => state.value.members.findIndex((p) => p.user_id == state.value.me.user_id))
+const actorName = computed(() => names.value[actorIndex.value])
+let stop: (() => void) | null = null
+onMounted(() => { stop = demoSubscribe(() => { state.value = demoSnapshot() }) })
+onUnmounted(() => { if (stop != null) stop!() })
+const switchRole = (e: UniPickerChangeEvent) => { error.value=''; demoSwitchActor(state.value.members[Number(e.detail.value)].user_id); emit('change') }
+const go = (page: string) => uni.redirectTo({url:livePageUrl(page,1,true)})
+const goManage=()=>{demoSwitchActor(13);uni.redirectTo({url:livePageUrl('manage',0,true)})}
+const run = (action: string) => {
+  error.value=''
+  try {
+    if (action == 'ready') demoReady()
+    else if (action == 'skip') demoSkip()
+    else if (action == 'preset' || action == 'none') demoPreset(action == 'none' ? 'none' : 'round')
+    else {
+      demoSwitchActor(state.value.controller_id)
+      const s=demoSnapshot()
+      const command=action == 'pause' ? (s.status=='paused' ? 'resume' : 'pause') : s.status=='scheduled' || s.status=='draft' ? 'start' : s.phase=='completed' ? 'end' : 'advance'
+      demoCommand(liveCommand(command,s.revision))
+    }
+  } catch (e) { error.value=(e as Error).message }
+  emit('change')
+}
+const reset = () => uni.showModal({title:'重新开始演示？',content:'仅清空本机演示进度，不影响真实账号或数据。',success:(res)=>{if(res.confirm){demoReset();go('lobby')}}})
+</script>
+<style>
+@import './live.css';
+.demo-panel { margin-bottom: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); padding: 12px; }
+.demo-heading { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 8px; }
+.demo-toggle { min-width: 80px; flex-shrink: 0; }
+.demo-mark { display: block; font-size: 11px; font-weight: 700; color: var(--accent2); }
+.demo-identity { margin: 4px 0 0; }
+.demo-controls { padding-top: 12px; }
+.demo-role { font-size: 13px; background: var(--surface); }
+</style>

@@ -8,6 +8,7 @@ import {
   USE_MOCK,
   API_CONFIG,
   MOCK_DELAY,
+  CURRENT_USER_ID_KEY,
   getAccessToken,
   clearAuthTokens,
   buildApiUrl
@@ -25,6 +26,10 @@ import { debugLog } from '@/utils/debug-log.uts'
  *  - skipAuth: 跳过 Authorization
  *  - raw: true 时不包 success 层（少用）
  */
+export function getCurrentAccountKey(): string {
+  return String(uni.getStorageSync(CURRENT_USER_ID_KEY)) + ':' + getAccessToken()
+}
+
 export async function request(options: any) {
   if (USE_MOCK) {
     return mockRequest(options)
@@ -92,6 +97,11 @@ function extractDetail(data: any): string {
 }
 
 async function httpRequest(options: any) {
+  // Bind completion to the account that sent the request, including late 401s.
+  const account = getCurrentAccountKey()
+  const requestToken = getAccessToken()
+  const accountChanged = (): boolean => options.skipAuth != true && account != getCurrentAccountKey()
+  const staleResponse = (): any => ({ success: false, data: null, code: 'ACCOUNT_CHANGED', message: '登录账号已切换，请刷新后重试' })
   const methodRaw = options.method != null ? ('' + options.method).toUpperCase() : 'GET'
   const method = methodRaw
   const urlPath = options.url != null ? ('' + options.url) : ''
@@ -107,7 +117,7 @@ async function httpRequest(options: any) {
     }
   }
   if (options.skipAuth != true) {
-    const token = getAccessToken()
+    const token = requestToken
     if (token != '') {
       headers['Authorization'] = 'Bearer ' + token
     }
@@ -150,6 +160,7 @@ async function httpRequest(options: any) {
       header: headers,
       timeout: timeout,
       success: (res: any) => {
+        if (accountChanged()) { resolve(staleResponse()); return }
         const status = res.statusCode != null ? (res.statusCode as number) : 0
         const raw = res.data
         if (status == 204) {
@@ -177,6 +188,7 @@ async function httpRequest(options: any) {
         })
       },
       fail: (err: any) => {
+        if (accountChanged()) { resolve(staleResponse()); return }
         console.error('❌ [HTTP Error]', err)
         resolve({
           success: false,

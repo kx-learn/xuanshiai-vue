@@ -20,6 +20,14 @@
 
 ## 开发专题
 
+最新上游整合：[2026-10-02 验收与发布边界](verification/upstream-integration-20261002/README.md)。原直播保留，四轮相亲独立为 v2；包含实际通过项、既有失败与包体阻塞。
+
+直播真实业务演练：[运行与模块交接](直播真实业务演练说明.md)、[2026-09-27验收记录](verification/live-business/README.md)。正常登录＋独立MySQL/Redis、无音视频；与离线Demo和正式TRTC分开。
+
+直播试点：[开发与验收](直播试点开发与验收.md)。使用生产子项目和真实 FastAPI，不以外层历史大厅作为联调入口。
+
+直播 Demo：[开发与演示说明](直播Demo开发与演示说明.md)、[AI 协作提示词](ai-collaboration/直播模块协作提示词.md)、[验证记录](verification/live-demo/README.md)、[Pen 设计说明](../design/README.md)。只有显式 `mode=demo` 使用本地状态，不代表真实连麦已验收。
+
 | 文档 | 说明 |
 |---|---|
 | [`DEV_SUBAGENT_ORCHESTRATION.md`](./DEV_SUBAGENT_ORCHESTRATION.md) | 开发期 Luna 探索、Sol 修复强度阈值、调用回传与主模型复核规范 |

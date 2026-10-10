@@ -41,6 +41,9 @@ xuanshiai-vue/
 - Mock 开关与接口边界：api/config.uts、api/、mock/。
 - 社区闭环：pages/community/*、api/community.uts、mock/community.uts、utils/realNameGate.uts、XsaApplySheet / XsaReportSheet / XsaDynamicCard。
 - 复用 UI：components/Xsa*.uvue。
+- 受邀直播：pagesSub/live/、api/live-v2.uts；运行及未完成的真机验收见 docs/直播试点开发与验收.md。
+- 无媒体真实业务：正常登录的普通入口＋测试后端LIVE_MEDIA_MODE=disabled。独立运营、统一动作/对象权限、名单维护、接管与真实场后闭环见 [运行说明](docs/直播真实业务演练说明.md)；云资源缺失不再阻塞业务测试，但不能伪造媒体就绪。
+- 本机直播 Demo：在微信自定义编译中设置 `pagesSub/live/lobby`、`mode=demo`；只走分包内状态。启动、四轮脚本与维护见 [直播Demo开发与演示说明](docs/直播Demo开发与演示说明.md)，后续接手用 [直播模块协作提示词](docs/ai-collaboration/直播模块协作提示词.md)。
 - 运行和刷新排障：docs/HOW_TO_RUN.md、docs/TROUBLESHOOTING.md。
 - 代码关系定位：工作区 graphify-out/，先使用 graphify query。
 
@@ -49,3 +52,9 @@ xuanshiai-vue/
 - AGENTS.md：可执行约束、保护文件与验证要求。
 - CLAUDE.md：目录导航、阅读顺序与运行入口。
 - PRODUCT.md、DESIGN.md：项目产品与设计参考。
+
+## 父母端与情感实验室联调说明
+
+本次入口、数据源、自动化验证和待验收说明见[父母端与情感实验室修复验收](docs/父母端与情感实验室修复验收.md)。微信构建应选HBuilderX中名为xuanshiai-vue的生产子项目；外层宣誓爱项目是另一套代码，路径前缀匹配可能选错。
+
+`scripts/verify-mp-weixin.ps1`沿用上游项目内自包含质量检查，不依赖外部技能；包体预算与页面完整性检查保持有效。2026-10-02 整合及发布阻塞项见 [验收记录](docs/verification/upstream-integration-20261002/README.md)。

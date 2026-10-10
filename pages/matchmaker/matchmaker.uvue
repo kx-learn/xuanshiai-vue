@@ -46,6 +46,10 @@
 
 					<view v-if="currentTabValue === 'service'" class="tab-panel">
 						<LiveMatchmakingPanel />
+						<view class="service-empty" @click="uni.navigateTo({ url: '/pagesSub/live/lobby' })">
+							<text class="section-title">四轮直播相亲 · 受邀场次</text>
+							<text class="section-desc">查看邀请、预约与场次安排。业务演练会明确标注无音视频。</text>
+						</view>
 						<view class="service-showcase">
 							<view class="section-header service-showcase-header">
 								<view>

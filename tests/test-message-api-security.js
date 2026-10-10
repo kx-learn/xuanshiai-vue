@@ -73,7 +73,7 @@ function loadSubjectHelpers() {
         return `function ${name}(${args}) {`
       },
     )
-  const context = { Math, Number }
+  const context = { Math, Number, USE_MOCK: false, getParentMockSubjectKey: childId => 'parent:101:' + childId }
   context.globalThis = context
   vm.runInNewContext(
     `${executable}\n` +
@@ -118,7 +118,7 @@ assert.ok(
   (apiSource.match(/appendMessageSubject\((?:requestData|data), subjectContext\)/g) || []).length >= 4,
   'legacy message endpoints that accept acting subjects must retain their explicit subject claims',
 )
-assert.ok(apiSource.includes('export const CHAT_USE_MOCK = false'), 'ordinary chat must use the formal authenticated backend')
+assert.ok(apiSource.includes('export const CHAT_USE_MOCK = USE_MOCK'), 'ordinary chat must use the formal authenticated backend')
 assert.ok(apiSource.includes("url: '/chat/sessions'"), 'ordinary chat must resolve sessions from the server-visible session list')
 assert.ok(apiSource.includes('const sessionId = Number(item?.id ?? 0)'), 'ordinary chat must use the server-provided session id')
 assert.ok(apiSource.includes("url: '/chat/sessions/' + sessionId + '/messages'"), 'chat history must be scoped by the resolved session id')
@@ -165,7 +165,7 @@ assert.strictEqual(
   'parent childId must be a positive integer',
 )
 const parentSubject = subjectHelpers.resolveMessageSubject({ mode: 'parent', childId: 42 })
-assert.strictEqual(parentSubject.key, 'parent:42', 'parent childId must partition message state')
+assert.strictEqual(parentSubject.key, 'parent:101:42', 'parent childId must partition message state')
 assert.strictEqual(
   subjectHelpers.effectivePrivacyScope('standard', parentSubject),
   'protected',

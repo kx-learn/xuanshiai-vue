@@ -1,0 +1,66 @@
+<template>
+  <view class="live-card" v-if="state.me.role == 'guest' && (state.status == 'live' || state.status == 'paused')">
+    <text class="live-subtitle">我的场内操作</text>
+    <view v-if="state.allowed_actions.indexOf('hand') >= 0" class="live-row"><XsaButton variant="secondary" size="small" :disabled="busy || expired" @click="hand">{{ mine?.hand ? '撤回举手' : '举手申请发言' }}</XsaButton></view>
+    <text v-if="mine?.hand" class="live-copy live-muted">已申请，等待控场者安排发言。</text>
+    <view class="live-row" v-if="state.phase != 'interest' || state.status == 'paused'">
+      <XsaButton v-if="mine?.light_target != null" size="small" variant="secondary" :disabled="busy" @click="light(mine!.light_target!)">撤回我的亮灯</XsaButton>
+      <XsaButton v-if="mine?.special_target != null" size="small" variant="secondary" :disabled="busy" @click="special(mine!.special_target!)">撤回我的特别心动</XsaButton>
+    </view>
+    <view v-if="state.allowed_targets.interest_ids.length > 0">
+      <text class="live-copy">亮灯全场可见，与最终私密选择无绑定。特别心动每人每场一次，撤回不恢复次数。</text>
+      <view v-for="person in targets" :key="person.user_id" class="live-choice">
+        <text class="live-copy">{{ person.seat }} 号 · {{ person.display_name }}</text>
+        <view class="live-row">
+          <XsaButton class="live-light" size="small" variant="secondary" :disabled="busy || expired" @click="light(person.user_id)">{{ mine?.light_target == person.user_id ? '撤回亮灯' : '为TA亮灯' }}</XsaButton>
+          <XsaButton class="live-special" size="small" :disabled="busy || expired || (state.me.special_remaining == 0 && mine?.special_target != person.user_id)" @click="special(person.user_id)">{{ mine?.special_target == person.user_id ? '撤回特别心动' : '特别心动（免费）' }}</XsaButton>
+        </view>
+      </view>
+    </view>
+    <view v-if="state.allowed_actions.indexOf('choose') >= 0">
+      <text class="live-copy">私密提交，截止前可修改。只有互选组合会被公布，主持和红娘也看不到单方名单。</text>
+      <view v-if="state.me.user_id == state.main_id">
+        <text class="live-copy">选择 0—3 位愿意进一步交流的候选人：</text>
+        <view v-for="person in targets" :key="person.user_id" class="live-choice" :class="{selected: selected.indexOf(person.user_id) >= 0}" @click="toggle(person.user_id)">
+          <text class="live-copy">{{ selected.indexOf(person.user_id) >= 0 ? '已选' : '未选' }} · {{ person.seat }} 号 {{ person.display_name }}</text>
+        </view>
+        <XsaButton class="live-choose-main" :disabled="busy || expired" @click="chooseMain">提交我的选择（{{ selected.length }} 人）</XsaButton>
+      </view>
+      <view v-else class="live-row">
+        <XsaButton class="live-choose-yes" :disabled="busy || expired" @click="chooseCandidate(true)">愿意与主嘉宾交流</XsaButton>
+        <XsaButton class="live-choose-no" variant="secondary" :disabled="busy || expired" @click="chooseCandidate(false)">暂不交流</XsaButton>
+      </view>
+      <text class="live-copy live-muted">{{ demo ? '本机演示已保存' : '服务端已保存' }}：{{ state.me.selection.length == 0 ? '暂无愿意交流的选择' : '已提交愿意交流的选择' }}。以提交成功提示为准。</text>
+    </view>
+    <view v-if="state.phase == 'exchanges' && hasExchange" class="live-row"><XsaButton class="live-withdraw" variant="secondary" :disabled="busy" @click="withdraw">退出本轮交流</XsaButton></view>
+    <text v-if="!eligible" class="live-copy live-muted">本轮你在候场席。请等待与你相关的轮次，本轮不能举手、亮灯或选择。</text>
+  </view>
+</template>
+<script setup lang="uts">
+import XsaButton from '../../components/XsaButton.uvue'
+import { liveCommand } from '../../api/live-v2.uts'
+import type { LiveSnapshot, LiveCommand } from '../../api/live-v2.uts'
+const props = defineProps<{state: LiveSnapshot, busy: boolean, expired: boolean, demo?: boolean}>()
+const emit = defineEmits<{command:[body:LiveCommand]}>()
+const selected = ref<number[]>([])
+const mine = computed(() => props.state.members.find((m) => m.user_id == props.state.me.user_id))
+const main = computed(() => props.state.members.find((m) => m.user_id == props.state.main_id))
+const eligible = computed(() => mine.value?.checked_in == true && mine.value?.removed != true && mine.value?.attendance != 'left' && (props.state.me.user_id == props.state.main_id || mine.value?.group != main.value?.group))
+const targets = computed(() => props.state.members.filter((m) => (props.state.phase == 'choice' ? props.state.allowed_targets.choice_ids : props.state.allowed_targets.interest_ids).indexOf(m.user_id) >= 0))
+const hasExchange = computed(() => props.state.exchanges.some((p) => (p.status == 'queued' || p.status == 'active') && (p.main_id == props.state.me.user_id || p.candidate_id == props.state.me.user_id)))
+watch(() => props.state.me.user_id + ':' + props.state.round_index + ':' + props.state.phase + ':' + props.state.me.selection.join(','), () => { selected.value = [...props.state.me.selection] }, {immediate:true})
+watch(() => targets.value.map((m) => m.user_id).join(','), () => {
+  selected.value = selected.value.filter((uid) => targets.value.some((m) => m.user_id == uid))
+})
+const toggle = (uid: number) => { if (props.busy || props.expired) return; const index = selected.value.indexOf(uid)
+  if (index >= 0) selected.value = selected.value.filter((id) => id != uid)
+  else if (selected.value.length < 3) selected.value.push(uid)
+  else uni.showToast({title:'最多选择三人',icon:'none'}) }
+const hand = () => { const cmd = liveCommand('hand', props.state.revision); cmd.value = !mine.value?.hand; emit('command',cmd) }
+const light = (uid: number) => { const cmd = liveCommand('light',props.state.revision); cmd.target_id=uid; cmd.value=mine.value?.light_target != uid; emit('command',cmd) }
+const special = (uid: number) => { const cmd=liveCommand('special',props.state.revision); cmd.target_id=uid; cmd.value=mine.value?.special_target != uid; emit('command',cmd) }
+const chooseMain = () => { const cmd=liveCommand('choose',props.state.revision); cmd.targets=[...selected.value]; emit('command',cmd) }
+const chooseCandidate = (value:boolean) => { const cmd=liveCommand('choose',props.state.revision); cmd.value=value; emit('command',cmd) }
+const withdraw = () => { uni.showModal({title:'退出本轮交流？',content:'退出后，这次交流不生成场后专属机会。',success:(res)=>{if(res.confirm) emit('command',liveCommand('withdraw_exchange',props.state.revision))}}) }
+</script>
+<style>@import './live.css';</style>

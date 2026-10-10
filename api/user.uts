@@ -17,6 +17,8 @@ import {
   mockLikedUserIds
 } from '@/mock'
 import { __syncApplyStatus, getCommunityQuotas } from './community.uts'
+import { getMockParentStateData, saveMockParentStateData, isMockParentCandidateBlocked } from '@/mock/parent.uts'
+import { createMockParentApplication } from '@/mock/message.uts'
 
 function okRes(data: any): any {
   return {
@@ -47,24 +49,21 @@ function failRes(message: string, code: any = -1, extra: any = null): any {
  * 父母端仍处于内部演示阶段。这个 scope 只允许走独立 Mock，绝不能把
  * 父母代操作降级为当前普通登录用户的真实关系接口。
  */
-const parentMockLikedUserIds: { [key: string]: number[] } = {}
+
 
 function isParentMockScope(scope: string = ''): boolean {
   return scope.indexOf('parent:') == 0
 }
 
 function getParentMockLikedIds(scope: string): number[] {
-  if (parentMockLikedUserIds[scope] == null) {
-    parentMockLikedUserIds[scope] = [...(mockLikedUserIds as number[])]
-  }
-  return parentMockLikedUserIds[scope]
+  return getMockParentStateData(scope).likedUserIds as number[]
 }
 
 /**
  * 父母端沿用普通端的高保真资料，不单独维护一份低保真候选人。
  * 同一用户可能同时出现在推荐和广场列表，按 id 去重后再进入隔离主体视图。
  */
-function getParentMockCandidateSource(): any[] {
+export function getParentMockCandidateSource(): any[] {
   const output: any[] = []
   const seen: { [key: string]: boolean } = {}
   const groups = [mockRecommendUsers as any[], mockSquareUsers as any[]]
@@ -145,7 +144,7 @@ export async function getLikedUsers(internalMockScope: string = '') {
     const candidates: any[] = []
     const source = getParentMockCandidateSource()
     for (let i = 0; i < source.length; i++) {
-      if (isMockLiked(Number(source[i].id), likedIds)) {
+      if (isMockLiked(Number(source[i].id), likedIds) && !isMockParentCandidateBlocked(Number(source[i].id), internalMockScope)) {
         candidates.push({ ...source[i], liked: true })
       }
     }
@@ -196,6 +195,7 @@ export async function getUserDetail(userId: number, internalMockScope: string = 
     : mockUserDetail
 
   if (isParentMockScope(internalMockScope)) {
+    if (isMockParentCandidateBlocked(userId, internalMockScope)) return failRes('该用户已屏蔽', 'USER_BLOCKED')
     return okRes({
       ...detail,
       liked: isMockLiked(userId, getParentMockLikedIds(internalMockScope))
@@ -489,12 +489,11 @@ export async function getMeProfile() {
  */
 export async function applyToMeet(userId: number, message: string, internalMockScope: string = '') {
   if (isParentMockScope(internalMockScope)) {
-    return okRes({
-      success: true,
-      applyStatus: 'pending',
-      internalDemo: true,
-      message: '申请已送达，等待对方回应。'
-    })
+    if (isMockParentCandidateBlocked(userId, internalMockScope)) return failRes('资料不可用', 'CANDIDATE_UNAVAILABLE')
+    const candidate = getParentMockCandidateSource().find((item: any) => item.id == userId)
+    if (candidate == null) return failRes('资料不存在', 'CANDIDATE_UNAVAILABLE')
+    const result = createMockParentApplication(candidate, message, internalMockScope, getMockParentStateData(internalMockScope).context.quota)
+    return result.success == true ? okRes(result) : failRes(result.message, result.code)
   }
   if (USE_MOCK) {
     const key = '' + userId
@@ -658,16 +657,20 @@ export async function applyToMeet(userId: number, message: string, internalMockS
  * Mock：toggle mockLikedUserIds
  * 真路径：PUT 喜欢 / DELETE 取消；先查 relations/likes 判断当前状态
  */
-export async function likeUser(userId: number, internalMockScope: string = '') {
+export async function likeUser(userId: number, internalMockScope: string = '', desiredLiked: boolean | null = null) {
   if (isParentMockScope(internalMockScope)) {
+    if (isMockParentCandidateBlocked(userId, internalMockScope)) return failRes('资料不可用', 'CANDIDATE_UNAVAILABLE')
     const ids = getParentMockLikedIds(internalMockScope)
-    const liked = !isMockLiked(userId, ids)
+    const currentLiked = isMockLiked(userId, ids)
+    const liked = desiredLiked == null ? !currentLiked : desiredLiked
+    if (liked == currentLiked) return okRes({ success: true, liked: liked, userId: userId, internalDemo: true })
     if (liked) {
       ids.push(userId)
     } else {
       const index = ids.indexOf(userId)
       if (index >= 0) ids.splice(index, 1)
     }
+    saveMockParentStateData(internalMockScope)
     return okRes({ success: true, liked: liked, userId: userId, internalDemo: true })
   }
   if (USE_MOCK) {

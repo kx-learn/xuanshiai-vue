@@ -1,0 +1,367 @@
+import type { LiveMember, LiveSnapshot, LiveCommand, LiveCreate, LiveExchange, LiveResults, LiveOpportunity, LiveReport, LiveTargets, LiveUpdate, LiveActionRecord, LiveActionList } from '../../api/live-v2.uts'
+
+type Person = { public: LiveMember, accepted: boolean, reserved: boolean, checked: boolean, removed: boolean, spent: boolean }
+type Choice = { user_id: number, targets: number[] }
+type Round = { main: number, choices: Choice[], exchanges: LiveExchange[], skipped: boolean }
+export type DemoApplication = { id: number, opportunity_id: number, sender_id: number, recipient_id: number, message: string, status: string, expires_at: number }
+export type DemoMessage = { id: number, sender_id: number, text: string }
+type Opportunity = { id: number, a: number, b: number, expires: number, application: DemoApplication | null, messages: DemoMessage[] }
+
+const durations: Record<string, number> = { intro: 180, question: 240, interest: 60, choice: 60, exchanges: 120, transition: 60, completed: 0 }
+const names = ['主持 · 许宁', '红娘 · 陈老师', '红娘 · 周老师', '男一 · 林屿', '男二 · 周予', '男三 · 陈川', '男四 · 许言', '女一 · 苏禾', '女二 · 沈晴', '女三 · 叶知', '女四 · 江月', '观众 · 小夏', '运营 · 顾言']
+const introductions = ['一起认真听，也给彼此留下选择的空间。', '我会从生活习惯和沟通方式出发提问。', '关系期待没有标准答案，适合彼此更重要。',
+  '建筑设计师，喜欢周末徒步与做饭。期待能够坦诚沟通、分享日常的关系。', '产品经理，爱看纪录片和逛书店。希望彼此独立，也愿意共同规划生活。',
+  '教师，喜欢跑步与摄影。希望一起把普通日子过得有意思。', '工程师，常在周末练习烘焙。期待尊重差异、相互支持。',
+  '编辑，喜欢阅读和城市散步。希望遇到愿意认真倾听的人。', '策展人，爱看展和旅行。期待关系里的好奇心与稳定感。',
+  '景观设计师，喜欢植物和运动。看重真诚，也重视各自的空间。', '研究员，喜欢音乐与做菜。愿意慢慢了解彼此的节奏。', '受邀观看本场，尊重嘉宾的表达与选择。', '独立维护名单与处理问题，必要时明确接管流程。']
+let people: Person[] = [], rounds: Round[] = [], opportunities: Opportunity[] = [], reports: LiveReport[] = []
+let controller = 1
+let history: LiveActionRecord[] = []
+let actor = 4, roundIndex = 0, revision = 1, offset = 0, status = 'scheduled', phase = 'intro'
+let title = '周末 · 认真了解彼此', scheduled = 0, deadline: number | null = null, remaining = 0, speaker: number | null = null
+let notice = '本场为虚构人物交互演示，不采集真实音视频、不发送真实申请，也不提供公开回放。'
+let handled: string[] = []
+let listeners: (() => void)[] = []
+const now = (): number => Math.floor(Date.now() / 1000) + offset
+const person = (uid: number): Person => {
+  const value = people.find((p) => p.public.user_id == uid)
+  if (value == null) throw new Error('不属于本场演示人员')
+  return value
+}
+const current = (): Round => rounds[roundIndex]
+const candidates = (): Person[] => people.filter((p) => p.public.role == 'guest' && p.public.group != person(current().main).public.group && p.checked && !p.removed && p.public.attendance != 'left').sort((a,b) => a.public.seat - b.public.seat)
+const pairKey = (a: number, b: number): string => Math.min(a,b) + ':' + Math.max(a,b)
+const notify = () => { listeners.slice().forEach((fn) => fn()) }
+const touch = () => { revision += 1; notify() }
+const present = (p: Person): boolean => p.checked && p.accepted && !p.removed && p.public.attendance != 'left'
+const allowed = (p: Person): string[] => {
+  if (p.removed || status == 'ended' || status == 'cancelled') return []
+  const uid = p.public.user_id, role = p.public.role, before = status == 'draft' || status == 'scheduled'
+  const open = status == 'live' && deadline != null && now() < deadline!
+  const relevant = present(p) && (uid == current().main || candidates().some((m) => m.public.user_id == uid))
+  const mainPresent = present(person(current().main))
+  let values: string[] = []
+  if (role != 'operator') {
+    values.push('reserve')
+    if (before || (role == 'spectator' && !p.accepted)) values.push('accept')
+    if (before) values.push('decline')
+    if (p.accepted && p.public.attendance != 'left') values.push('check_in')
+    if (p.public.attendance != 'left') values.push('leave')
+  }
+  if (uid == controller && (role == 'operator' || present(p))) {
+    values.push('end')
+    if (before && people.filter((m) => ['host','matchmaker','guest'].indexOf(m.public.role)>=0).every((m) => present(m))) values.push('start')
+    if (status == 'live') {
+      values.push('pause','stage','speaker')
+      if (open) values.push('extend')
+      if ((mainPresent || current().skipped) && phase != 'completed' && (['choice','exchanges'].indexOf(phase)<0 || !open)) values.push('advance')
+      if (!mainPresent && phase != 'completed' && !current().skipped) values.push('skip_round')
+    }
+    if (status == 'paused') values.push('resume')
+  }
+  if (uid == 13) {
+    values.push('remove','end')
+    if (status == 'draft') values.push('schedule')
+    if (before) values.push('cancel')
+    if (controller != 13) values.push('take_control')
+    else if (present(person(1))) values.push('return_control')
+  } else if (role == 'host' && controller == uid) values.push('remove')
+  if (open && phase == 'question' && present(p) && (role == 'matchmaker' || candidates().some((m)=>m.public.user_id==uid))) values.push('hand')
+  if (role == 'guest') {
+    if ((open && relevant && mainPresent && phase == 'interest') || p.public.light_target != null) values.push('light')
+    if ((open && relevant && mainPresent && phase == 'interest' && !p.spent) || p.public.special_target != null) values.push('special')
+    if (open && relevant && mainPresent && phase == 'choice') values.push('choose')
+    if ((status == 'live' || status == 'paused') && current().exchanges.some((pair)=>(pair.status=='active'||pair.status=='queued')&&(pair.main_id==uid||pair.candidate_id==uid))) values.push('withdraw_exchange')
+  }
+  return values
+}
+const actionTargets = (p: Person): LiveTargets => {
+  const actions=allowed(p), uid=p.public.user_id
+  const stage=people.filter((m)=>present(m) && (['host','matchmaker'].indexOf(m.public.role)>=0 || m.public.user_id==current().main || candidates().some((c)=>c.public.user_id==m.public.user_id))).map((m)=>m.public.user_id)
+  let speaking: number[]=[1]
+  if(phase=='question') speaking=stage
+  else if(phase=='intro') speaking.push(current().main)
+  else if(phase=='exchanges') current().exchanges.filter((pair)=>pair.status=='active').forEach((pair)=>{speaking.push(pair.main_id,pair.candidate_id)})
+  const peers=uid==current().main?candidates().map((m)=>m.public.user_id):[current().main]
+  return {
+    stage_ids:actions.indexOf('stage')>=0?stage:[],
+    speaker_ids:actions.indexOf('speaker')>=0?speaking.filter((id)=>person(id).public.on_stage):[],
+    remove_ids:actions.indexOf('remove')>=0?people.filter((m)=>!m.removed && m.public.user_id!=13 && m.public.user_id!=uid && (m.public.role!='host'||uid==13)).map((m)=>m.public.user_id):[],
+    interest_ids:status=='live' && phase=='interest' && now()<(deadline??0) && (actions.indexOf('light')>=0||actions.indexOf('special')>=0)?peers:[],
+    choice_ids:actions.indexOf('choose')>=0?peers:[]
+  }
+}
+
+export function demoSnapshot(): LiveSnapshot {
+  const p = person(actor)
+  // Build the public contract explicitly; private round choices never enter another actor's snapshot.
+  return { id: 1, title: title, scheduled_at: scheduled, status: status, revision: revision, server_time: now(), notice: notice,
+    round_index: roundIndex, main_id: current().main, phase: phase, deadline: deadline, pause_remaining: remaining, speaker_id: speaker, media_epoch: 0,
+    media_mode: 'disabled', controller_id: controller, owner_id: 13, main_order: rounds.map((r)=>r.main),
+    can_edit: actor==13 && (status=='draft'||status=='scheduled'), can_read_actions: ['host','matchmaker','operator'].indexOf(p.public.role)>=0,
+    members: people.map((item) => ({ ...item.public, checked_in:item.checked, removed:item.removed, invitation:item.accepted?'accepted':item.public.invitation })),
+    me: { user_id: actor, role: p.public.role, invitation:p.accepted?'accepted':p.public.invitation, accepted: p.accepted, reserved: p.reserved, checked_in: p.checked, removed: p.removed,
+      special_remaining: p.spent ? 0 : 1, selection: [...(current().choices.find((c) => c.user_id == actor)?.targets ?? [])] },
+    allowed_actions: allowed(p), allowed_targets: actionTargets(p), exchanges: current().exchanges.map((pair) => ({ ...pair })) }
+}
+export function demoSubscribe(fn: () => void): () => void {
+  listeners.push(fn)
+  return () => { listeners = listeners.filter((item) => item != fn) }
+}
+export function demoReset() {
+  controller=1; history=[]; actor = 4; roundIndex = 0; revision = 1; offset = 0; status = 'scheduled'; phase = 'intro'; deadline = null; remaining = 0; speaker = null
+  title = '周末 · 认真了解彼此'; scheduled = now() + 86400; handled = []; opportunities = []; reports = []
+  rounds = [4,8,5,9].map((uid): Round => ({ main: uid, choices: [], exchanges: [], skipped: false }))
+  people = names.map((name, i): Person => ({ accepted: false, reserved: false, checked: false, removed: false, spent: false,
+    public: { user_id: i+1, display_name: name, introduction: introductions[i], role: i==0 ? 'host' : i<3 ? 'matchmaker' : i==11 ? 'spectator' : i==12 ? 'operator' : 'guest',
+      group: i>=3 && i<=6 ? 'male' : i>=7 && i<=10 ? 'female' : 'none', seat: i>=7 && i<=10 ? i-6 : i>=3 && i<=6 ? i-2 : 0,
+      invitation:'pending',checked_in:false,removed:false,attendance: 'invited', on_stage: false, hand: false, light_target: null, special_target: null } }))
+  person(13).accepted=true; person(13).public.invitation='accepted'
+  notify()
+}
+export function demoSwitchActor(uid: number) { person(uid); actor = uid; notify() }
+export function demoReady() {
+  if (status != 'scheduled' && status != 'draft') throw new Error('仅开场前可模拟全员就绪')
+  people.forEach((p) => { p.accepted = true; p.checked = true; p.public.attendance = 'backstage' }); touch()
+}
+export function demoAdvanceTime(seconds: number) { offset += Math.max(0, seconds); touch() }
+export function demoSkip() {
+  if (status == 'paused') throw new Error('请先恢复流程，再跳过等待')
+  if (deadline != null) demoAdvanceTime(Math.max(0, deadline! - now()))
+}
+export function demoCreate(body: LiveCreate): LiveSnapshot {
+  if (body.title.trim().length == 0 || !Number.isFinite(body.scheduled_at)) throw new Error('请填写标题与日期')
+  if(actor!=13) throw new Error('仅场次运营可创建演示草稿')
+  demoReset(); actor = 13; title = body.title.trim(); scheduled = body.scheduled_at; status = 'draft'; touch()
+  return demoSnapshot()
+}
+const setPhase = (value: string) => {
+  people.forEach((p)=>{p.public.hand=false}); speaker=null
+  phase = value
+  deadline = status == 'paused' ? null : now() + durations[value]
+  if (status == 'paused') remaining = durations[value]
+}
+const arrangeStage = () => {
+  const ids = [1,2,3,current().main].concat(candidates().map((p) => p.public.user_id))
+  people.forEach((p) => {
+    p.public.light_target = null; p.public.hand = false
+    p.public.on_stage = ids.indexOf(p.public.user_id) >= 0 && p.checked && !p.removed && p.public.attendance != 'left'
+    if (p.public.attendance != 'left') p.public.attendance = p.public.on_stage ? 'onstage' : p.checked ? 'backstage' : 'invited'
+  })
+  speaker = person(current().main).public.on_stage ? current().main : null
+}
+const nextExchange = () => {
+  const next = current().exchanges.find((p) => p.status == 'queued')
+  if (next == null) { setPhase('transition'); speaker = 1; return }
+  next.status = 'active'; next.started_at = now(); setPhase('exchanges'); speaker = next.main_id
+}
+const withdraw = (uid: number) => {
+  let active = false
+  current().exchanges.forEach((pair) => {
+    if ((pair.main_id == uid || pair.candidate_id == uid) && (pair.status == 'active' || pair.status == 'queued')) {
+      active = active || pair.status == 'active'; pair.status = 'withdrawn'; pair.ended_at = now()
+    }
+  })
+  if (active) nextExchange()
+}
+const advance = () => {
+  if ((phase == 'choice' || phase == 'exchanges') && now() < (deadline ?? now())) throw new Error('当前环节尚未截止，可在演示面板跳过等待')
+  if (phase == 'intro') setPhase('question')
+  else if (phase == 'question') setPhase('interest')
+  else if (phase == 'interest') setPhase('choice')
+  else if (phase == 'choice') {
+    const chosen = current().choices.find((c) => c.user_id == current().main)?.targets ?? []
+    const completed: string[] = []
+    rounds.forEach((r) => r.exchanges.filter((p) => p.status == 'completed').forEach((p) => completed.push(pairKey(p.main_id,p.candidate_id))))
+    current().exchanges = candidates().filter((p) => chosen.indexOf(p.public.user_id) >= 0 &&
+      (current().choices.find((c) => c.user_id == p.public.user_id)?.targets ?? []).indexOf(current().main) >= 0 &&
+      completed.indexOf(pairKey(current().main,p.public.user_id)) < 0).map((p): LiveExchange => ({main_id: current().main, candidate_id: p.public.user_id, status: 'queued', started_at: null, ended_at: null}))
+    nextExchange()
+  } else if (phase == 'exchanges') {
+    const active = current().exchanges.find((p) => p.status == 'active')!
+    active.status = 'completed'; active.ended_at = now(); nextExchange()
+  } else if (phase == 'transition') {
+    if (roundIndex == 3) { setPhase('completed'); deadline = null }
+    else { roundIndex += 1; setPhase('intro'); arrangeStage() }
+  } else throw new Error('四轮已完成，请结束本场')
+}
+
+function applyCommand(uid: number, cmd: LiveCommand) {
+  const p = person(uid), action = cmd.action
+  if (action=='start' && !people.filter((m)=>['host','matchmaker','guest'].indexOf(m.public.role)>=0).every((m)=>present(m))) throw new Error('请先完成全员签到')
+  if (action=='check_in' && !p.accepted) throw new Error('请先确认告知')
+  if (action=='special' && cmd.value && p.spent) throw new Error('每场一次特别心动，撤回不恢复次数')
+  if (status=='live' && ['choose','advance'].indexOf(action)>=0 && ['choice','exchanges'].indexOf(phase)>=0 && (action=='choose'?now()>=(deadline??0):now()<(deadline??0))) throw new Error('请遵守当前环节截止时间')
+  if (allowed(p).indexOf(action) < 0 && !(p.public.role=='guest' && ['light','special'].indexOf(action)>=0 && cmd.value==false && status!='ended' && status!='cancelled')) throw new Error('当前身份或环节没有此操作权限')
+  const scope=actionTargets(p)
+  if((action=='stage'&&scope.stage_ids.indexOf(cmd.target_id??0)<0)||(action=='speaker'&&scope.speaker_ids.indexOf(cmd.target_id??0)<0)||(action=='remove'&&scope.remove_ids.indexOf(cmd.target_id??0)<0)) throw new Error('不能对该人员执行此操作')
+  if(['take_control','return_control','skip_round','remove'].indexOf(action)>=0 && (cmd.reason??'').trim().length==0) throw new Error('请填写操作原因')
+  if (action == 'reserve') { p.reserved = cmd.value == true; if (!p.checked) p.public.attendance = p.reserved ? 'reserved' : 'invited' }
+  else if (action=='decline') {p.accepted=false;p.checked=false;p.public.invitation='declined';p.public.attendance=p.reserved?'reserved':'invited'}
+  else if (action=='take_control' || action=='return_control') controller=action=='take_control'?13:1
+  else if (action=='skip_round') {current().skipped=true;setPhase('transition')}
+  else if (action == 'accept') {
+    if (!cmd.value || cmd.consent_version != 'live-trial-v1' || (cmd.display_name ?? '').trim().length == 0) throw new Error('请确认告知并填写展示称呼')
+    p.accepted = true; p.public.display_name = cmd.display_name!.trim(); p.public.introduction = cmd.introduction ?? ''
+  } else if (action == 'check_in') {
+    if (!p.accepted || (p.public.role != 'spectator' && !cmd.device_checked)) throw new Error('请先确认告知并完成模拟设备检查')
+    p.checked = true; p.public.attendance = p.public.on_stage ? 'onstage' : 'backstage'
+  } else if (action == 'schedule') {
+    if (status != 'draft') throw new Error('仅草稿可排期'); status = 'scheduled'
+  } else if (action == 'start') {
+    if (status != 'scheduled' && status != 'draft') throw new Error('场次已开场')
+    if (people.some((item) => ['host','matchmaker','guest'].indexOf(item.public.role)>=0 && (!item.checked || !item.accepted || item.removed || item.public.attendance == 'left'))) throw new Error('请先完成全员签到')
+    status = 'live'; setPhase('intro'); arrangeStage()
+  } else if (action == 'pause') {
+    if (status != 'live') throw new Error('只有进行中的场次可以暂停')
+    people.forEach((item)=>{item.public.hand=false}); remaining = Math.max(0,(deadline ?? now()) - now()); status = 'paused'; deadline = null
+  } else if (action == 'resume') {
+    if (status != 'paused') throw new Error('场次并未暂停'); status = 'live'; deadline = now() + remaining
+  } else if (action == 'end' || action == 'cancel') {
+    if (action == 'cancel' && status != 'draft' && status != 'scheduled') throw new Error('开场后请使用结束本场')
+    status = action == 'end' ? 'ended' : 'cancelled'; deadline = null; speaker = null
+    people.forEach((item) => { item.public.on_stage = false; if (item.public.attendance == 'onstage') item.public.attendance = 'backstage' })
+    const keys: string[] = []
+    if (action == 'end') rounds.forEach((r) => r.exchanges.filter((pair) => pair.status == 'completed').forEach((pair) => {
+      const key = pairKey(pair.main_id,pair.candidate_id)
+      if (keys.indexOf(key) >= 0) return
+      keys.push(key); opportunities.push({id:opportunities.length+1,a:pair.main_id,b:pair.candidate_id,expires:now()+72*3600,application:null,messages:[]})
+    }))
+  } else if (action == 'leave' || action == 'remove') {
+    const target = action == 'leave' ? p : person(cmd.target_id ?? 0)
+    if (action == 'remove') {
+      if ((cmd.reason ?? '').trim().length == 0) throw new Error('请填写原因')
+      target.removed = true
+    }
+    target.public.attendance = 'left'; target.public.on_stage = false; target.public.hand = false; target.public.light_target = null; target.public.special_target = null
+    current().choices = current().choices.filter((c) => c.user_id != target.public.user_id)
+    if (speaker == target.public.user_id) speaker = null
+    withdraw(target.public.user_id)
+  } else if ((action == 'light' || action == 'special') && cmd.value == false) {
+    if (action == 'light') p.public.light_target = null
+    else p.public.special_target = null
+  } else if (action == 'withdraw_exchange' && (status == 'live' || status == 'paused')) {
+    if (!current().exchanges.some((pair) => (pair.main_id==uid || pair.candidate_id==uid) && (pair.status=='active' || pair.status=='queued'))) throw new Error('没有可退出的交流')
+    withdraw(uid)
+  } else {
+    if (status != 'live') throw new Error('当前未开场或已暂停')
+    if (action == 'advance') advance()
+    else if (action == 'extend') {
+      if (deadline == null || deadline! <= now()) throw new Error('截止后不能重新开放环节')
+      deadline! += cmd.seconds ?? 60
+    } else if (action == 'speaker' || action == 'stage') {
+      const target = person(cmd.target_id ?? 0)
+      if (action == 'speaker') {
+        if (!target.public.on_stage) throw new Error('请先安排此人上台'); speaker = target.public.user_id; target.public.hand = false
+      } else {
+        const eligible = [1,2,3,current().main].concat(candidates().map((item) => item.public.user_id))
+        if (eligible.indexOf(target.public.user_id) < 0 || !target.checked || target.removed || target.public.attendance == 'left') throw new Error('不具备本轮上台资格')
+        target.public.on_stage = cmd.value == true; target.public.attendance = cmd.value ? 'onstage' : 'backstage'
+        if (!cmd.value && speaker == target.public.user_id) speaker = null
+      }
+    } else {
+      if (!p.checked || p.public.attendance == 'left') throw new Error('仅已签到且未离场人员可操作')
+      if (action == 'hand') p.public.hand = cmd.value == true
+      else {
+        const targets = uid == current().main ? candidates().map((item) => item.public.user_id) : [current().main]
+        if (uid != current().main && !candidates().some((item) => item.public.user_id == uid)) throw new Error('不是本轮候选嘉宾')
+        if (phase != (action == 'choose' ? 'choice' : 'interest') || now() >= (deadline ?? 0)) throw new Error('当前环节未开放或已经截止')
+        if (action == 'choose') {
+          const selection = uid == current().main ? (cmd.targets ?? []) : cmd.value ? [current().main] : []
+          if (selection.length > 3 || selection.some((id,i) => targets.indexOf(id) < 0 || selection.indexOf(id) != i)) throw new Error('最多选择三位不重复的有效候选人')
+          current().choices = current().choices.filter((c) => c.user_id != uid).concat([{user_id:uid,targets:[...selection]}])
+        } else {
+          if (targets.indexOf(cmd.target_id ?? 0) < 0) throw new Error('请选择本轮有效对象')
+          if (action == 'light') p.public.light_target = cmd.target_id!
+          else { if (p.spent) throw new Error('每场一次特别心动，撤回不恢复次数'); p.spent = true; p.public.special_target = cmd.target_id! }
+        }
+      }
+    }
+  }
+  revision += 1
+  history.push({id:history.length+1,user_id:uid,action:action,revision:revision,outcome:'accepted',
+    target_id:['remove','stage','speaker'].indexOf(action)>=0?(cmd.target_id??null):null,
+    reason:['take_control','return_control','skip_round','remove'].indexOf(action)>=0?(cmd.reason??''):'',created_at:now()})
+}
+export function demoCommand(cmd: LiveCommand): LiveSnapshot {
+  const key = actor + ':' + cmd.command_id
+  if (handled.indexOf(key) >= 0) return demoSnapshot()
+  if (cmd.expected_revision != revision) throw new Error('场次已更新，请查看当前状态后操作')
+  applyCommand(actor,cmd); handled.push(key); notify(); return demoSnapshot()
+}
+export function demoPreset(kind: string) {
+  if (phase != 'choice' || status != 'live' || now() >= (deadline ?? 0)) throw new Error('请在私密选择截止前载入预设')
+  const selections = kind == 'none' ? [] : roundIndex == 0 ? [8,9,10] : roundIndex == 1 ? [5] : roundIndex == 2 ? [8,11] : [4,6]
+  const users = [current().main].concat(candidates().map((p) => p.public.user_id))
+  users.forEach((uid) => {
+    if (current().choices.some((c) => c.user_id == uid)) return
+    applyCommand(uid,{action:'choose',command_id:'preset',expected_revision:revision,targets:selections,value:kind!='none' && roundIndex!=1 && selections.indexOf(uid)>=0})
+  }); notify()
+}
+
+const opportunity = (id: number): Opportunity => {
+  const item = opportunities.find((entry) => entry.id == id && (entry.a == actor || entry.b == actor))
+  if (item == null) throw new Error('没有此场后机会'); return item
+}
+const appStatus = (app: DemoApplication): string => app.status == 'pending' && now() >= app.expires_at ? 'expired' : app.status
+export function demoResults(): LiveResults {
+  return {session_ended:status=='ended',media_mode:'disabled',items:opportunities.filter((item) => item.a==actor || item.b==actor).map((item): LiveOpportunity => {
+    const peer = item.a==actor ? item.b : item.a
+    return {id:item.id,session_id:1,peer_id:peer,peer_name:person(peer).public.display_name,expires_at:item.expires,
+      application_id:item.application?.id ?? null,status:item.application!=null ? 'used' : now()>=item.expires ? 'expired' : 'available'}
+  })}
+}
+export function demoApply(input: LiveOpportunity, message: string): number {
+  const item = opportunity(input.id)
+  if (item.application != null) return item.application!.id
+  if (now() >= item.expires) throw new Error('本次免费机会已过期')
+  item.application = {id:item.id,opportunity_id:item.id,sender_id:actor,recipient_id:item.a==actor ? item.b : item.a,message:message,status:'pending',expires_at:now()+48*3600}
+  touch(); return item.application!.id
+}
+export function demoApplications(): DemoApplication[] {
+  return opportunities.filter((item) => item.application!=null && (item.a==actor || item.b==actor)).map((item) => ({...item.application!,status:appStatus(item.application!)}))
+}
+export function demoReply(id: number, accept: boolean) {
+  const app = opportunity(id).application
+  if (app == null || app.recipient_id != actor) throw new Error('仅申请接收方可以答复')
+  if (appStatus(app) != 'pending') throw new Error('申请已答复或过期')
+  app.status = accept ? 'accepted' : 'rejected'; touch()
+}
+export function demoMessages(id: number): DemoMessage[] {
+  const item = opportunity(id)
+  if (item.application?.status != 'accepted') throw new Error('双方同意后才能聊天')
+  return item.messages.map((message) => ({...message}))
+}
+export function demoSendMessage(id: number, value: string) {
+  const item = opportunity(id)
+  if (item.application?.status != 'accepted') throw new Error('双方同意后才能聊天')
+  const text = value.trim(); if (text.length == 0) throw new Error('请输入消息')
+  item.messages.push({id:item.messages.length+1,sender_id:actor,text:text.slice(0,500)}); touch()
+}
+export function demoReports(): LiveReport[] {
+  if (['host','operator'].indexOf(person(actor).public.role)<0) throw new Error('仅主持或运营可处理演示举报')
+  return reports.map((item) => ({...item}))
+}
+export function demoReport(target: number, reason: string): LiveReport {
+  person(target); if (reason.trim().length == 0) throw new Error('请填写举报原因')
+  const report: LiveReport = {id:reports.length+1,target_id:target,reason:reason,status:'pending',resolution:''}
+  reports.push(report); touch(); return {...report}
+}
+export function demoResolveReport(id: number, reason: string): LiveReport {
+  demoReports(); const report = reports.find((item) => item.id==id)
+  if (report==null || reason.trim().length==0) throw new Error('请填写处置结果')
+  report.status='resolved'; report.resolution=reason; touch(); return {...report}
+}
+demoReset()
+export function demoUpdate(body: LiveUpdate): LiveSnapshot {
+  if (!demoSnapshot().can_edit) throw new Error('仅运营可编辑未开场场次')
+  if(body.expected_revision!=revision) throw new Error('场次已更新，请刷新')
+  if(body.scheduled_at!=scheduled || body.notice!=notice) people.forEach((p)=>{if(p.public.role!='operator'){p.accepted=false;p.checked=false;p.public.invitation='pending';p.public.attendance='invited'}})
+  title=body.title;scheduled=body.scheduled_at;notice=body.notice;touch()
+  return demoSnapshot()
+}
+export function demoActions(page: number): LiveActionList {
+  if(!demoSnapshot().can_read_actions) throw new Error('仅工作人员可查看记录')
+  const items=history.slice().reverse().slice((page-1)*20,page*20).map((item)=>({...item}))
+  return {items:items,page:page,page_size:20,total:history.length,has_more:page*20<history.length}
+}

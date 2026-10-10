@@ -91,84 +91,6 @@ const CHAT_SEED = [
     type: 'text',
     time: Date.now() - 45 * 60 * 1000,
     isMine: false
-  },
-  {
-    id: 4,
-    senderId: 'me',
-    senderName: '我',
-    senderAvatar: PORTRAIT.man,
-    content: '我比较喜欢当代艺术和摄影展。最近在看一个关于城市记忆的摄影系列。',
-    type: 'text',
-    time: Date.now() - 40 * 60 * 1000,
-    isMine: true,
-    status: '已读'
-  },
-  {
-    id: 5,
-    senderId: 1,
-    senderName: '苏晚晴',
-    senderAvatar: PORTRAIT.main,
-    content: '听起来很有意思！我一直想找人一起逛展，这样可以交流不同的感受。',
-    type: 'text',
-    time: Date.now() - 35 * 60 * 1000,
-    isMine: false
-  },
-  {
-    id: 6,
-    senderId: 1,
-    senderName: '苏晚晴',
-    senderAvatar: PORTRAIT.main,
-    content: '/static/portraits/profile-woman-community.webp',
-    type: 'image',
-    time: Date.now() - 34 * 60 * 1000,
-    isMine: false
-  },
-  {
-    id: 7,
-    senderId: 'me',
-    senderName: '我',
-    senderAvatar: PORTRAIT.man,
-    content: '这个想法很好！下周末我打算去看一个新开的展览，要不要一起？',
-    type: 'text',
-    time: Date.now() - 30 * 60 * 1000,
-    isMine: true,
-    status: '已读'
-  },
-  {
-    id: 8,
-    senderId: 1,
-    senderName: '苏晚晴',
-    senderAvatar: PORTRAIT.main,
-    content: '可以啊，是在哪里的展览？',
-    type: 'text',
-    time: Date.now() - 25 * 60 * 1000,
-    isMine: false
-  },
-  {
-    id: 9,
-    senderId: 1,
-    senderName: '苏晚晴',
-    senderAvatar: PORTRAIT.main,
-    content: '对方申请与您交换电话',
-    type: 'phone-request',
-    requestStatus: 'rejected',
-    contactType: 'phone',
-    contactValue: '13812341234',
-    time: Date.now() - 2 * 60 * 1000,
-    isMine: false
-  },
-  {
-    id: 10,
-    senderId: 'me',
-    senderName: '我',
-    senderAvatar: PORTRAIT.man,
-    content: '您已向对方发起交换微信申请，等待对方确认…',
-    type: 'wechat-request',
-    requestStatus: 'accepted',
-    contactType: 'wechat',
-    contactValue: 'wanqing_art',
-    time: Date.now() - 60 * 1000,
-    isMine: true
   }
 ]
 
@@ -323,8 +245,7 @@ function normalizedMockSubjectKey(subjectKey: string): string {
 }
 
 function createMockSubjectState(): any {
-  // 父母主体只展示受保护的最小历史样本，避免把普通用户完整消息流复用到子女主体。
-  const chatMessages = (cloneValue(CHAT_SEED) as any[]).slice(0, 3)
+  const chatMessages = cloneValue(CHAT_SEED) as any[]
   return {
     messageList: cloneValue(CONVERSATION_SEED) as any[],
     chatMessages: chatMessages,
@@ -351,8 +272,28 @@ function createMockSubjectState(): any {
   }
 }
 
+let parentMessageStore: any = null
+let parentMessageSave: any = null
+let parentMessageBlocked: any = null
+
+/** The parent adapter supplies one durable account+child transaction boundary. */
+export function configureParentMessageRuntime(read: any, save: any, blocked: any): void {
+  parentMessageStore = read
+  parentMessageSave = save
+  parentMessageBlocked = blocked
+}
+
+function persistParentMessageState(subjectKey: string): void {
+  if (subjectKey.indexOf('parent:') == 0 && parentMessageSave != null) parentMessageSave(subjectKey)
+}
+
 function getMockSubjectState(subjectKey: string = 'self'): any {
   const key = normalizedMockSubjectKey(subjectKey)
+  if (key.indexOf('parent:') == 0 && parentMessageStore != null) {
+    const owner = parentMessageStore(key)
+    if (owner.messageState == null) owner.messageState = createMockSubjectState()
+    return owner.messageState
+  }
   if (mockSubjectStates[key] == null) {
     mockSubjectStates[key] = createMockSubjectState()
   }
@@ -489,10 +430,12 @@ export function getMockApplicationPage(
 export function getMockChatPermission(userId: number, subjectKey: string = 'self'): any {
   const state = getMockSubjectState(subjectKey)
   const conversation = findConversation(state, userId)
-  const canChat = conversation != null && conversation.matched == true && conversation.canChat == true
+  const blocked = subjectKey.indexOf('parent:') == 0 && parentMessageBlocked != null && parentMessageBlocked(userId, subjectKey)
+  const canChat = !blocked && conversation != null && conversation.matched == true && conversation.canChat == true
   return {
     userId: userId,
     conversationId: canChat ? conversation.conversationId : '',
+    sessionId: canChat ? conversation.id : null,
     canChat: canChat,
     reason: canChat ? '' : '双方同意后才能开始聊天'
   }
@@ -509,6 +452,7 @@ export function markAllMockMessagesRead(subjectKey: string = 'self'): any {
     updatedCount += count
     item.unreadCount = 0
   })
+  persistParentMessageState(subjectKey)
   return {
     success: true,
     updatedCount: updatedCount,
@@ -572,7 +516,24 @@ export function handleMockApplication(
     action: action,
     result: cloneValue(result)
   }
+  persistParentMessageState(subjectKey)
   return result
+}
+
+export function createMockParentApplication(candidate: any, note: string, subjectKey: string, quota: any): any {
+  const state = getMockSubjectState(subjectKey)
+  const existing = state.applications.find((item: any) => item.userId == candidate.id && (item.status == 'pending' || item.status == 'accepted'))
+  if (existing != null) {
+    if (existing.direction != 'out' || existing.status != 'pending') return { success: false, code: 'APPLICATION_EXISTS', message: '双方已有申请或已同意认识' }
+    return { success: true, applicationId: existing.id, applyStatus: 'pending', remainingApplications: quota.remainingApplications, deduplicated: true, internalDemo: true }
+  }
+  if (quota.remainingApplications <= 0) return { success: false, code: 'APPLICATION_QUOTA_EXHAUSTED', message: '今日申请次数已用完' }
+  const applicationId = state.applications.reduce((maximum: number, item: any) => Math.max(maximum, item.id), 1000) + 1
+  state.applications.unshift({ id: applicationId, userId: candidate.id, name: candidate.name, avatar: '', age: candidate.age,
+    city: candidate.city, job: candidate.job, message: note, direction: 'out', status: 'pending', statusText: '等待回应', time: Date.now() })
+  quota.remainingApplications -= 1
+  persistParentMessageState(subjectKey)
+  return { success: true, applicationId: applicationId, applyStatus: 'pending', remainingApplications: quota.remainingApplications, deduplicated: false, internalDemo: true }
 }
 
 export function getMockChatMessages(userId: number, subjectKey: string = 'self'): any[] {
@@ -644,6 +605,7 @@ export function sendMockMessage(
     conversation.messageType = type
     conversation.time = message.time
   }
+  persistParentMessageState(subjectKey)
   return {
     success: true,
     messageId: message.id,
@@ -808,5 +770,6 @@ export function revokeMockMessage(
   target.content = '消息已撤回'
   const result = { success: true, messageId: messageId }
   state.revokeCommandsByClientId[commandId] = { messageId: messageId, result: cloneValue(result) }
+  persistParentMessageState(subjectKey)
   return result
 }

@@ -1,0 +1,32 @@
+<view class="stage">
+  <view wx:if="preview" class="preview-tools">
+    <button bindtap="startPreview" size="mini">检测摄像头</button>
+    <button bindtap="testMicrophone" size="mini">录音检测并试听（3秒）</button>
+    <text>{{cameraReady ? '摄像头已采集画面' : '等待摄像头检测'}} · {{microphoneReady ? '录音完成，请确认能听清' : '等待麦克风检测'}}</text>
+  </view>
+  <view class="tiles">
+    <view class="tile {{!preview && !publishing ? 'receive-only' : ''}}" wx:if="preview || mode === 'rtc'">
+      <live-pusher id="local" class="video" url="{{pusher.url}}" mode="RTC" autopush="{{false}}"
+        enable-camera="{{preview || publishing && cameraOn}}" enable-mic="{{!preview && publishing && micOn}}"
+        muted="{{preview || !publishing || !micOn}}" aspect="9:16" min-bitrate="180" max-bitrate="450"
+        video-width="360" video-height="640" beauty="0" whiteness="0" enable-agc="{{true}}" enable-ans="{{true}}"
+        device-position="front" background-mute="{{true}}" bindstatechange="pusherState"
+        bindnetstatus="pusherNetwork" binderror="pusherError" />
+      <text wx:if="preview || publishing" class="caption">我{{!micOn ? ' · 已静音' : ''}}</text>
+    </view>
+    <view wx:for="{{players}}" wx:key="id" class="tile">
+      <live-player class="video" id="{{item.id}}" data-streamid="{{item.streamID || item.streamid}}" src="{{item.src}}"
+        mode="RTC" autoplay="{{true}}" mute-audio="{{item.muteAudio}}" mute-video="{{item.muteVideo}}"
+        min-cache="0.2" max-cache="0.8" object-fit="contain" sound-mode="speaker" background-mute="{{true}}"
+        bindstatechange="playerState" bindnetstatus="playerNetwork" binderror="playerError" />
+      <text class="caption">{{item.userID || item.id}}</text>
+    </view>
+  </view>
+  <live-player wx:if="mode === 'cdn'" class="cdn" src="{{playbackUrl}}" mode="live" autoplay="{{true}}"
+    object-fit="contain" background-mute="{{true}}" binderror="playerError" />
+  <view wx:if="publishing && !preview" class="controls">
+    <button bindtap="toggleMic" size="mini">{{micOn ? '关闭麦克风' : '开启麦克风'}}</button>
+    <button bindtap="toggleCamera" size="mini">{{cameraOn ? '关闭摄像头' : '开启摄像头'}}</button>
+  </view>
+  <text class="notice">{{notice}}</text>
+</view>

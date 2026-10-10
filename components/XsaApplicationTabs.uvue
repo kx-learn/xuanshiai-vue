@@ -1,5 +1,5 @@
 <template>
-	<XsaSheet :visible="visible" title="认识申请" :tall="true" :large-text="largeText" @close="emitClose">
+	<XsaSheet class="application-sheet" :visible="visible" title="认识申请" :tall="true" :large-text="largeText" @close="emitClose">
 		<XsaTabs
 			:model-value="activeTab"
 			:tabs="tabs"
@@ -37,6 +37,7 @@
 						<view class="app-meta">
 							<text class="app-name">{{ item.name }}</text>
 							<text class="app-msg text-muted">{{ item.message }}</text>
+							<text v-if="item.sourceText" class="app-msg text-accent">{{ item.sourceText }}</text>
 						</view>
 						<view class="app-actions" v-if="activeTab == 0 && item.status == 'pending'">
 							<XsaButton
@@ -45,6 +46,7 @@
 								:large-text="largeText"
 								:disabled="actionId != 0"
 								@click="emitReject(item)"
+								class="application-reject"
 							>拒绝</XsaButton>
 							<XsaButton
 								variant="primary"
@@ -53,6 +55,7 @@
 								:loading="actionId == item.id"
 								:disabled="actionId != 0 && actionId != item.id"
 								@click="emitAccept(item)"
+								class="application-accept"
 							>同意</XsaButton>
 						</view>
 						<text v-else class="app-status text-muted">{{ item.statusText }}</text>

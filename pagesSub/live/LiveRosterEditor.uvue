@@ -1,0 +1,64 @@
+<template>
+  <view>
+    <text class="live-subtitle">搜索账号并分配席位</text>
+    <text class="live-copy live-muted">运营不占任何席位。主持 1 位、红娘 2 位、男 / 女嘉宾各 4 位、观众最多 20 位；同一账号不能兼任。</text>
+    <picker :range="roleNames" :value="roleIndex" @change="roleIndex=Number($event.detail.value)"><view class="live-choice">添加为：{{roleNames[roleIndex]}} ▾</view></picker>
+    <input v-model="query" class="live-input" maxlength="64" placeholder="输入账号 ID 或昵称" @confirm="search(1)" />
+    <XsaButton class="live-roster-search" :loading="loading" size="small" @click="search(1)">搜索现有账号</XsaButton>
+    <text v-if="error.length>0" class="live-copy">{{error}}</text>
+    <view v-if="found!=null">
+      <text v-if="found!.items.length==0" class="live-copy">未找到账号，请更换昵称或账号 ID。</text>
+      <view v-for="item in found!.items" :key="item.user_id" class="live-choice">
+        <text class="live-copy">{{item.nickname}} · #{{item.user_id}} · {{item.gender==1?'男':item.gender==2?'女':'未设置组别'}}</text>
+        <text v-if="!item.eligible" class="live-copy live-muted">待完善：{{item.missing.join('、')}}</text>
+        <XsaButton class="live-roster-add" size="small" :disabled="!item.eligible || selectedIds.indexOf(item.user_id)>=0" @click="add(item)">{{selectedIds.indexOf(item.user_id)>=0?'已在名单':'加入'+roleNames[roleIndex]}}</XsaButton>
+      </view>
+      <view class="live-row"><XsaButton v-if="found!.page>1" size="small" @click="search(found!.page-1)">上一页</XsaButton><XsaButton v-if="found!.has_more" size="small" @click="search(found!.page+1)">下一页</XsaButton></view>
+    </view>
+    <view v-for="group in groups" :key="group.name" class="live-choice">
+      <text class="live-subtitle">{{group.name}}（{{group.ids.length}} / {{group.limit}}）</text>
+      <text v-if="group.ids.length==0" class="live-copy live-muted">尚未选择</text>
+      <view v-for="(uid,index) in group.ids" :key="uid" class="live-row"><text class="live-copy">{{index+1}} · {{label(uid)}}</text><XsaButton size="small" variant="text" @click="remove(uid)">移出名单</XsaButton></view>
+    </view>
+    <text class="live-subtitle">四轮主嘉宾顺序</text>
+    <text class="live-copy live-muted">从八位嘉宾中选择不重复的两男两女；嘉宾加入名单的顺序就是席位顺序。</text>
+    <picker v-for="i in [0,1,2,3]" :key="i" :range="mainNames" :value="mainIds.indexOf(form.main_order[i])+1" @change="mainChanged(i,Number($event.detail.value))"><view class="live-choice">第 {{i+1}} 轮：{{form.main_order[i]>0?label(form.main_order[i]):'请选择主嘉宾'}} ▾</view></picker>
+  </view>
+</template>
+<script setup lang="uts">
+import XsaButton from '../../components/XsaButton.uvue'
+import { searchLiveAccounts } from '../../api/live-v2.uts'
+import { getCurrentAccountKey } from '../../api/request.uts'
+import type { LiveCreate, LiveMember, LiveAccount, LiveAccountList } from '../../api/live-v2.uts'
+const props=defineProps<{form:LiveCreate,members:LiveMember[]}>()
+const emit=defineEmits<{change:[value:LiveCreate]}>()
+const roleNames=['主持','红娘','男嘉宾','女嘉宾','观众']
+const roleIndex=ref(0),query=ref(''),loading=ref(false),error=ref(''),found=ref<LiveAccountList|null>(null)
+const names=ref<LiveAccount[]>([])
+let active=true
+const account=getCurrentAccountKey()
+onUnmounted(()=>{active=false})
+const selectedIds=computed(()=>(props.form.host_id>0?[props.form.host_id]:[]).concat(props.form.matchmaker_ids,props.form.male_ids,props.form.female_ids,props.form.spectator_ids))
+const groups=computed(()=>[{name:'主持',limit:1,ids:props.form.host_id>0?[props.form.host_id]:[]},{name:'红娘',limit:2,ids:props.form.matchmaker_ids},{name:'男嘉宾',limit:4,ids:props.form.male_ids},{name:'女嘉宾',limit:4,ids:props.form.female_ids},{name:'观众',limit:20,ids:props.form.spectator_ids}])
+const mainIds=computed(()=>props.form.male_ids.concat(props.form.female_ids))
+const label=(uid:number):string=>(names.value.find((p)=>p.user_id==uid)?.nickname ?? props.members.find((p)=>p.user_id==uid)?.display_name ?? '账号')+' #'+uid
+const mainNames=computed(()=>['请选择'].concat(mainIds.value.map((uid)=>label(uid))))
+const copy=():LiveCreate=>({...props.form,matchmaker_ids:[...props.form.matchmaker_ids],male_ids:[...props.form.male_ids],female_ids:[...props.form.female_ids],spectator_ids:[...props.form.spectator_ids],main_order:[...props.form.main_order]})
+const search=async(page:number)=>{if(loading.value)return;error.value='';if(query.value.trim().length==0){error.value='请输入账号 ID 或昵称';return}loading.value=true
+  try{const result=await searchLiveAccounts(query.value.trim(),page);if(active&&account==getCurrentAccountKey()){found.value=result;names.value=names.value.concat(result.items)}}catch(e){if(active)error.value=(e as Error).message}finally{loading.value=false}}
+const add=(item:LiveAccount)=>{error.value='';const group=groups.value[roleIndex.value]
+  if(group.ids.length>=group.limit){error.value='该角色席位已满，请先移出要替换的人';return}
+  if((roleIndex.value==2&&item.gender!=1)||(roleIndex.value==3&&item.gender!=2)){error.value='账号组别与所选席位不一致';return}
+  const value=copy()
+  if(roleIndex.value==0)value.host_id=item.user_id
+  else if(roleIndex.value==1)value.matchmaker_ids.push(item.user_id)
+  else if(roleIndex.value==2)value.male_ids.push(item.user_id)
+  else if(roleIndex.value==3)value.female_ids.push(item.user_id)
+  else value.spectator_ids.push(item.user_id)
+  emit('change',value)
+}
+const remove=(uid:number)=>{const value=copy();if(value.host_id==uid)value.host_id=0
+  value.matchmaker_ids=value.matchmaker_ids.filter((id)=>id!=uid);value.male_ids=value.male_ids.filter((id)=>id!=uid);value.female_ids=value.female_ids.filter((id)=>id!=uid);value.spectator_ids=value.spectator_ids.filter((id)=>id!=uid);value.main_order=value.main_order.map((id)=>id==uid?0:id);emit('change',value)}
+const mainChanged=(i:number,index:number)=>{const value=copy();value.main_order[i]=index==0?0:mainIds.value[index-1];emit('change',value)}
+</script>
+<style>@import './live.css';</style>

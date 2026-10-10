@@ -75,6 +75,7 @@
 							/>
 						</view>
 						<view v-else-if="accessGate.allowed" class="state-panel"><text>暂无符合条件的资料</text></view>
+						<button v-if="accessGate.allowed && !candidateLoading && currentCandidateError.length == 0 && (likedOnly ? likedHasMore : candidateHasMore)" class="state-action" :disabled="candidateMoreLoading" @click="loadMoreCandidates">{{ candidateMoreLoading ? '正在加载' : '加载更多资料' }}</button>
 					</view>
 
 					<view v-if="activePanel === 'matchmaker'" class="panel">
@@ -214,11 +215,12 @@
 					</view>
 					<view class="editor-row">
 						<view class="editor-field">
-							<text class="editor-label">出生年份</text>
+							<text class="editor-label">出生年份（以实名认证为准）</text>
 							<input
 								class="editor-input"
 								type="number"
 								:value="childBirthYearDraft"
+								:disabled="parentContext != null && parentContext.dataMode == 'http'"
 								maxlength="4"
 								placeholder="例如：1997"
 								@input="onChildBirthYearInput"
@@ -276,11 +278,11 @@
 					<view class="parent-settings">
 						<view class="settings-row">
 							<view class="settings-copy">
-								<text class="settings-label">申请与消息提醒</text>
-								<text class="settings-desc">接收申请状态和双方同意后的聊天提醒</text>
+								<text class="settings-label">页内申请与消息提醒</text>
+								<text class="settings-desc">父母端打开期间提醒新动态；关闭后仍可查看消息</text>
 							</view>
 							<label class="settings-toggle-target">
-								<switch :checked="parentMessageNotifications" color="var(--accent)" @change="onParentMessageNotificationChange" />
+								<switch :checked="parentMessageNotifications" :disabled="preferenceSaving" color="var(--accent)" @change="onParentMessageNotificationChange" />
 							</label>
 						</view>
 						<view class="settings-row">
@@ -291,10 +293,12 @@
 							<text class="settings-status">始终开启</text>
 						</view>
 						<button class="settings-switch" @click="switchToStandardMode">切换为普通身份</button>
+                        <button class="settings-switch" @click="authorizationVisible = true">管理子女授权</button>
 					</view>
 				</XsaSheet>
 
 				<ParentBottomNav :active="activePanel" @change="switchPanel" />
+                <ParentAuthorizationSheet :visible="authorizationVisible" mode="parent" @close="authorizationVisible = false" @changed="loadParentPage" />
 	</view>
 </template>
 
@@ -308,10 +312,13 @@
 	import XsaSheet from '@/components/XsaSheet.uvue'
 	import XsaIcon from '@/components/XsaIcon.uvue'
 	import type { ParentContext } from '@/api'
+    import ParentAuthorizationSheet from '@/components/ParentAuthorizationSheet.uvue'
+    import { getParentPreferences, updateParentPreferences, getParentAlerts } from '@/api'
 	import {
 		getParentAccessGate,
 		getParentAuthenticationGate,
 		getParentCandidates,
+		getCurrentAccountKey,
 		getParentCustomMatchmakers,
 		getParentContext,
 		getParentLikedCandidates,
@@ -323,11 +330,47 @@
 	type ParentPanel = 'home' | 'matchmaker' | 'message' | 'profile'
 
 	const activePanel = ref<ParentPanel>('home')
+    const authorizationVisible = ref(false)
+    const preferenceSaving = ref(false)
+    let alertTimer: any = null
+    let alertBusy = false
+    let lastAlertEvent = -1
+    let alertOwner = ''
+    const pollParentAlerts = async () => {
+        const context = parentContext.value
+        if (alertBusy || !parentPageActive || context == null || !getParentAccessGate(context).allowed) return
+        const owner = String(context.parent.id) + ':' + (context.child != null ? context.child.id : 0)
+        if (owner != alertOwner) { alertOwner = owner; lastAlertEvent = -1 }
+        alertBusy = true
+        try {
+            const response = await getParentAlerts(context)
+            if (!parentPageActive || parentContext.value == null || String(parentContext.value.parent.id) != String(context.parent.id)) return
+            if (!response.success || response.data == null) {
+                if (response.code == 403 || response.code == 401) loadParentPage()
+                return
+            }
+            const eventId = Number(response.data.latestEventId)
+            if (response.data.enabled && lastAlertEvent >= 0 && eventId > lastAlertEvent) {
+                uni.showToast({ title: '子女的申请或消息有新动态', icon: 'none' })
+                requestParentMessageRefresh()
+            }
+            lastAlertEvent = eventId
+        } catch (error) {
+            // Keep the last acknowledged event; retry on the next visible-page poll.
+        } finally { alertBusy = false }
+    }
 	const pageLoading = ref(false)
 	const loadError = ref('')
 	const parentContext = ref(null as ParentContext | null)
 	const candidates = ref<any[]>([])
 	const likedCandidates = ref<any[]>([])
+	let pageAccountKey = ''
+	const candidatePage = ref(1)
+	const likedPage = ref(1)
+	const candidateHasMore = ref(false)
+	const likedHasMore = ref(false)
+	const candidateMoreLoading = ref(false)
+	const likedTotal = ref(0)
 	const matchmakers = ref<any[]>([])
 	const customMatchmakers = ref<any[]>([])
 	const candidateLoading = ref(false)
@@ -364,7 +407,7 @@
 		accessClock.value
 		return getParentAccessGate(parentContext.value)
 	})
-	const likedCount = computed(() => likedCandidates.value.length)
+	const likedCount = computed(() => likedTotal.value)
 	const remainingApplications = computed(() => {
 		if (parentContext.value == null || parentContext.value.quota == null) return 0
 		return parentContext.value.quota.remainingApplications
@@ -375,6 +418,10 @@
 	const currentCandidateError = computed(() => likedOnly.value ? likedCandidateError.value : candidateError.value)
 
 	const clearParentCollections = () => {
+		candidateHasMore.value = false
+		likedHasMore.value = false
+		likedTotal.value = 0
+		candidateMoreLoading.value = false
 		candidates.value = []
 		likedCandidates.value = []
 		matchmakers.value = []
@@ -404,7 +451,7 @@
 
 		const hasStoredParentRole = (): boolean => {
 			const storedMode = uni.getStorageSync('xsa_onboarding_mode')
-			return storedMode != null && String(storedMode) == 'parent'
+			return storedMode != null && String(storedMode) == 'parent' && pageAccountKey == getCurrentAccountKey()
 		}
 
 		const invalidateParentPageRequests = () => {
@@ -481,23 +528,31 @@
 		}, delay)
 	}
 
-	const restoreParentPreferences = () => {
-		const stored = uni.getStorageSync('xsa_parent_message_notifications')
-		if (stored === false || stored === 'false') parentMessageNotifications.value = false
-		else parentMessageNotifications.value = true
+	const restoreParentPreferences = async () => {
+        try {
+            const result = await getParentPreferences()
+            if (parentPageActive && result.success && result.data != null) parentMessageNotifications.value = result.data.messageNotifications == true
+        } catch (error) {}
 	}
 
 		onShow(() => {
 			parentPageActive = true
+			pageAccountKey = getCurrentAccountKey()
 			restoreParentPreferences()
 			startParentRoleMonitor()
 			if (ensureParentRole()) loadParentPage()
+            if (alertTimer != null) clearInterval(alertTimer)
+            alertTimer = setInterval(pollParentAlerts, 30000)
 		})
 
 		onHide(() => {
+            authorizationVisible.value = false
+            if (alertTimer != null) clearInterval(alertTimer)
+            alertTimer = null
 			deactivateParentPage()
 		})
 		onUnmounted(() => {
+            if (alertTimer != null) clearInterval(alertTimer)
 			deactivateParentPage()
 		})
 
@@ -549,6 +604,12 @@
 			if (requestContext == null) return
 			const requestId = ++candidateRequestGeneration
 			candidateLoading.value = true
+			candidateMoreLoading.value = false
+			candidatePage.value = 1
+			likedPage.value = 1
+			candidateHasMore.value = false
+			likedHasMore.value = false
+			likedTotal.value = 0
 			candidateError.value = ''
 			likedCandidateError.value = ''
 			candidates.value = []
@@ -561,6 +622,7 @@
 					candidateError.value = responseMessage(result, '推荐资料暂时无法加载，请重试。')
 				} else {
 					candidates.value = result.data as any[]
+					candidateHasMore.value = result.hasMore == true
 				}
 			} catch (error: any) {
 				if (!isCandidateRequestCurrent(requestId)) return
@@ -578,6 +640,8 @@
 					likedCandidateError.value = responseMessage(likedResult, '我的喜欢暂时无法加载，请重试。')
 				} else {
 					likedCandidates.value = likedResult.data as any[]
+					likedHasMore.value = likedResult.hasMore == true
+					likedTotal.value = Number(likedResult.total != null ? likedResult.total : likedResult.data.length)
 				}
 			} catch (error: any) {
 				if (!isCandidateRequestCurrent(requestId)) return
@@ -586,6 +650,42 @@
 					: '我的喜欢暂时无法加载，请重试。'
 			} finally {
 				if (isCandidateRequestCurrent(requestId)) candidateLoading.value = false
+			}
+		}
+
+		const loadMoreCandidates = async () => {
+			if (candidateLoading.value || candidateMoreLoading.value || !ensureCurrentParentAccess()) return
+			const requestContext = parentContext.value
+			if (requestContext == null) return
+			const requestId = candidateRequestGeneration
+			const liked = likedOnly.value
+			if (liked ? !likedHasMore.value : !candidateHasMore.value) return
+			const page = (liked ? likedPage.value : candidatePage.value) + 1
+			candidateMoreLoading.value = true
+			try {
+				const result = liked ? await getParentLikedCandidates(requestContext, page) : await getParentCandidates(requestContext, page)
+				if (!isCandidateRequestCurrent(requestId)) return
+				if (handleParentAuthenticationFailure(result)) return
+				if (!result.success || !Array.isArray(result.data)) {
+					uni.showToast({ title: responseMessage(result, '加载失败，请重试'), icon: 'none' })
+					return
+				}
+				const current = liked ? likedCandidates.value : candidates.value
+				const additions = result.data.filter((item: any) => !current.some((existing: any) => existing.id == item.id))
+				if (liked) {
+					likedCandidates.value = current.concat(additions)
+					likedPage.value = page
+					likedHasMore.value = result.hasMore == true
+					likedTotal.value = Number(result.total)
+				} else {
+					candidates.value = current.concat(additions)
+					candidatePage.value = page
+					candidateHasMore.value = result.hasMore == true
+				}
+			} catch (error) {
+				if (isCandidateRequestCurrent(requestId)) uni.showToast({ title: '网络不可用，请重试', icon: 'none' })
+			} finally {
+				if (isCandidateRequestCurrent(requestId)) candidateMoreLoading.value = false
 			}
 		}
 
@@ -675,6 +775,7 @@
 					clearParentCollections()
 					return
 				}
+                pollParentAlerts()
 
 				await loadParentCandidatesSection()
 				if (!isParentContextRequestCurrent(contextRequestId)) return
@@ -713,10 +814,11 @@
 		const requestId = parentContextRequestGeneration
 		const requestContext = parentContext.value
 		if (requestContext == null || !isParentPageCurrent()) return
-		const res = await toggleParentLike(requestContext, candidate.id)
+		const res = await toggleParentLike(requestContext, candidate.id, candidate.liked != true)
 		if (!isParentContextRequestCurrent(requestId)) return
 			if (res.success && res.data != null && res.data.success == true) {
 				const liked = res.data.liked == true
+				if (liked != (candidate.liked == true)) likedTotal.value = Math.max(0, likedTotal.value + (liked ? 1 : -1))
 				candidate.liked = liked
 				candidates.value.forEach((item: any) => {
 					if (item.id == candidate.id) item.liked = liked
@@ -755,19 +857,14 @@
 
 	const handleGateAction = (gate: any) => {
 		if (gate != null && gate.code == 'PARENT_REALNAME_REQUIRED') {
-			uni.navigateTo({ url: '/pages/profile/certification' })
+			uni.navigateTo({ url: '/pagesSub/profileExtra/certification' })
 			return
 		}
 		if (
 			gate != null &&
 			(gate.code == 'CHILD_AUTHORIZATION_REQUIRED' || gate.code == 'CHILD_AUTHORIZATION_EXPIRED')
 		) {
-			uni.showModal({
-				title: '需要子女授权',
-				content: '当前尚未取得有效授权，请由子女完成授权后再试。',
-				showCancel: false,
-				confirmText: '知道了'
-			})
+            authorizationVisible.value = true
 			return
 		}
 		uni.showToast({ title: gate != null && gate.message != null ? gate.message : '请完成访问条件', icon: 'none' })
@@ -881,10 +978,16 @@
 		parentSettingsVisible.value = false
 	}
 
-	const onParentMessageNotificationChange = (event: any) => {
+	const onParentMessageNotificationChange = async (event: any) => {
+        if (preferenceSaving.value) return
 		const enabled = event != null && event.detail != null && event.detail.value == true
-		parentMessageNotifications.value = enabled
-		uni.setStorageSync('xsa_parent_message_notifications', enabled)
+        preferenceSaving.value = true
+        try {
+            const response = await updateParentPreferences({ messageNotifications: enabled })
+            if (response.success) parentMessageNotifications.value = response.data.messageNotifications == true
+            else uni.showToast({ title: response.message || '提醒设置保存失败', icon: 'none' })
+        } catch (error) { uni.showToast({ title: '提醒设置保存失败，请重试', icon: 'none' }) }
+        finally { preferenceSaving.value = false }
 	}
 
 	const switchToStandardMode = () => {

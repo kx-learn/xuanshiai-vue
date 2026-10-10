@@ -1,0 +1,68 @@
+<template>
+  <view class="live-page">
+    <LiveDemoPanel v-if="demo" class="live-demo-controls" @change="load" />
+    <text v-if="loading" class="live-copy">正在读取场次…</text>
+    <view v-if="error.length > 0" class="live-error"><text class="live-copy">{{ error }}</text><XsaButton size="small" @click="load">刷新场次</XsaButton></view>
+    <view v-if="state != null">
+      <text class="live-title">{{ state!.title }}</text>
+      <text class="live-copy">{{ liveTime(state!.scheduled_at) }} · {{ liveLabel(state!.status) }}</text>
+      <text v-if="!demo && state!.media_mode == 'disabled'" class="live-copy">业务演练，无音视频 · 使用真实登录与场次数据</text>
+      <view class="live-card">
+        <text class="live-subtitle">你的身份：{{ liveLabel(state!.me.role) }}</text>
+        <text class="live-copy">4 男 4 女、1 位主持、2 位红娘和独立运营。四轮约 80 分钟，嘉宾可以随时退出。</text>
+        <text class="live-copy">邀请状态：{{liveLabel(state!.me.invitation)}} · {{state!.me.checked_in?'已签到':'未签到'}}</text>
+        <text class="live-copy">观看预约与上台资格分别记录。场内互选及交流不自动开启聊天，场后仍需自主申请并获得同意。</text>
+        <XsaButton v-if="state!.allowed_actions.indexOf('reserve') >= 0" class="live-reserve" :disabled="busy" variant="secondary" @click="reserve">{{ state!.me.reserved ? '取消观看预约' : '预约观看本场' }}</XsaButton>
+      </view>
+      <view v-if="state!.allowed_actions.indexOf('accept') >= 0" class="live-card">
+        <text class="live-subtitle">场次告知与展示资料</text>
+        <text class="live-copy">{{ state!.notice }}</text>
+        <text class="live-copy live-muted">请勿填写手机号、微信号、详细住址或其他联系方式。实名通过是参与门槛，学历认证不是门槛。</text>
+        <input v-model="displayName" class="live-input" placeholder="本场展示称呼（最多32字）" maxlength="32" />
+        <textarea v-model="introduction" class="live-input" placeholder="自愿向全场展示的介绍（最多500字）" maxlength="500" />
+        <checkbox-group @change="consentChanged"><label class="live-copy"><checkbox value="agree" :checked="consent" />我已阅读，并同意以上展示及音视频告知</label></checkbox-group>
+        <XsaButton class="live-accept" :loading="busy" :disabled="!consent || displayName.trim().length == 0" @click="accept">{{ state!.me.accepted ? '更新本场授权资料' : '确认本场参与身份' }}</XsaButton>
+        <XsaButton v-if="state!.allowed_actions.indexOf('decline') >= 0" variant="secondary" :disabled="busy" @click="decline">拒绝本次邀请</XsaButton>
+      </view>
+      <view class="live-row">
+        <XsaButton v-if="state!.allowed_actions.indexOf('check_in') >= 0" @click="backstage">{{!demo && state!.media_mode == 'disabled'?'业务签到（无音视频）':'签到与设备检测'}}</XsaButton>
+        <XsaButton v-if="state!.can_edit" variant="secondary" @click="manage">维护场次与名单</XsaButton>
+        <XsaButton v-if="state!.me.role == 'operator' || state!.me.checked_in" @click="room">进入场次</XsaButton>
+        <XsaButton variant="secondary" @click="results">本人场后结果</XsaButton>
+      </view>
+    </view>
+  </view>
+</template>
+<script setup lang="uts">
+import XsaButton from '../../components/XsaButton.uvue'
+import LiveDemoPanel from './LiveDemoPanel.uvue'
+import { createLiveClient, livePageUrl } from './client.uts'
+import { liveCommand, liveTime, liveLabel } from '../../api/live-v2.uts'
+import type { LiveSnapshot } from '../../api/live-v2.uts'
+const id = ref(0), state = ref<LiveSnapshot | null>(null), loading = ref(false), busy = ref(false), error = ref('')
+const displayName = ref(''), introduction = ref(''), consent = ref(false)
+const demo = ref(false)
+let client = createLiveClient(false)
+const load = async () => { if (id.value == 0) return; loading.value = true; error.value = ''; state.value = null;displayName.value='';introduction.value='';consent.value=false
+  try { state.value = await client.session(id.value); const mine = state.value!.members.find((m) => m.user_id == state.value!.me.user_id)
+    consent.value = state.value!.me.accepted
+    if (mine != null && (demo.value || state.value!.me.accepted)) { displayName.value = mine.display_name; introduction.value = mine.introduction } }
+  catch(e) { error.value = (e as Error).message } finally { loading.value = false } }
+const reserve = async () => { if (state.value == null || busy.value) return; busy.value = true
+  try { const cmd = liveCommand('reserve', state.value!.revision); cmd.value = !state.value!.me.reserved; state.value = await client.command(id.value, cmd) }
+  catch(e) { error.value = (e as Error).message } finally { busy.value = false } }
+const accept = async () => { if (state.value == null || busy.value || !consent.value) return; busy.value = true
+  try { const cmd = liveCommand('accept', state.value!.revision); cmd.value = true; cmd.consent_version = 'live-trial-v1'; cmd.display_name = displayName.value; cmd.introduction = introduction.value
+    state.value = await client.command(id.value, cmd); uni.showToast({title:'参与信息已确认', icon:'success'}) }
+  catch(e) { error.value = (e as Error).message } finally { busy.value = false } }
+const consentChanged = (e: UniCheckboxGroupChangeEvent) => { consent.value = e.detail.value.length > 0 }
+const decline=()=>{if(state.value==null||busy.value)return;const cmd=liveCommand('decline',state.value!.revision),uid=state.value!.me.user_id
+  uni.showModal({title:'拒绝本次邀请？',content:'观看预约不会替代本人的参与确认。',success:async(res)=>{if(!res.confirm||state.value?.me.user_id!=uid)return;busy.value=true;try{state.value=await client.command(id.value,cmd);consent.value=false}catch(e){error.value=(e as Error).message}finally{busy.value=false}}})}
+const manage=()=>uni.navigateTo({url:livePageUrl('manage',id.value,demo.value)})
+const room=()=>uni.navigateTo({url:livePageUrl('room',id.value,demo.value)})
+const backstage = () => { uni.navigateTo({url:livePageUrl('backstage', id.value, demo.value)}) }
+const results = () => { uni.navigateTo({url:livePageUrl('results', id.value, demo.value)}) }
+onLoad((options) => { demo.value = options?.['mode'] == 'demo'; client = createLiveClient(demo.value); id.value = Number(options?.['id'] ?? (demo.value ? 1 : 0)) })
+onShow(load)
+</script>
+<style>@import './live.css';</style>

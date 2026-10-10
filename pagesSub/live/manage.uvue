@@ -1,0 +1,67 @@
+<template>
+  <view class="live-page">
+    <LiveDemoPanel v-if="demo" class="live-demo-controls" @change="load" />
+    <text class="live-title">小程序场次管理</text>
+    <text class="live-copy">{{demo?'本机演示使用固定虚构名单，不创建真实账号。请切换到独立运营角色。':'运营独立维护自己负责的场次；开场后锁定名单及四轮安排。'}}</text>
+    <view v-if="error.length>0" class="live-error"><text class="live-copy">{{error}}</text><XsaButton size="small" @click="load">重新读取</XsaButton></view>
+    <view v-if="!demo && resources!=null" class="live-card">
+      <text class="live-subtitle">{{resources!.media_mode=='disabled'?'业务演练，无音视频':'TRTC 直播准备'}}</text>
+      <text class="live-copy">{{resources!.business_ready?'业务配置允许运行；还需确认人员签到与服务连接。':'业务环境配置尚未就绪'}}</text>
+      <text class="live-copy live-muted">{{resources!.media_ready?'音视频配置已填写，真机能力须另行验收。':'音视频未就绪，不能把业务签到当成设备通过。'}}</text>
+      <XsaButton size="small" variant="text" @click="showMedia=!showMedia">{{showMedia?'收起':'查看'}}后续媒体配置缺项</XsaButton>
+      <view v-if="showMedia"><text v-for="item in resources!.media_missing" :key="item" class="live-copy live-muted">{{item}}</text></view>
+      <text class="live-copy live-muted">所有密钥只在服务端填写，小程序不提供密钥输入框。</text>
+    </view>
+    <view v-if="canManage" class="live-card">
+      <text class="live-subtitle">{{id>0?'修改未开场场次':'创建场次草稿'}}</text>
+      <text class="live-copy">场次标题</text><input class="live-input" v-model="form.title" maxlength="80" placeholder="例如：周末认真了解专场" />
+      <text class="live-copy">日期与时间（本地时区）</text>
+      <view class="live-row"><picker mode="date" :value="day" @change="day=$event.detail.value"><view class="live-choice">{{day}}</view></picker><picker mode="time" :value="startTime" @change="startTime=$event.detail.value"><view class="live-choice">{{startTime}}</view></picker></view>
+      <view v-if="demo" class="live-choice"><text class="live-subtitle">固定演示名单</text><text v-for="p in demoMembers" :key="p.user_id" class="live-copy">{{p.display_name}}</text><text class="live-copy live-muted">主嘉宾依次为男一、女一、男二、女二。创建演示草稿会重置本机进度。</text></view>
+      <LiveRosterEditor v-else class="live-roster-editor" :key="formOwner" :form="form" :members="members" @change="form=$event" />
+      <text class="live-copy">本场展示及留存告知</text><textarea class="live-input" v-model="form.notice" maxlength="2000" placeholder="说明参与范围、是否启用音视频、业务主体及必要记录规则；无媒体演练请明确不采集音视频。" />
+      <text v-if="id>0" class="live-copy live-muted">修改时间或告知会要求全员重新确认；修改角色、席位、主嘉宾顺序会要求受影响人员重新确认和签到。</text>
+      <XsaButton class="live-save" :loading="busy" @click="save">{{demo?'保存演示草稿':id>0?'保存场次与名单':'创建草稿并检查名单'}}</XsaButton>
+    </view>
+    <text v-else-if="!loading" class="live-copy">创建需要管理员权限；编辑仅限本场运营且必须尚未开场。主持和红娘请从受邀场次进入。</text>
+  </view>
+</template>
+<script setup lang="uts">
+import XsaButton from '../../components/XsaButton.uvue'
+import LiveDemoPanel from './LiveDemoPanel.uvue'
+import LiveRosterEditor from './LiveRosterEditor.uvue'
+import { createLiveClient, livePageUrl } from './client.uts'
+import { demoSnapshot } from './demo.uts'
+import { getCurrentAccountKey } from '../../api/request.uts'
+import type { LiveResources, LiveCreate, LiveMember, LiveSnapshot } from '../../api/live-v2.uts'
+const error=ref(''),busy=ref(false),loading=ref(false),canManage=ref(false),showMedia=ref(false),resources=ref<LiveResources|null>(null)
+const demo=ref(false),id=ref(0),revision=ref(0),demoMembers=ref(demoSnapshot().members),members=ref<LiveMember[]>([]),formOwner=ref('')
+let client=createLiveClient(false)
+const initial=():LiveCreate=>({title:'',scheduled_at:Math.floor(Date.now()/1000)+86400,host_id:0,matchmaker_ids:[],male_ids:[],female_ids:[],main_order:[0,0,0,0],spectator_ids:[],notice:''})
+const form=ref<LiveCreate>(initial()),day=ref(''),startTime=ref('19:30')
+const setDate=(value:number)=>{const date=new Date(value*1000);day.value=date.getFullYear()+'-'+(date.getMonth()+1).toString().padStart(2,'0')+'-'+date.getDate().toString().padStart(2,'0');startTime.value=date.getHours().toString().padStart(2,'0')+':'+date.getMinutes().toString().padStart(2,'0')}
+const fromSnapshot=(s:LiveSnapshot)=>{members.value=s.members;revision.value=s.revision
+  form.value={title:s.title,scheduled_at:s.scheduled_at,host_id:s.members.find((p)=>p.role=='host')!.user_id,
+    matchmaker_ids:s.members.filter((p)=>p.role=='matchmaker').map((p)=>p.user_id),
+    male_ids:s.members.filter((p)=>p.group=='male').sort((a,b)=>a.seat-b.seat).map((p)=>p.user_id),
+    female_ids:s.members.filter((p)=>p.group=='female').sort((a,b)=>a.seat-b.seat).map((p)=>p.user_id),
+    main_order:[...s.main_order],spectator_ids:s.members.filter((p)=>p.role=='spectator').map((p)=>p.user_id),notice:s.notice};setDate(s.scheduled_at)
+}
+const save=async()=>{if(busy.value||!canManage.value)return;busy.value=true;error.value=''
+  try{const body:LiveCreate={...form.value,scheduled_at:Math.floor(new Date(day.value+'T'+startTime.value+':00').getTime()/1000)}
+    if(!Number.isFinite(body.scheduled_at)||body.scheduled_at<=Date.now()/1000)throw new Error('请设置未来的日期与时间')
+    if(body.host_id<=0||body.matchmaker_ids.length!=2||body.male_ids.length!=4||body.female_ids.length!=4||body.main_order.some((uid)=>uid<=0))throw new Error('请补齐主持、两位红娘、四男四女及四轮主嘉宾')
+    const saved=id.value>0?await client.update(id.value,{...body,expected_revision:revision.value}):await client.create(body)
+    uni.redirectTo({url:livePageUrl('room',saved.id,demo.value)})
+  }catch(e){error.value=(e as Error).message}finally{busy.value=false}}
+const load=async()=>{error.value='';canManage.value=false;loading.value=true
+  const identity=demo.value?'demo:'+demoSnapshot().me.user_id:getCurrentAccountKey()
+  if(formOwner.value!=identity){form.value=initial();members.value=[];formOwner.value=identity;setDate(form.value.scheduled_at)}
+  try{resources.value=await client.resources()
+    if(id.value>0){const s=await client.session(id.value);canManage.value=s.can_edit;if(canManage.value)fromSnapshot(s)}
+    else{const list=await client.list();canManage.value=list.can_manage;if(demo.value){fromSnapshot(demoSnapshot());demoMembers.value=demoSnapshot().members}}
+  }catch(e){error.value=(e as Error).message}finally{loading.value=false}}
+onLoad((options)=>{demo.value=options?.['mode']=='demo';client=createLiveClient(demo.value);id.value=Number(options?.['id']??0);setDate(form.value.scheduled_at)})
+onShow(load)
+</script>
+<style>@import './live.css';</style>

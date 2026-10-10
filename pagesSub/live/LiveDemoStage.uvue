@@ -1,0 +1,46 @@
+<template>
+  <view class="demo-stage">
+    <view class="demo-main">
+      <view class="demo-avatar demo-avatar-main"><text>{{ main?.display_name.slice(-2) }}</text></view>
+      <view class="demo-main-info"><text class="demo-mark">本轮主嘉宾 · 模拟画面</text><text class="live-subtitle">{{ main?.display_name }}</text><text class="live-copy">{{ main?.introduction }}</text></view>
+    </view>
+    <view class="demo-seats">
+      <view class="demo-seat" :class="{ 'demo-speaking': state.speaker_id == p.user_id }" v-for="p in candidates" :key="p.user_id">
+        <view class="demo-seat-top"><view class="demo-avatar"><text>{{ p.display_name.slice(-2) }}</text></view><text class="demo-seat-number">{{ p.seat }} 号席</text></view>
+        <text class="demo-seat-name">{{ p.display_name }}</text>
+        <text class="live-copy live-muted">{{ state.speaker_id == p.user_id ? '正在发言' : p.on_stage ? '候选席' : '候场 / 已下台' }}</text>
+        <text v-if="p.light_target != null" class="demo-signal">已亮灯 · {{ nameOf(p.light_target!) }}</text>
+        <text v-if="p.special_target != null" class="demo-signal">特别心动 · {{ nameOf(p.special_target!) }}</text>
+      </view>
+    </view>
+    <view class="demo-staff-strip"><text v-for="p in staff" :key="p.user_id" class="demo-staff-name">{{ p.display_name }}{{ state.speaker_id == p.user_id ? ' · 发言中' : '' }}</text></view>
+    <text v-if="main?.light_target != null || main?.special_target != null" class="live-copy">主嘉宾{{ main?.special_target != null ? '特别心动' : '已亮灯' }} → {{ nameOf(main?.special_target ?? main?.light_target ?? 0) }}</text>
+    <text class="live-copy live-muted">{{ state.me.role == 'spectator' ? '观众仅观看及举报；选择由嘉宾本人决定。' : '虚构人员与模拟舞台；没有采集或播放真实音视频。' }}</text>
+  </view>
+</template>
+<script setup lang="uts">
+import type { LiveSnapshot } from '../../api/live-v2.uts'
+const props=defineProps<{state:LiveSnapshot}>()
+const main=computed(()=>props.state.members.find((p)=>p.user_id==props.state.main_id))
+const candidates=computed(()=>props.state.members.filter((p)=>p.role=='guest'&&p.group!=main.value?.group&&p.attendance!='left'))
+const staff=computed(()=>props.state.members.filter((p)=>p.role=='host'||p.role=='matchmaker'))
+const nameOf=(uid:number):string=>props.state.members.find((p)=>p.user_id==uid)?.display_name ?? ''
+</script>
+<style>
+@import './live.css';
+.demo-stage { margin-bottom: 16px; }
+.demo-main { display: flex; flex-direction: row; align-items: flex-start; gap: 12px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px 24px 8px 8px; margin-bottom: 12px; }
+.demo-main-info { flex: 1; min-width: 0; }
+.demo-avatar { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent2); font-family: var(--serif); font-weight: 700; flex-shrink: 0; }
+.demo-avatar-main { width: 56px; height: 72px; border-radius: 8px; font-size: 20px; }
+.demo-mark { display: block; font-size: 11px; color: var(--accent2); margin-bottom: 6px; }
+.demo-seats { display: flex; flex-direction: row; flex-wrap: wrap; gap: 12px; }
+.demo-seat { width: calc(50% - 6px); box-sizing: border-box; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.demo-speaking { border-color: var(--accent); background: var(--accent-bg); }
+.demo-seat-top { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 8px; }
+.demo-seat-number { color: var(--muted); font-size: 11px; }
+.demo-seat-name { display: block; font-size: 14px; font-weight: 700; }
+.demo-signal { display: block; font-size: 11px; color: var(--accent2); line-height: 1.6; }
+.demo-staff-strip { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; padding: 12px 0; }
+.demo-staff-name { padding: 6px 8px; background: var(--warm); border-radius: 6px; font-size: 11px; color: var(--ink2); }
+</style>
