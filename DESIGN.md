@@ -100,6 +100,8 @@ components:
 > - **Token 代码来源：[`uni.scss`](./uni.scss)**（见 `AGENTS.md` §4）；本文件 frontmatter 及正文中的 Token 值仅是实现快照。
 > - 本文件保留前端特有实现细节（overlays、牵线域 `--match-*` Token 等）；与根文件或 `uni.scss` 不一致时，按 根 DESIGN.md > uni.scss > 本文件 的顺序裁决，并应回报同步根文件而不是反向覆盖。
 
+> 历史镜像。当前入口为 [版本化权威设计快照](docs/authoritative/DESIGN.md)，来源及摘要见 [manifest.json](docs/authoritative/manifest.json)。保留本文作为历史资料。
+
 ## Overview
 
 宣誓爱是一款以移动端小程序为第一目标的认真婚恋产品。视觉设计不是装饰层，而是帮助用户完成三件事：先通过**真实故事**产生理解，再通过**可信档案**降低不确定性，最后用**清晰行动**表达喜欢、申请认识或暂不继续。

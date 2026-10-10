@@ -1,5 +1,7 @@
 # 宣誓爱 — 产品定义
 
+> 历史镜像。当前入口为 [版本化权威产品快照](docs/authoritative/PRODUCT.md)，来源及摘要见 [manifest.json](docs/authoritative/manifest.json)。保留本文作为历史资料；不从本文同步权威快照。
+
 > **版本：** 2.2.2
 > **更新日期：** 2026-09-04
 > **当前形态：** UniApp 前端应用（H5 / 微信小程序）

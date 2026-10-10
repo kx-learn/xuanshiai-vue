@@ -18,6 +18,19 @@ function fixture(t) {
   return options
 }
 
+test('CI release instruction resolves to the maintained runbook and keeps every gate', () => {
+  const root = path.resolve(__dirname, '..')
+  const workflow = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8')
+  const reference = workflow.match(/必须按 (docs\/[^\s]+) 从/)
+  assert.ok(reference, 'CI 必须给出具体的发布验收入口')
+  const [file, section] = reference[1].split('#')
+  const runbook = fs.readFileSync(path.join(root, file), 'utf8')
+  assert.ok(runbook.includes(`## ${section}`), 'CI 链接的章节必须存在')
+  for (const gate of ['--check', 'npm test', 'HBuilderX', 'SHA-256', 'verify:mp', 'test:artifact', 'artifact SKIP', '物理真机', '428px']) {
+    assert.ok(runbook.includes(gate), `发布规范必须保留 ${gate}`)
+  }
+})
+
 test('artifact SKIP is failure, source SKIP remains explicit', () => {
   const skipped = (file) => ({ status: 0, stdout: `SKIP ${file}: HBuilderX artifact missing\n` })
   assert.equal(run(artifact, skipped, { allowSkip: false }), 1)
