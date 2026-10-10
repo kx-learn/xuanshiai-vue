@@ -890,9 +890,9 @@
 	const resultMeta = (item: any): string => {
 		const profile = resultProfile(item)
 		const age = toText(profile.age)
-		const education = toText(profile.education) || toText(profile.edu)
+		const education = toText(profile.education)
 		const job = toText(profile.job)
-		const city = toText(profile.city) || toText(profile.location)
+		const city = toText(profile.city)
 		const parts: string[] = []
 		if (age != '') parts.push(age + '岁')
 		if (education != '') parts.push(education)
