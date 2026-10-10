@@ -34,6 +34,7 @@ const core = [
   'test-moxiang-continuous-archive.js',
   'test-moxiang-continuous-profile.js',
   'test-moxiang-poster-public-source.js',
+  'test-profile-card-adopt-replace.js',
   'test-moxiang-build-confirmation.js',
   'test-search-retry-idempotency.js',
   'test-home-recommend-display.js',
@@ -45,9 +46,10 @@ const core = [
   'test-moxiang-role-identity.js',
   'test-personal-tags.js',
   'test-moxiang-continuous-crosspage.js',
+  'test-ci-gates.js',
 ]
 
-// 要求 unpackage/dist/dev/mp-weixin 实物的测试；缺产物时各自按 SKIP 协议降级。
+// artifact 模式禁止 SKIP；源码组仍允许有理由的跳过，二者不能混作发布通过。
 const artifact = [
   'test-mp-subpackage-assets.js',
   'test-wechat-project-config.js',
@@ -62,7 +64,7 @@ function discover() {
 // 缺失 → HBuilderX 重编译指引）；产物恢复后测试自然回到 PASS，无永久豁免。
 function run(files, execute = (file) => spawnSync(process.execPath, [path.join(testDir, file)], {
   cwd: path.dirname(testDir), encoding: 'utf8'
-})) {
+}), { allowSkip = true } = {}) {
   let failed = 0
   let skipped = 0
   const warnings = []
@@ -80,11 +82,14 @@ function run(files, execute = (file) => spawnSync(process.execPath, [path.join(t
       .split(/\r?\n/)
       .find((line) => line.trim().startsWith(`SKIP ${file}`))
     if (result.status === 0 && !result.error && skipLine) {
-      skipped++
-      console.log(`SKIP ${file}`)
-      if (skipLine.trim().length > 'SKIP'.length) {
-        console.log(`  ${skipLine.trim()}`)
+      if (allowSkip) {
+        skipped++
+        console.log(`SKIP ${file}`)
+      } else {
+        failed++
+        console.error(`FAIL ${file}: artifact 模式不允许 SKIP`)
       }
+      console.log(`  ${skipLine.trim()}`)
       continue
     }
     if (result.status === 0 && !result.error) {
@@ -123,7 +128,7 @@ if (require.main === module) {
     process.exitCode = 2
   } else {
     const files = mode === '--all' ? discover() : mode === '--artifact' ? artifact : core
-    process.exitCode = run(files)
+    process.exitCode = run(files, undefined, { allowSkip: mode !== '--artifact' })
   }
 }
 

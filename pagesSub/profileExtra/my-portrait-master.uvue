@@ -316,6 +316,7 @@ const continuousActionBusy = ref(false)
 // 超时不能换键或更换原 refresh 参数；不同主体各自保留未决操作。
 const continuousPendingBuilds = new Map<string, { refresh: boolean, key: string }>()
 let continuousPollTimer = -1
+let continuousPollGeneration = 0
 let continuousSnapshotSeq = 0
 let continuousLoadSeq = 0
 let masterPageVisible = true
@@ -503,6 +504,13 @@ let connectionSeq = 0
 const activeSessionBySubject = ref<{ personal: string; ideal_partner: string }>({ personal: '', ideal_partner: '' })
 // 播报合成互斥：同一时刻只允许一条消息合成/播放，重复点击不并发合成多份。
 const ttsBusy = ref(false)
+// 最新一条知遇回复：listen 复用与「听它读」按钮的判定依据。
+const lastReplyText = ref('')
+// 最近一次合成音频：重播复用同一 URL，避免重复合成。
+const lastTTSUrl = ref('')
+const lastTTSDuration = ref(0)
+// 消息流锚点：scroll-into-view 需要稳定的响应式目标，直接改 DOM 不生效。
+const scrollAnchor = ref('')
 // 页面存活：离开页面后迟到的合成回调不再更新界面。
 let masterPageAlive = true
 
@@ -1708,34 +1716,40 @@ function applyContinuousState(state: ContinuousMoxiangState) {
 // 连续性轮询只是 WS 推送的兜底：页面隐藏/卸载、退出连续流程或撤权后必须停止，
 // 否则会在后台持续请求，并把已撤权的状态留在内存里。
 function stopContinuousPolling() {
+	continuousPollGeneration++
 	if (continuousPollTimer != -1) {
 		clearTimeout(continuousPollTimer)
 		continuousPollTimer = -1
 	}
 }
 
-// 单次链式调度：回调内重新校验守卫后再排下一次，页面离场即自然停止。
+
+// 单次链式调度：请求前、返回后、续排前都绑定同一轮 generation。
 function scheduleContinuousPolling() {
 	stopContinuousPolling()
 	if (!masterPageAlive || !masterPageVisible || !continuousFlow.value) return
 	if (continuousState.value?.consent_granted != true) return
+	const generation = continuousPollGeneration
 	continuousPollTimer = setTimeout(async () => {
+		if (generation != continuousPollGeneration || !masterPageAlive || !masterPageVisible || !continuousFlow.value) return
 		continuousPollTimer = -1
-		await refreshContinuousState()
+		await refreshContinuousState(generation)
+		if (generation != continuousPollGeneration || !masterPageAlive || !masterPageVisible || !continuousFlow.value) return
 		scheduleContinuousPolling()
 	}, 5000)
 }
 
-async function refreshContinuousState(): Promise<boolean> {
+async function refreshContinuousState(expectedGeneration: number = continuousPollGeneration): Promise<boolean> {
+	if (expectedGeneration != continuousPollGeneration || !masterPageAlive || !masterPageVisible) return false
 	const snapshotSeq = ++continuousSnapshotSeq
 	try {
 		const state = await getContinuousMoxiangState()
-		if (!masterPageAlive || !masterPageVisible || snapshotSeq != continuousSnapshotSeq) return false
+		if (expectedGeneration != continuousPollGeneration || !masterPageAlive || !masterPageVisible || snapshotSeq != continuousSnapshotSeq) return false
 		applyContinuousState(state)
 		stateError.value = ''
 		return true
 	} catch (e: any) {
-		if (masterPageAlive && masterPageVisible && snapshotSeq == continuousSnapshotSeq) {
+		if (expectedGeneration == continuousPollGeneration && masterPageAlive && masterPageVisible && snapshotSeq == continuousSnapshotSeq) {
 			const code = Number(e?.code ?? e?.statusCode ?? 0)
 			if (code == 401 || code == 403) { clearContinuousPrivateCache(); continuousState.value = null }
 			stateError.value = e?.message ?? '状态未能同步，已显示内容不是最新状态'

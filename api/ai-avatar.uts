@@ -539,34 +539,6 @@ export async function sendAiAvatarMessage(userId: number, content: string, profi
   }
   messages = resolvePendingMessages(messages, profile)
   messages.push(message(question, true, profile, 'user'))
-  if (USE_MOCK !== true) {
-    const remote = await request({
-      url: '/ai/avatar/' + String(userId) + '/reply',
-      method: 'POST',
-      data: { question: question },
-      mockData: null
-    })
-    if (!remote.success || remote.data == null || remote.data.reply == null) {
-      return failure(remote != null && remote.message != null ? String(remote.message) : 'AI 分身暂时无法回答', remote != null ? remote.code : -1)
-    }
-    const reply = String(remote.data.reply).trim()
-    if (reply.length == 0) return failure('AI 分身暂时无法回答', 'EMPTY_REPLY')
-    messages.push(message(reply, false, profile, 'ai-avatar-server', {
-      aiGenerated: remote.data.ai_generated === true,
-      disclaimer: remote.data.disclaimer != null ? String(remote.data.disclaimer) : ''
-    }))
-    // 真实分身回复来自获授权记忆的公开投影，不能写进 uni storage。当前页面
-    // 生命周期内仍保留 messages 供渲染；重新进入后只恢复既有本地 Mock 历史。
-    return success({
-      messages: messages,
-      result: {
-        category: 'public-profile',
-        source: 'ai-avatar-server',
-        handoffRequired: false,
-        handoffStatus: 'none'
-      }
-    })
-  }
 
   const result = buildMockAiAvatarReply(profile, question)
   const extra: any = {}

@@ -125,6 +125,10 @@ function pageHarness(options = {}) {
   const draft = { draft_id: 'card-1', expected_revision: 1, source_revision_id: 88, base_profile_revision: 3, status: 'ready', fields: { self_intro: { value: '原先确认的介绍' }, interest_tag_candidates: { candidates: ['跑步', '周末徒步'] } } }
   const sandbox = {
     MoxiangPosterSheet: {},
+    // 结果页的资料卡等待分档用 setInterval 计时；本 harness 只需可清除的空实现，
+    // 分档行为本身由 test-moxiang-continuous-result.js 驱动 tick 覆盖。
+    setInterval: () => 0,
+    clearInterval: () => {},
     uni: { getSystemInfoSync: () => ({ windowWidth: 390 }), getMenuButtonBoundingClientRect: () => null, showToast: v => messages.push(v.title), showModal() {} },
     createProfileCardIdempotencyKey: prefix => prefix + '-test-' + (++sequence),
     isProfileCardVersionConflict: response => response.code === 409,

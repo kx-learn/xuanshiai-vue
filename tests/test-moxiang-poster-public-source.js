@@ -104,7 +104,34 @@ async function main() {
     assert.ok(noRevision.posterPublicError != '')
   }
 
-  console.log('PASS poster public source: 3 场景（仅公开字段/私密不入选/失败可解释）')
+  // 3. 弹窗在 data 为 null 时不得给出误导性的「点击重试」。
+  //    背景：海报不可用的真因常在导出被拒（画像未确认，或「整理为公开介绍」
+  //    零字段采用——已有自我介绍默认不替换，全跳过时 written 为空）。
+  //    此时 renderPoster 直接早返回，重试永远不会成功，必须说明原因并给出口。
+  {
+    const SHEET = 'components/moxiang/MoxiangPosterSheet.uvue'
+    const sheetSrc = read(SHEET)
+    const parsed = sfc.parse(sheetSrc)
+    assert.deepEqual(parsed.errors, [])
+    const tpl = parsed.descriptor.template.content
+    assert.ok(tpl.includes('props.data == null'), '模板必须显式分支 data 为空的情形')
+    assert.ok(/props\.data == null[\s\S]{0,400}去整理公开介绍/.test(tpl), '空数据分支必须给出下一步出口')
+    assert.ok(sheetSrc.includes('const emptyReason = computed'), '必须提供可解释的空态文案')
+    assert.ok(/已勾选「确认替换」|勾选「确认替换」/.test(sheetSrc), '空态文案必须点明「确认替换」这一真实卡点')
+    // 空数据分支必须排在通用「点击重试」之前，否则前者不可达。
+    const emptyIdx = tpl.indexOf('props.data == null')
+    const retryIdx = tpl.indexOf('海报生成失败，点击重试')
+    assert.ok(emptyIdx >= 0 && retryIdx >= 0 && emptyIdx < retryIdx, '空数据分支必须先于重试分支')
+
+    // 页面层：零字段采用必须明确告知无法生成海报，而不是只说「已提交成功」。
+    const pageSrc = read(PAGE)
+    assert.ok(
+      /written\.length == 0[\s\S]{0,600}无法生成海报/.test(pageSrc),
+      '零字段采用必须提示暂时无法生成海报',
+    )
+  }
+
+  console.log('PASS poster public source: 4 场景（仅公开字段/私密不入选/失败可解释/空态不误导）')
 }
 
 module.exports = { main }

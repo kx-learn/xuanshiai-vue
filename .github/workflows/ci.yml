@@ -5,19 +5,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
-# 跨仓契约基线与前端源码组、产物组的分工，见 2026-10-08 验收报告 C2/C3/C5：
-#   - 后端契约固定在可审查的 SHA 上，不再随后端 main 漂移；配套修改时一起更新。
-#   - 普通 source job 只跑不依赖编译产物的用例，并显式说明产物组为何不在此运行。
-#   - 产物组要求该提交的真实 mp-weixin 产物，缺产物必须失败/阻塞，不能记作发布通过。
 env:
-  # 与本次前端改动配套验证通过的后端契约提交（2026-10-08）。
-  BACKEND_CONTRACT_SHA: bc1ebdb9e6c84f6623792a9c6e7c4505a3804ac9
+  # 已发布配套基线；本轮后端修改尚未提交，交付新提交对时必须再更新此 SHA。
+  BACKEND_CONTRACT_SHA: 01beb07102f64b665f4e89a1ca2f25eed1ead34b
 
 jobs:
   source:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
       - name: Checkout backend contract
@@ -26,47 +22,32 @@ jobs:
           repository: kx-learn/xuanshiai
           ref: ${{ env.BACKEND_CONTRACT_SHA }}
           path: backend-contract
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
-
       - name: Install dependencies
         run: npm ci
-
-      # 两个仓库的 HEAD 必须出现在日志里：跨仓断言失败时能立刻分辨是前端改了
-      # 还是后端契约 SHA 换了。
       - name: Record both repository HEADs
         run: |
           echo "frontend HEAD: $(git rev-parse HEAD)"
           echo "backend contract HEAD: $(git -C backend-contract rev-parse HEAD)"
           echo "backend contract requested: $BACKEND_CONTRACT_SHA"
           test "$(git -C backend-contract rev-parse HEAD)" = "$BACKEND_CONTRACT_SHA"
-
+      - name: Validate versioned authoritative documents
+        run: node scripts/authoritative-docs.cjs --check
       - name: Validate frontend source
         env:
           XSA_BACKEND_ROOT: backend-contract
         run: npm test
-
-  # 产物组：要求该提交经 HBuilderX 生成的 unpackage/dist/dev/mp-weixin 实物。
-  # 干净检出必然没有 unpackage（已 gitignore），所以这里显式失败并给出获取途径，
-  # 而不是静默跳过、把「没跑」记作「通过」。发布前在具备产物的环境执行：
-  #   npm run verify:mp && npm run test:artifact
-  artifact-gate:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || vars.XSA_RUN_ARTIFACT_GATE == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-      - name: Install dependencies
-        run: npm ci
-      - name: Refuse to fake an artifact run
+      - name: Record manual release blocker
+        if: always()
         run: |
-          echo "产物门禁需要 HBuilderX 生成的 mp-weixin 产物（AGENTS §6.1）。"
-          echo "CI 上不生成该产物：请在有产物的环境跑 npm run verify:mp && npm run test:artifact，"
-          echo "并把记录附到发布验收里；本 job 不产生「发布已通过」的结论。"
-          exit 1
+          echo "::warning::源码 CI 不认证发布：当前没有自动 HBuilderX 产物流水线，端侧验收仍为人工发布阻塞项。"
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## 发布验收未通过（人工阻塞）
+          本 workflow 仅验证源码与版本化权威文档，不生成或下载 mp-weixin 产物。
+          必须按 docs/continuous-release-gates.md 从目标前端 SHA 的干净检出用 HBuilderX 编译，
+          记录产物摘要，实际执行 verify:mp、test:artifact，并提供微信工具/真机及多宽度证据。
+          缺产物或任何 artifact SKIP 均失败；没有端侧记录不得发布。
+          EOF

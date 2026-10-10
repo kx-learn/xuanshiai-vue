@@ -12,25 +12,13 @@ const path = require('node:path')
 
 const root = path.resolve(__dirname, '..')
 const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8')
-const workspace = process.env.XSA_WORKSPACE_ROOT != null && process.env.XSA_WORKSPACE_ROOT !== ''
-  ? path.resolve(process.env.XSA_WORKSPACE_ROOT)
-  : path.resolve(root, '..')
-// PRODUCT.md / DESIGN.md 是工作区级文档（定版 PRD 与视觉规则）；本测试比对的是
-// 它们与代码主题白名单的一致性，不是前端仓库内镜像。
-// 干净检出（CI 只检出前端仓库）必然没有这两份文档：此时显式 SKIP 并说明如何
-// 启用（XSA_WORKSPACE_ROOT 指向工作区根），不假通过、也不假失败。
-// 若工作区根存在却缺其中一份，属配置不全，直接失败而不是降级。
-function readDoc(name) {
-  const file = path.join(workspace, name)
-  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null
-}
-const product = readDoc('PRODUCT.md')
-const design = readDoc('DESIGN.md')
-if (product == null && design == null) {
-  console.log('SKIP test-moxiang-doc-consistency.js 工作区 PRODUCT.md/DESIGN.md 不可达（设置 XSA_WORKSPACE_ROOT 指向工作区根可启用文档比对）')
-  process.exit(0)
-}
-assert.ok(product != null && design != null, `工作区 ${workspace} 需同时提供 PRODUCT.md 与 DESIGN.md`)
+// 本地优先核对工作区权威全文；干净检出读取随提交版本化、带来源及摘要的完整快照。
+// 快照缺失、摘要不符或本地源文档漂移均失败，不能 SKIP 或改指向旧仓内镜像。
+const { load } = require('../scripts/authoritative-docs.cjs')
+const { docs, source } = load()
+const product = docs['PRODUCT.md']
+const design = docs['DESIGN.md']
+console.log(`INFO authoritative docs source=${source}`)
 const drawer = read('utils', 'moxiang-poster-drawer.uts')
 
 /** 从 MOXIANG_POSTER_THEMES 中抽出 key 与 name（顺序即定义顺序）。 */

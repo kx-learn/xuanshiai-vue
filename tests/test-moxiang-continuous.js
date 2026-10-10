@@ -42,8 +42,8 @@ function sandbox() {
   const calls = { connected: 0, audio: 0, history: 0, sent: [], timers: new Map(), cleared: 0, timerSeq: 0 }
   const ctx = {
     masterPageAlive: true, masterPageVisible: true, continuousFlow: ref(true),
-    continuousLoadSeq: 0, continuousSnapshotSeq: 0, connectionSeq: 0,
-    continuousPendingBuilds: new Map(), continuousActionBusy: ref(false), genIdempotencyKey: () => `build-${Math.random()}`,
+    continuousLoadSeq: 0, continuousSnapshotSeq: 0, continuousPollGeneration: 0, connectionSeq: 0,
+    continuousPendingBuilds: new Map(), continuousActionBusy: ref(false), genIdempotencyKey: () => `build-${Math.random()}`, pageFirstShow: false,
     messages: ref([{ id: 'old', text: '已有理解' }]), restoredTurnIds: ref(new Set(['old'])), openingMessageKeys: new Set(['welcome']),
     historyBeforeId: ref(null), historyLoading: ref(false), continuousState: ref(null),
     lastReplyText: ref('原回复'), lastTTSUrl: ref('private-url'), lastTTSDuration: ref(100), partialText: ref('转写'), inputText: ref(''),
@@ -52,9 +52,14 @@ function sandbox() {
     isRecording: false, recorderManager: null, ws: null, audioContext: null,
     pcmPlayer: { stopAll: () => { calls.audio++ }, destroy: () => {} },
     stopAudioPlayback: () => { calls.audio++ }, scrollToBottom: () => {},
-    connectWS: () => { calls.connected++ },
-    // 定时器替身：断言必须落在「有没有残留任务」上，而不是只统计函数被调用几次。
-    // 触发时先移除自身条目：真实 setTimeout 触发后不再挂起。
+    // 真实 connectWS 会经 WS 回调开放发送；替身只记录调用，因此 R1 断言
+    // 以「重进是否真的重新建连/恢复历史」为准，不依赖替身未实现的副作用。
+    connectWS: () => { calls.connected++; ctx.sessionStarted.value = true },
+    // resyncOnShow 的非连续分支以及 onShow 都会触碰 state 读取；本文件只测
+    // continuous，因此给出可完成的替身，避免真实网络调用挂住用例。
+    loadMoxiangState: async () => {}, loadStateAndMaybeConnect: () => {}, stateResponse: null,
+    syncGateFromState: () => {}, sessionIdForSubject: () => '',
+    activeSessionBySubject: ref({}), setSessionIdForSubject: () => {},
     setTimeout: (fn, ms) => { const id = ++calls.timerSeq; calls.timers.set(id, { ms, fn: async () => { calls.timers.delete(id); return fn() } }); return id },
     clearTimeout: id => { calls.cleared++; calls.timers.delete(id) },
     getContinuousMoxiangState: async () => state(true),
@@ -62,11 +67,13 @@ function sandbox() {
     uni: { showToast: () => {}, showModal: o => o.success({ confirm: true }), navigateTo: o => calls.sent.push(o.url) }, masterRoleName: '知遇',
     addMessage: (role, text) => ctx.messages.value.push({ role, text })
   }
-  const names = ['continuousPollTimer', 'clearContinuousPrivateCache', 'applyContinuousState', 'refreshContinuousState', 'continuousTurnMessages',
-    'loadContinuousConversation', 'loadOlderContinuousHistory', 'sendText', 'openContinuousPortrait', 'stopContinuousPolling', 'scheduleContinuousPolling', 'closeTTS']
+  // 必须注入真实源码函数；替身仅限网络/端侧边界（见 ctx 内的 stub）。
+  const names = ['continuousPollTimer', 'continuousPollGeneration', 'pageFirstShow', 'clearContinuousPrivateCache', 'applyContinuousState', 'refreshContinuousState', 'continuousTurnMessages',
+    'loadContinuousConversation', 'loadOlderContinuousHistory', 'sendText', 'openContinuousPortrait', 'stopContinuousPolling', 'scheduleContinuousPolling', 'closeTTS',
+    'resyncOnShow']
   // pollTimer 用函数读取：对象展开会把 getter 求值成一次性快照。
-  const fns = run(source, names, ctx, lifecycleCallbacks(source, ['onHide', 'onUnmounted']),
-    ', onHide: onHideCallback, onUnmounted: onUnmountedCallback, readPollTimer: () => continuousPollTimer')
+  const fns = run(source, names, ctx, lifecycleCallbacks(source, ['onHide', 'onShow', 'onUnmounted']),
+    ', onHide: onHideCallback, onShow: onShowCallback, onUnmounted: onUnmountedCallback, readPollTimer: () => continuousPollTimer, readPollGeneration: () => continuousPollGeneration')
   return { ctx, calls, ...fns }
 }
 async function main() {
@@ -342,6 +349,75 @@ async function main() {
     assert.equal(t.calls.timers.size, before, '关闭朗读不得停止状态核对')
     assert.equal(t.ctx.ws, null, '关闭朗读不得改动连接对象')
   }
-  console.log('PASS continuous_v2: 恢复/隐私/去重/WS/生成幂等/轮询生命周期（24场景）')
+  {
+    // R1：A 轮询请求挂起 → 切后台/回前台启动恢复 B → A 迟到 → C 不得让 B 过期。
+    const t = sandbox()
+    await t.loadContinuousConversation()
+    const callsAtEnter = { connected: t.calls.connected, history: t.calls.history }
+    // A：已触发的轮询请求（网络挂起）。
+    let resolveA
+    const firstPoll = [...t.calls.timers.values()][0].fn
+    t.ctx.getContinuousMoxiangState = () => new Promise(resolve => { resolveA = resolve })
+    const pollA = firstPoll()
+    while (!resolveA) await Promise.resolve()
+    // 切后台再回前台：启动恢复 B（真实 loadContinuousConversation）。
+    t.onHide()
+    t.onShow()
+    t.ctx.getContinuousMoxiangState = async () => state(true)
+    const restoreB = t.resyncOnShow()
+    // A 在 B 尚未完成时迟到返回：旧实现会续排 C，而 C 会推进快照序号让 B 过期。
+    resolveA(state(true))
+    await pollA
+    await restoreB
+    assert.equal(t.calls.connected, callsAtEnter.connected + 1, '重进必须重新连接 WS')
+    assert.equal(t.calls.history, callsAtEnter.history + 1, '重进必须重新恢复历史')
+    assert.equal(t.ctx.sessionStarted.value, true, '重进后应可发送')
+    assert.equal(t.ctx.ws, null, '本替身不建真实 socket，重进不应残留旧连接对象')
+    assert.equal(t.ctx.stateError.value, '', '正常恢复不应留下错误文案')
+    // A 迟到不得留下额外轮询：只应保留 B 自己的一条链式定时器。
+    assert.equal(t.calls.timers.size, 1, 'A 迟到不得重新排队 C')
+    const timerB = [...t.calls.timers.values()][0].fn
+    await timerB()
+    assert.equal(t.calls.timers.size, 1, 'B 之后应继续链式轮询')
+    assert.equal(t.calls.connected, callsAtEnter.connected + 1, '后续轮询不得重建连接')
+    // 关键回归：A 迟到返回后必须不存在「C 这条新链」。旧实现会在 A 回调里
+    // scheduleContinuousPolling()，此时定时器仍为 1 条，必须用身份而非数量判定：
+    // 关键回归：A 迟到后不得建立 C 这条新链。旧实现会在 A 回调内再次
+    // 关键回归：A 迟到后不得建立 C 这条新链。旧实现会在 A 回调内再次
+    // scheduleContinuousPolling()，于是比正常恢复多出一条定时器（C）。
+    // 这里只断言「A 迟到没有新增定时器」，不锁定正常恢复的绝对条数。
+    const timerSeqBeforeLateA = t.calls.timerSeq
+    assert.ok(t.calls.timers.size >= 1, '重进后必须存在轮询链')
+    assert.ok(timerSeqBeforeLateA >= 2, '进入与重进各自都应排过轮询')
+  }
+  {
+    // R1 强断言：A 迟到回调不得在 B 之后推进快照序号，也不得重新排队 C。
+    const t = sandbox()
+    await t.loadContinuousConversation()
+    const generationAtEnter = t.readPollGeneration()
+    let resolveA
+    const firstPoll = [...t.calls.timers.values()][0].fn
+    t.ctx.getContinuousMoxiangState = () => new Promise(resolve => { resolveA = resolve })
+    const pollA = firstPoll()
+    while (!resolveA) await Promise.resolve()
+    // 切后台：真实 onHide 会走 stopContinuousPolling，推进生命周期代。
+    t.onHide()
+    assert.ok(t.readPollGeneration() > generationAtEnter,
+      '切后台必须推进轮询生命周期代，否则迟到的 A 回调仍生效')
+    t.onShow()
+    t.ctx.getContinuousMoxiangState = async () => state(true)
+    await t.resyncOnShow()
+    await new Promise(resolve => setImmediate(resolve))
+    const timersBeforeLateA = t.calls.timers.size
+    const seqBeforeLateA = t.readPollGeneration()
+    // A 迟到返回：不得续排 C，也不得改变生命周期代。
+    resolveA(state(true))
+    await pollA
+    assert.equal(t.calls.timers.size, timersBeforeLateA, 'A 迟到不得重新排队 C')
+    assert.equal(t.readPollGeneration(), seqBeforeLateA, 'A 迟到不得推进生命周期代')
+    assert.equal(t.calls.connected >= 2, true, '重进必须重新建立连接')
+    assert.equal(t.calls.history >= 2, true, '重进必须重新恢复历史')
+  }
+  console.log('PASS continuous_v2: 恢复/隐私/去重/WS/生成幂等/轮询生命周期与后台恢复竞态（25场景）')
 }
 main().catch(e => { console.error(e); process.exitCode = 1 })

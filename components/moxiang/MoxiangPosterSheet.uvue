@@ -40,6 +40,13 @@
 					:show-menu-by-longpress="true"
 				></image>
 
+				<!-- 无可绘制数据：重试不会成功（renderPoster 在 data==null 时直接返回），
+				     必须说明原因并给出口，不能让用户对着“点击重试”反复点。 -->
+				<view v-else-if="props.data == null" class="mps-empty">
+					<text class="mps-empty-text">{{ emptyReason }}</text>
+					<view class="mps-empty-btn" @tap="onClose"><text class="mps-empty-btn-text">去整理公开介绍</text></view>
+				</view>
+
 				<view v-else class="mps-empty" @tap="renderPoster">
 					<text class="mps-empty-text">海报生成失败，点击重试</text>
 				</view>
@@ -97,6 +104,13 @@
 
 	const currentThemeInfo = computed(() => {
 		return getThemeByKey(currentTheme.value)
+	})
+
+	// data 为 null 的唯一来源是公开导出未放行：画像尚未确认，或「整理为公开介绍」
+	// 没有实际采用任何字段（已有自我介绍默认不替换，全跳过时 written 为空）。
+	// 直接说清该做什么，而不是让用户以为画布坏了。
+	const emptyReason = computed((): string => {
+		return '这篇心帖还没有可公开的内容。请先回到画像页，用「整理为公开介绍」采用至少一项（若你已有自我介绍，需勾选「确认替换」才能更新）。'
 	})
 
 	const renderPoster = async () => {
@@ -267,6 +281,18 @@
 	.mps-loading-text, .mps-empty-text {
 		font-size: 12px;
 		color: #7D756C;
+	}
+
+	.mps-empty-btn {
+		background: #9C5B42;
+		border-radius: 16px;
+		padding: 6px 14px;
+	}
+
+	.mps-empty-btn-text {
+		font-size: 12px;
+		font-weight: 600;
+		color: #FFFFFF;
 	}
 
 	.mps-footer {

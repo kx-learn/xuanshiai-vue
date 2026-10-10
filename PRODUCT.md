@@ -5,6 +5,7 @@
 > **当前形态：** UniApp 前端应用（H5 / 微信小程序）
 > **产品阶段：** 前端主路径与父母端 Mock 联调阶段
 > **需求状态：** 定版 PRD 权威为工作区根 [`../PRODUCT.md`](../PRODUCT.md)，本文件为实现侧镜像；父母端流程已按 `xuanshiai-doc` 的身份入口和首期边界核验，真实关系授权、认证与隐私服务仍待后端联调。
+> **CI 文档来源（2026-10-09）：** 本文件保留实现侧历史镜像；可独立校验的权威全文快照位于 `docs/authoritative/PRODUCT.md` 与 `DESIGN.md`，来源及摘要见同目录 `manifest.json`。本地仍以工作区根文档为准，更新与发布门禁见 `docs/continuous-release-gates.md`。
 
 ## Product Summary
 

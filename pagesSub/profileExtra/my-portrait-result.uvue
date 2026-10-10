@@ -33,7 +33,7 @@
 							<text class="mpr-dimension-title">{{ field.label }}</text>
 							<textarea v-if="continuousEditing && !field.removed" :value="field.editor_text" @input="onContinuousFieldInput(index, $event)" :disabled="continuousMutationBusy || continuousPatchPayload != null" class="mpr-field-editor" :maxlength="2000" auto-height />
 							<text v-else class="mpr-dimension-copy">{{ field.removed ? '保存后移除' : field.display_value }}</text>
-							<text v-if="field.change != 'unchanged'" class="mpr-field-change">{{ field.change == 'added' ? '新增' : '有变化' }}{{ field.previous_display_value != null ? ' · 原值：' + field.previous_display_value : '' }}</text>
+							<text v-if="field.change != 'unchanged'" class="mpr-field-change">{{ field.change == 'added' ? '新增' : '有变化' }}{{ field.previous_label != null ? ' · 原值：' + field.previous_label : '' }}</text>
 							<view v-if="continuousEditing" class="mpr-field-remove" @tap="toggleContinuousField(index)"><text>{{ field.removed ? '保留这项' : '移除这项' }}</text></view>
 						</view>
 					</view>
@@ -196,7 +196,8 @@
 					<view class="mpr-card-content">
 						<text class="mpr-card-copy">确认画像只代表本人确认，不会自动公开。点击“确认采用”才会写入公开资料；未选择字段不写入。实际可见对象仍受现有隐私设置约束，这里不会扩大可见范围。</text>
 						<text class="mpr-card-copy mpr-card-boundary">这里不会修改长期择偶标准、发送消息或公开访谈原文。</text>
-						<view v-if="profileCardLoading" class="mpr-card-state"><text>正在整理公开介绍…</text></view>
+						<text v-if="profileCardSelfIntroKept" class="mpr-card-copy mpr-card-boundary">提示：你选择保留原有自我介绍，本次不会写入新内容，因此暂时无法生成海报。想用新介绍请点上面的「点此改为替换」。</text>
+						<view v-if="profileCardLoading" class="mpr-card-state"><text>{{ profileCardWaitCopy != '' ? profileCardWaitCopy : '正在整理公开介绍…' }}</text></view>
 						<view v-else-if="profileCardError != ''" class="mpr-card-state"><text>{{ profileCardError }}</text><view class="mpr-btn" @tap="onPrepareProfileCard"><text class="mpr-btn-text">重新整理</text></view></view>
 						<view v-else>
 							<text v-if="profileCardApplyMessage != ''" class="mpr-card-limit">{{ profileCardApplyMessage }}</text>
@@ -204,7 +205,7 @@
 									<view class="mpr-card-row-copy"><text class="mpr-card-row-label">{{ row.label }}</text></view><text class="mpr-card-row-toggle" @tap="toggleProfileCardField(row.key)">{{ row.selected ? '采用' : '跳过' }}</text>
 									<template v-if="row.key == 'self_intro'">
 										<textarea v-model="row.value" class="mpr-card-editor" maxlength="500" :disabled="profileCardApplying || profileCardApplyPayload != null" />
-										<view v-if="row.selected" class="mpr-card-replace" @tap="toggleReplaceExistingSelfIntro"><text>已有自我介绍默认保留</text><text class="mpr-card-replace-value">{{ replaceExistingSelfIntro ? '已确认替换已有介绍' : '不会替换已有介绍' }}</text></view>
+										<view v-if="row.selected" class="mpr-card-replace" @tap="toggleReplaceExistingSelfIntro"><text>你已有自我介绍</text><text class="mpr-card-replace-value">{{ replaceExistingSelfIntro ? '✓ 用新的替换' : '保留原来的（点此改为替换）' }}</text></view>
 									</template>
 									<view v-else class="mpr-card-tags"><text class="mpr-card-limit">{{ profileCardTagLimitText }}</text><view v-for="tag in row.tags" :key="tag" class="mpr-card-tag" :class="{ 'mpr-card-tag-selected': profileCardSelectedTags.indexOf(tag) >= 0 }" @tap="toggleProfileCardTag(tag)"><text>{{ tag }}</text></view></view>
 								</view>
@@ -226,6 +227,7 @@
 	import { getMeProfile, getOwnProfile } from '@/api/user.uts'
 	import { getPublicProfileCardExport } from '@/api/ai-profile.uts'
 	import MoxiangPosterSheet from '@/components/moxiang/MoxiangPosterSheet.uvue'
+	import { displayFieldValue } from '@/utils/profile-field-display.uts'
 	import type { MoxiangPosterData } from '@/utils/moxiang-poster-drawer.uts'
 
 	const systemInfo = uni.getSystemInfoSync()
@@ -292,6 +294,11 @@
 				openPosterOnReady: false,
 				profileCardVisible: false,
 				profileCardLoading: false,
+				// 资料卡生成实测 24-33s（推理模型先出 reasoning 再出 JSON），
+				// 单条静态文案会让用户以为卡死；按已等待时长分档换文案。
+				profileCardWaitCopy: '',
+				profileCardElapsedMs: 0,
+				profileCardWaitTimer: -1,
 				profileCardApplying: false,
 				profileCardError: '',
 				profileCardExpectedRevision: 0,
@@ -300,6 +307,8 @@
 				profileCardBaseProfileRevision: null as any,
 				profileCardSelectedTags: [] as string[],
 				profileCardExistingTagCount: -1,
+				// 用户是否已有自我介绍：决定「保留/替换」是否会影响能否生成海报。
+				profileCardHasExistingSelfIntro: false,
 				profileCardTagApplyMode: '',
 				replaceExistingSelfIntro: false,
 				profileCardRows: [] as any[],
@@ -389,6 +398,16 @@
 					verifiedBadge: String(this.posterIdentity.verifiedBadge ?? '')
 				} as MoxiangPosterData
 			},
+			// 只在「确实会因此拿不到海报」时提示：已有自我介绍 + 选择保留，
+			// 且自我介绍这一行确实被采用。没有已有介绍时该提示不成立，避免噪音。
+			profileCardSelfIntroKept(): boolean {
+				if (!this.profileCardHasExistingSelfIntro || this.replaceExistingSelfIntro) return false
+				for (let index = 0; index < this.profileCardRows.length; index++) {
+					const row = this.profileCardRows[index]
+					if (row.key == 'self_intro' && row.selected == true) return true
+				}
+				return false
+			},
 			canExportPublicCard(): boolean {
 				if (!this.canPrepareProfileCard) return false
 				return this.posterPublic != null
@@ -424,11 +443,14 @@
 			this.pageVisible = false
 			this.continuousReadSeq++
 			this.stopContinuousPolling()
+			// 离页停掉等待计时，回页重新发起时会重建；避免后台空转。
+			this.stopProfileCardWaitTimer()
 		},
 		onUnload() {
 			this.pageAlive = false
 			this.continuousReadSeq++
 			this.stopContinuousPolling()
+			this.stopProfileCardWaitTimer()
 		},
 		methods: {
 			stopContinuousPolling() {
@@ -516,7 +538,25 @@
 				this.continuousRows = preview.fields.map((field: any): any => {
 					const value = field.value_json
 					const text = field.field_kind == 'entry' ? field.content : (typeof value == 'string' ? value : JSON.stringify(value))
-					return { ...field, label: fieldLabel(field.field_key), editor_text: text ?? '', original_text: text ?? '', removed: false }
+					// 后端 display_value 是裸机器值（city_code='320100'、education_level='4'、
+					// marriage_status='single'、interest_tags="['逛书店']"）。只读态直接渲染它
+					// 会把编码值露给用户；与确认卡 cardValueText 一致，按 fieldKey 映射成中文。
+					// entry 是自然语言条目，不走映射。
+					let shown = String(field.display_value ?? text ?? '')
+					let previousLabel: string | null = null
+					if (field.field_kind != 'entry') {
+						const mapped = displayFieldValue(field.field_key, value, field.display_value)
+						if (mapped != '') shown = mapped
+						// 「原值」同样可能带裸码，按同一字典翻译；entry 原值就是自然语言。
+						if (field.previous_display_value != null) {
+							const previous = String(field.previous_display_value)
+							const mappedPrevious = displayFieldValue(field.field_key, previous, previous)
+							previousLabel = mappedPrevious != '' ? mappedPrevious : previous
+						}
+					} else if (field.previous_display_value != null) {
+						previousLabel = String(field.previous_display_value)
+					}
+					return { ...field, label: fieldLabel(field.field_key), display_value: shown, previous_label: previousLabel, editor_text: text ?? '', original_text: text ?? '', removed: false }
 				})
 				if (preview.last_error != '') this.continuousNotice = '上次生成失败，可重试；尚未写入正式画像。'
 				if (preview.status == 'confirmed') {
@@ -762,12 +802,16 @@
 			// 采用是合并写入，预算取决于已有标签数；读取失败记为 -1，由后端最终校验兜底。
 			async refreshProfileCardTagBudget() {
 				this.profileCardExistingTagCount = -1
+				this.profileCardHasExistingSelfIntro = false
 				try {
 					const res = await getOwnProfile()
 					if (!this.pageAlive) return
 					if (!res.success || res.data == null) return
 					const profile: any = res.data.profile != null ? res.data.profile : res.data
 					this.profileCardExistingTagCount = Array.isArray(profile.personal_tags) ? (profile.personal_tags as any[]).length : 0
+					// 已有自我介绍时后端默认跳过 self_intro；不提前说明，用户会在
+					// 采用成功之后才发现海报打不开。
+					this.profileCardHasExistingSelfIntro = String(profile.self_intro ?? '').trim() != ''
 				} catch (e) {
 					this.profileCardExistingTagCount = -1
 				}
@@ -793,6 +837,32 @@
 			closeProfileCard() {
 				if (!this.profileCardApplying) this.profileCardVisible = false
 			},
+			// 资料卡生成是长任务（实测 24-33s）：只给一句静态文案，用户无法区分
+			// 「在跑」和「卡死」。按已等待时长分档换文案，并在离页/结束时清掉定时器。
+			profileCardWaitText(elapsedMs: number): string {
+				const seconds = Math.floor(elapsedMs / 1000)
+				if (seconds < 8) return '正在阅读你的画像…'
+				if (seconds < 30) return '正在整理公开介绍…'
+				// 与 MoxiangProgressPanel 的 30s 档口径一致：慢但不改判失败，
+				// 只安抚等待，避免用户以为卡死而反复点击。
+				return '这次整理得慢了些，仍在生成中，请再等一会儿…'
+			},
+			startProfileCardWaitTimer() {
+				this.stopProfileCardWaitTimer()
+				this.profileCardElapsedMs = 0
+				this.profileCardWaitCopy = this.profileCardWaitText(0)
+				this.profileCardWaitTimer = setInterval(() => {
+					if (!this.pageAlive) { this.stopProfileCardWaitTimer(); return }
+					this.profileCardElapsedMs += 1000
+					this.profileCardWaitCopy = this.profileCardWaitText(this.profileCardElapsedMs)
+				}, 1000)
+			},
+			stopProfileCardWaitTimer() {
+				if (this.profileCardWaitTimer != -1) {
+					clearInterval(this.profileCardWaitTimer)
+					this.profileCardWaitTimer = -1
+				}
+			},
 			async onPrepareProfileCard() {
 				if (!this.canPrepareProfileCard || this.profileCardLoading || this.profileCardApplying) return
 				this.profileCardVisible = true
@@ -801,6 +871,7 @@
 				this.profileCardLoading = true
 				this.profileCardError = ''
 				this.profileCardApplyMessage = ''
+				this.startProfileCardWaitTimer()
 				await this.refreshProfileCardTagBudget()
 					this.profileCardRows = []
 					this.profileCardSelectedTags = []
@@ -846,6 +917,7 @@
 				} catch (error: any) {
 					if (this.pageAlive) this.profileCardError = error?.message ?? String(error)
 				} finally {
+					this.stopProfileCardWaitTimer()
 					if (this.pageAlive) this.profileCardLoading = false
 				}
 			},
@@ -1111,8 +1183,17 @@
 					this.profileCardVisible = false
 					if (readBackIssue != '') {
 						uni.showToast({ title: '已提交；' + readBackIssue + '，请稍后在资料页确认', icon: 'none', duration: 3000 })
+					} else if (written.length == 0) {
+						// 零字段也走成功回执，但公开导出要求至少一项被采用——不说明的话，
+						// 用户随后点「生成专属画像海报」只会看到失败，无从知道卡在哪。
+						uni.showToast({
+							title: skipped.length > 0
+								? '没有采用任何内容，暂时无法生成海报；如需更新已有自我介绍，请勾选「确认替换」'
+								: '公开资料未发生变化，暂时无法生成海报',
+							icon: 'none', duration: 3500
+						})
 					} else {
-						uni.showToast({ title: written.length > 0 ? '已按回执写入公开资料' : (skipped.length > 0 ? '已按回执跳过未选内容' : '公开资料未发生变化'), icon: 'none' })
+						uni.showToast({ title: '已按回执写入公开资料', icon: 'none' })
 					}
 				} catch (error: any) {
 					if (this.pageAlive) {

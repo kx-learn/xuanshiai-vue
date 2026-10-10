@@ -58,6 +58,25 @@ const sendBlock = avatarSource.slice(avatarSource.indexOf('export async function
 assert.match(sendBlock, /requestKey: string = ''/, '发送函数必须接受调用方持有的幂等键')
 assert.match(sendBlock, /requestKey != '' \? requestKey :/, '同一逻辑请求必须复用同一把幂等键')
 
+// ── 死代码清理：sendAiAvatarMessage 只允许走 /ai-avatars/{id}/messages ─────
+// 背景：该函数原先在 USE_MOCK 分支里还留了一段 `if (USE_MOCK !== true)` 调用
+// 遗留端点 POST /ai/avatar/{id}/reply 的代码。因为整段位于 `if (!USE_MOCK)`
+// 的早返回之后，生产路径永远不可达；而那个端点在后端被
+// memory_projection_read_mode != "memory" 门禁固定 503「AI分身记忆服务尚未就绪」。
+// 保留它会让人误以为分身走的是 /reply 从而去调那个 503 端点排查，故删除。
+assert.ok(
+  !avatarSource.includes("'/ai/avatar/'"),
+  '前端不得再引用遗留端点 /ai/avatar/{id}/reply（生产不可达且被 503 门禁固定拒绝）',
+)
+assert.ok(
+  !avatarSource.includes("'/ai/avatar/' + String(userId) + '/reply'"),
+  '/reply 调用必须是删除状态，而不是被注释或改名',
+)
+assert.ok(
+  sendBlock.includes("sendServerMessage(userId, question, key)"),
+  '生产分支必须走 /ai-avatars/{id}/messages helper',
+)
+
 const avatarPage = fs.readFileSync(path.join(root, 'pagesSub/profileExtra/my-ai-avatar.uvue'), 'utf8')
 assert.ok(avatarPage.includes('当前暂不提供对话记录'), '对话记录入口必须如实说明当前不提供')
 assert.ok(!avatarPage.includes('这些摘要来自服务端'), '看板不得再声称摘要来自服务端')
