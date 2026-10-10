@@ -8,156 +8,7 @@
 
 ## 组件列表
 
-### 1. XsaUserCard — 用户卡片
-
-**使用场景**：首页推荐列表、搜索结果、访客记录
-
-#### 使用示例
-
-```vue
-<template>
-  <!-- 标准模式 -->
-  <XsaUserCard
-    :user="userData"
-    :show-actions="true"
-    @click="handleUserClick"
-    @like="handleLike"
-    @chat="handleChat"
-  />
-
-  <!-- 紧凑模式 -->
-  <XsaUserCard
-    :user="userData"
-    :compact="true"
-    :max-tags="2"
-    @click="handleUserClick"
-  />
-</template>
-
-<script setup>
-const userData = {
-  id: 1,
-  avatar: '/static/avatar.jpg',
-  name: '张小美',
-  age: 26,
-  gender: 2,
-  online: true,
-  certifications: ['实名认证', '学历认证'],
-  tags: ['爱好旅行', '喜欢美食', '温柔体贴'],
-  location: '北京·朝阳区',
-  introduction: '热爱生活，喜欢旅行和美食。'
-};
-</script>
-```
-
-#### Props
-
-| 属性 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `user` | `User` | — | 用户数据对象（必填） |
-| `compact` | `boolean` | `false` | 紧凑模式（不显示标签和介绍） |
-| `showActions` | `boolean` | `true` | 是否显示操作按钮 |
-| `maxTags` | `number` | `3` | 最多显示多少个标签 |
-
-**User 类型定义**：
-```typescript
-interface User {
-  id: number;
-  avatar: string;
-  name: string;
-  age: number;
-  gender: number; // 1-男 2-女
-  online?: boolean;
-  certifications?: string[];
-  tags?: string[];
-  location?: string;
-  introduction?: string;
-}
-```
-
-#### Events
-
-| 事件 | 参数 | 说明 |
-|------|------|------|
-| `click` | `user: User` | 点击卡片时触发 |
-| `like` | `userId: number` | 点击喜欢按钮时触发 |
-| `chat` | `userId: number` | 点击打招呼按钮时触发 |
-
----
-
-### 2. XsaPhotoGrid — 相册网格
-
-**使用场景**：用户详情、编辑资料、发布动态
-
-#### 使用示例
-
-```vue
-<template>
-  <!-- 只读模式（用户详情） -->
-  <XsaPhotoGrid
-    :photos="photoList"
-    @preview="handlePreview"
-  />
-
-  <!-- 编辑模式（编辑资料） -->
-  <XsaPhotoGrid
-    :photos="photoList"
-    :editable="true"
-    :max-count="9"
-    @add="handleAddPhoto"
-    @delete="handleDeletePhoto"
-  />
-
-  <!-- 自定义列数 -->
-  <XsaPhotoGrid
-    :photos="photoList"
-    :columns="4"
-  />
-</template>
-
-<script setup>
-const photoList = ref([
-  '/static/photo1.jpg',
-  '/static/photo2.jpg',
-  '/static/photo3.jpg',
-]);
-
-const handleAddPhoto = () => {
-  uni.chooseImage({
-    count: 9 - photoList.value.length,
-    success: (res) => {
-      photoList.value.push(...res.tempFilePaths);
-    }
-  });
-};
-
-const handleDeletePhoto = (index) => {
-  photoList.value.splice(index, 1);
-};
-</script>
-```
-
-#### Props
-
-| 属性 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `photos` | `string[]` | — | 图片URL数组（必填） |
-| `editable` | `boolean` | `false` | 是否可编辑 |
-| `maxCount` | `number` | `9` | 最多可上传数量 |
-| `columns` | `number` | `3` | 每行显示列数 |
-| `addText` | `string` | `'添加图片'` | 添加按钮文字 |
-
-#### Events
-
-| 事件 | 参数 | 说明 |
-|------|------|------|
-| `add` | — | 点击添加按钮时触发 |
-| `delete` | `index: number` | 点击删除按钮时触发 |
-| `preview` | `index: number` | 点击图片时触发 |
-
----
-
-### 3. XsaEmpty — 空状态
+### 1. XsaEmpty — 空状态
 
 **使用场景**：所有列表页面的空状态展示
 
@@ -217,7 +68,7 @@ const handleDeletePhoto = (index) => {
 
 ---
 
-### 4. XsaMessageItem — 消息列表项
+### 2. XsaMessageItem — 消息列表项
 
 **使用场景**：消息列表页面
 
@@ -295,7 +146,7 @@ interface Message {
 
 ---
 
-### 5. XsaDynamicCard — 动态卡片
+### 3. XsaDynamicCard — 动态卡片
 
 **使用场景**：社区动态列表
 
@@ -388,7 +239,7 @@ interface Dynamic {
 
 ---
 
-### 6. XsaMessageCenter — 统一消息中心
+### 4. XsaMessageCenter — 统一消息中心
 
 **使用场景**：普通用户消息 Tab、父母端消息面板。
 
@@ -399,7 +250,7 @@ interface Dynamic {
 - 401 或父母授权失效时立即清除组件内已加载的会话和申请数据。
 - Props：`mode?: 'standard' | 'parent'`、`parentContext?: ParentContext`。
 
-### 7. XsaApplicationTabs — 申请双 Tab
+### 5. XsaApplicationTabs — 申请双 Tab
 
 **使用场景**：认识申请 Sheet。
 
@@ -408,7 +259,7 @@ interface Dynamic {
 - “收到的 / 发出的”数据由调用方分开分页；仅收到且 `pending` 的记录计入待处理数量。
 - 业务失败时保留原状态，并通过错误态或 Toast 提供重试；组件不得本地伪造接受或拒绝成功。
 
-### 8. XsaConversationList — 会话列表
+### 6. XsaConversationList — 会话列表
 
 **使用场景**：统一消息中心的最近聊天列表。
 
@@ -416,7 +267,7 @@ interface Dynamic {
 - Events：`open`、`retry`、`retry-more`、`load-more`。
 - `protectPhotos` 用于父母端头像保护；真正的清晰照片授权必须由数据层决定，不能只依赖 CSS 模糊。
 
-### 9. ParentBottomNav — 父母端四面板导航
+### 7. ParentBottomNav — 父母端四面板导航
 
 **使用场景**：父母角色单页壳层。
 
@@ -424,7 +275,7 @@ interface Dynamic {
 - 固定底部并预留安全区，四个触控目标均不小于 48px。
 - 该组件不修改普通用户原生五 Tab。
 
-### 10. ParentCandidateCard — 父母端候选卡
+### 8. ParentCandidateCard — 父母端候选卡
 
 **使用场景**：父母端推荐与我的喜欢。
 
@@ -432,7 +283,7 @@ interface Dynamic {
 - 列表头像始终按保护态展示；卡片使用父母端 16px 正文、20px 以上姓名层级和 48px 操作按钮。
 - 对外文案统一为“喜欢 / 申请认识”；“牵线”只用于红娘服务。
 
-### 11. ParentGateNotice — 双主体门禁提示
+### 9. ParentGateNotice — 双主体门禁提示
 
 **使用场景**：父母端首页和申请动作前的认证说明。
 
@@ -440,7 +291,7 @@ interface Dynamic {
 - 分别展示父母实名认证与子女授权，不能把两者合并成一个模糊的“已认证”状态。
 - 授权过期、撤销或上下文获取失败时按无权限处理，不允许沿用缓存成功状态。
 
-### 12. ParentApplySheet — 父母端申请确认
+### 10. ParentApplySheet — 父母端申请确认
 
 **使用场景**：父母端候选列表和候选详情的“申请认识”确认。
 
@@ -456,8 +307,6 @@ interface Dynamic {
 
 | 组件 | 说明 | 使用场景 | 状态 |
 |------|------|----------|------|
-| **XsaUserCard** | 用户卡片 | 首页推荐、搜索结果 | ✅ |
-| **XsaPhotoGrid** | 相册网格 | 用户详情、编辑资料 | ✅ |
 | **XsaEmpty** | 空状态 | 所有列表页面 | ✅ |
 | **XsaMessageItem** | 消息列表项 | 消息列表 | ✅ |
 | **XsaDynamicCard** | 动态卡片 | 社区动态列表 | ✅ |

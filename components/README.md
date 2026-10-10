@@ -439,41 +439,6 @@ import XsaToast from '@/components/XsaToast.uvue';
 
 ---
 
-### 8. XsaProgress — 进度条组件
-
-#### 使用示例
-
-```vue
-<template>
-  <!-- 基础进度条 -->
-  <XsaProgress :value="75" />
-
-  <!-- 带标签 -->
-  <XsaProgress
-    :value="75"
-    label="资料完善度"
-    :show-label="true"
-  />
-
-  <!-- 禁用动画 -->
-  <XsaProgress
-    :value="50"
-    :animated="false"
-  />
-</template>
-```
-
-#### Props
-
-| 属性 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `value` | `number` | — | 进度值（0-100） |
-| `label` | `string` | — | 标签文字 |
-| `showLabel` | `boolean` | `false` | 是否显示标签 |
-| `animated` | `boolean` | `true` | 是否开启动画 |
-
----
-
 ### 9. XsaTabs — Tab 切换组件
 
 #### 使用示例
@@ -608,7 +573,6 @@ const handleTabChange = (index) => {
 | **XsaToast** | 提示消息 | 自动消失 | ✅ |
 | **XsaInput** | 输入框 | Text / Number / Password / Tel | ✅ |
 | **XsaAvatar** | 头像 | Circle / Rounded + 徽章 | ✅ |
-| **XsaProgress** | 进度条 | 标准 / 带标签 | ✅ |
 | **XsaTabs** | Tab 切换 | Default / Pill | ✅ |
 | **XsaModal** | 模态弹窗 | Small / Medium / Large | ✅ |
 

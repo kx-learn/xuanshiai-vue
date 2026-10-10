@@ -62,11 +62,6 @@ export { summarizeProfileCard, getProfileCardDraft, applyProfileCardDraft, waitF
 
 // AI 三类推荐（M07）
 export {
-  getAiRecommendations,
-  type RecommendationView
-} from './ai-recommend.uts'
-
-export {
   getMembershipStatus,
   createMembershipOrder,
   getMembershipOrder,
