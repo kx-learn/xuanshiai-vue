@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "authority": "workspace-root",
+  "normalization": "UTF-8 LF",
+  "documents": [
+    {
+      "name": "PRODUCT.md",
+      "source": "../PRODUCT.md",
+      "sha256": "55e7d0ac074f01572048b741a8dd98c0f7253256b3408df14725a49a0d5c30e8"
+    },
+    {
+      "name": "DESIGN.md",
+      "source": "../DESIGN.md",
+      "sha256": "9656724380b70640975deadac43bb34619ac8b3206674f6e7033db38f97de00f"
+    }
+  ]
+}

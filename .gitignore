@@ -6,7 +6,8 @@ unpackage/
 # 需求文档（仅内部开发使用，不上传外部仓库）
 最终版的文字需求/
 最终版分页面拆分的相关需求/
-docs/
+docs/*
+!docs/authoritative/
 .playwright-mcp/
 .zcode/
 graphify-out/

@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 env:
-  # 已发布配套基线；本轮后端修改尚未提交，交付新提交对时必须再更新此 SHA。
-  BACKEND_CONTRACT_SHA: 01beb07102f64b665f4e89a1ca2f25eed1ead34b
+  # 后端契约基线:指向已推送到 xuanshiai 仓库 main 的提交;更新前端交付时须同步更新此 SHA。
+  BACKEND_CONTRACT_SHA: ce72b9e10e683cf9681606325ee9e8a0ba961350
 
 jobs:
   source:
